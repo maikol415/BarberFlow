@@ -75,34 +75,61 @@ async function cargarPerfil() {
   }
 }
 
+// Función utilitaria para optimizar y comprimir imágenes antes de guardarlas (máx 500x500 y calidad 0.8)
+function comprimirImagen(file, maxWidth = 500, maxHeight = 500, quality = 0.8) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.src = event.target.result;
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          }
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
+
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        
+        // Exportar como JPEG comprimido
+        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+        resolve(dataUrl);
+      };
+      img.onerror = (err) => reject(err);
+    };
+    reader.onerror = (err) => reject(err);
+  });
+}
+
 // Subir logo barbería
 async function subirFotoBarberia(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = async function(evt) {
-    const base64Data = evt.target.result;
-    document.getElementById('preview-logo-barberia').src = base64Data;
-    
-    try {
-      const res = await fetch('/api/admin/upload-image', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ imageData: base64Data })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        document.getElementById('conf-logo').value = data.url;
-        barberiaActual.logoUrl = data.url;
-        document.getElementById('admin-barberia-logo').src = data.url;
-        alert('Foto subida con éxito. Haz clic en "Guardar Cambios" para confirmar.');
-      }
-    } catch (err) {
-      alert('Error al subir imagen');
-    }
-  };
-  reader.readAsDataURL(file);
+  try {
+    const base64Optimizado = await comprimirImagen(file, 600, 600, 0.82);
+    document.getElementById('preview-logo-barberia').src = base64Optimizado;
+    document.getElementById('conf-logo').value = base64Optimizado;
+    barberiaActual.logoUrl = base64Optimizado;
+    document.getElementById('admin-barberia-logo').src = base64Optimizado;
+    alert('Foto optimizada y cargada. Haz clic en "Guardar Información de la Barbería" para guardarla permanentemente.');
+  } catch (err) {
+    alert('Error al procesar la imagen de la barbería.');
+  }
 }
 
 let tempMiembroFotoUrl = '';
@@ -111,53 +138,27 @@ async function subirFotoMiembro(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = async function(evt) {
-    const base64Data = evt.target.result;
-    document.getElementById('preview-foto-miembro').src = base64Data;
-
-    try {
-      const res = await fetch('/api/admin/upload-image', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ imageData: base64Data })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        tempMiembroFotoUrl = data.url;
-        alert('Foto del barbero cargada.');
-      }
-    } catch (err) {
-      alert('Error al subir foto del barbero.');
-    }
-  };
-  reader.readAsDataURL(file);
+  try {
+    const base64Optimizado = await comprimirImagen(file, 400, 400, 0.8);
+    document.getElementById('preview-foto-miembro').src = base64Optimizado;
+    tempMiembroFotoUrl = base64Optimizado;
+    alert('Foto del barbero cargada.');
+  } catch (err) {
+    alert('Error al cargar la foto del barbero.');
+  }
 }
 
 async function subirFotoMiembroEdicion(e) {
   const file = e.target.files[0];
   if (!file) return;
 
-  const reader = new FileReader();
-  reader.onload = async function(evt) {
-    const base64Data = evt.target.result;
-    document.getElementById('edit-preview-foto-miembro').src = base64Data;
-
-    try {
-      const res = await fetch('/api/admin/upload-image', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ imageData: base64Data })
-      });
-      const data = await res.json();
-      if (res.ok) {
-        tempEditMiembroFotoUrl = data.url;
-      }
-    } catch (err) {
-      alert('Error al subir foto.');
-    }
-  };
-  reader.readAsDataURL(file);
+  try {
+    const base64Optimizado = await comprimirImagen(file, 400, 400, 0.8);
+    document.getElementById('edit-preview-foto-miembro').src = base64Optimizado;
+    tempEditMiembroFotoUrl = base64Optimizado;
+  } catch (err) {
+    alert('Error al cargar la foto.');
+  }
 }
 
 async function cargarCitas(filtroParams = '') {
