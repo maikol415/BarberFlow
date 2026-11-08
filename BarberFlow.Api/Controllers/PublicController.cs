@@ -42,14 +42,24 @@ public class PublicController : ControllerBase
             .CountAsync(c => c.BarberiaId == barberia.Id);
 
         // Conteo de valoraciones reales de clientes
-        var valoraciones = await _context.Valoraciones
-            .Where(v => v.BarberiaId == barberia.Id)
-            .ToListAsync();
+        int totalValoraciones = 0;
+        double calificacion = 5.0;
 
-        var totalValoraciones = valoraciones.Count;
-        double calificacion = totalValoraciones > 0 
-            ? Math.Round(valoraciones.Average(v => v.Estrellas), 1) 
-            : 5.0;
+        try
+        {
+            var valoraciones = await _context.Valoraciones
+                .Where(v => v.BarberiaId == barberia.Id)
+                .ToListAsync();
+
+            totalValoraciones = valoraciones.Count;
+            calificacion = totalValoraciones > 0 
+                ? Math.Round(valoraciones.Average(v => v.Estrellas), 1) 
+                : 5.0;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Nota: Valoraciones no consultadas todavía: {ex.Message}");
+        }
 
         return Ok(new
         {
