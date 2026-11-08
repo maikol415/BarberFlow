@@ -7,12 +7,30 @@ using BarberFlow.Api.Models;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuración de Base de Datos
+// Configuración de Base de Datos (Soporta Supabase / PostgreSQL, SQL Server o SQLite local)
+var supabaseConn = Environment.GetEnvironmentVariable("DATABASE_URL") 
+                   ?? builder.Configuration.GetConnectionString("SupabaseConnection");
 var useSqlServer = builder.Configuration.GetValue<bool>("UseSqlServer");
 
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
-    if (useSqlServer)
+    if (!string.IsNullOrWhiteSpace(supabaseConn))
+    {
+        // Conexión directa a Supabase (PostgreSQL)
+        // Convertir formato postgres:// si viene de variable de entorno
+        if (supabaseConn.StartsWith("postgres://") || supabaseConn.StartsWith("postgresql://"))
+        {
+            var uri = new Uri(supabaseConn);
+            var userInfo = uri.UserInfo.Split(':');
+            var npgsqlConn = $"Host={uri.Host};Port={uri.Port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true";
+            options.UseNpgsql(npgsqlConn);
+        }
+        else
+        {
+            options.UseNpgsql(supabaseConn);
+        }
+    }
+    else if (useSqlServer)
     {
         var sqlServerConn = builder.Configuration.GetConnectionString("SqlServerConnection");
         options.UseSqlServer(sqlServerConn);
