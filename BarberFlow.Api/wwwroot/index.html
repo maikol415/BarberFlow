@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reservar Cita - BarberFlow Pro</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              gold: '#3B82F6',
+              goldHover: '#2563EB',
+              dark: '#0B0F19',
+              card: '#111827',
+              border: '#1F2937',
+              accent: '#60A5FA',
+            }
+          },
+          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
+    .custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
+    .custom-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 99px; }
+    .avatar-zoom { transition: transform 0.25s ease; cursor: pointer; }
+    .avatar-zoom:hover { transform: scale(1.06); }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-blue-500 selection:text-white custom-scroll">
+
+  <!-- Header Limpio -->
+  <header class="border-b border-gray-800 bg-[#0F172A]/90 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-extrabold text-lg shadow-md shadow-blue-500/20">
+          ✂️
+        </div>
+        <div>
+          <span class="font-extrabold text-base tracking-tight text-white">Barber<span class="text-blue-500">Flow</span></span>
+        </div>
+      </div>
+      <div>
+        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Abierto
+        </span>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-4xl mx-auto w-full px-4 py-8">
+    
+    <!-- Encabezado de la Barbería con Imagen Ampliable estilo Instagram -->
+    <div class="text-center mb-8">
+      <p class="text-blue-500 font-semibold text-sm sm:text-base mb-3">Vas a hacer tu reserva con</p>
+      
+      <div class="flex flex-col items-center">
+        <!-- Foto con clic para ampliar estilo Instagram -->
+        <div class="relative group cursor-pointer" onclick="abrirModalImagenGrande(document.getElementById('barber-logo').src, document.getElementById('barber-name').innerText)">
+          <img id="barber-logo" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/></svg>" class="avatar-zoom w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-2 border-blue-500/60 shadow-xl bg-gray-900 mb-2 p-1">
+          <div class="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-white text-xs font-bold">
+            <i data-lucide="zoom-in" class="w-5 h-5"></i>
+          </div>
+        </div>
+        
+        <h1 id="barber-name" class="text-2xl sm:text-3xl font-extrabold text-white mt-1">Cargando barbería...</h1>
+        
+        <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-300">
+          <span class="text-amber-400 font-bold flex items-center gap-1" id="barber-stars">★ 5.0</span>
+          <span class="text-gray-400" id="barber-reviews">(0 valoraciones)</span>
+          <span class="text-gray-500">•</span>
+          <span class="text-gray-300 font-medium" id="barber-appointments">0 agendamientos</span>
+        </div>
+
+        <p id="barber-address" class="text-xs sm:text-sm text-gray-400 mt-2 max-w-md">
+          Dirección física de la barbería
+        </p>
+        <p id="barber-desc" class="text-xs text-gray-400 mt-0.5">
+          Barbería & Cuidado personal
+        </p>
+
+        <a id="link-whatsapp-direct" href="#" target="_blank" class="mt-3 inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 text-xs font-semibold">
+          <i data-lucide="message-circle" class="w-3.5 h-3.5"></i> Contactar por WhatsApp
+        </a>
+      </div>
+    </div>
+
+    <!-- PASO 1: SERVICIOS CON BUSCADOR Y CATEGORÍAS PERSONALIZADAS -->
+    <div class="bg-gray-900/80 rounded-3xl p-5 sm:p-7 border border-gray-800 shadow-xl mb-8">
+      
+      <h2 class="text-center text-blue-500 font-bold text-base sm:text-lg mb-4">
+        Elige o busca el servicio que deseas reservar
+      </h2>
+
+      <!-- Buscador -->
+      <div class="relative max-w-md mx-auto mb-6">
+        <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5"></i>
+        <input type="text" id="input-buscar-servicio" oninput="filtrarServiciosPorTexto(this.value)" placeholder="Buscar servicio por nombre..." class="w-full bg-gray-950/80 border border-gray-700/80 rounded-full pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 shadow-inner">
+      </div>
+
+      <!-- Categorías Circulares (Solo las que existan en la barbería) -->
+      <div class="flex items-center justify-center gap-4 sm:gap-6 mb-6 overflow-x-auto pt-3 pb-3 custom-scroll" id="categorias-container">
+        <!-- Dinámico -->
+      </div>
+
+      <!-- Título de Categoría Activa -->
+      <h3 id="titulo-categoria-activa" class="text-center font-extrabold text-blue-400 text-lg mb-4">Cortes</h3>
+
+      <!-- Grid de Tarjetas de Servicios -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5" id="services-cards-grid">
+        <!-- Tarjetas dinámicas -->
+      </div>
+    </div>
+
+    <!-- PASO 2: ELIGE EL BARBERO (Solo si la barbería activó la opción) -->
+    <div id="seccion-selector-barbero" class="bg-gray-900/80 rounded-3xl p-5 sm:p-7 border border-gray-800 shadow-xl mb-8 hidden">
+      <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2 mb-4">
+        <span class="w-7 h-7 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/40 flex items-center justify-center text-sm font-extrabold">2</span>
+        Elige el Profesional
+      </h2>
+      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3" id="barbers-container">
+        <!-- Dinámico -->
+      </div>
+    </div>
+
+    <!-- PASO 3: CALENDARIO INTERACTIVO CON BOTÓN "VER CALENDARIO POR DÍAS / COMPLETO" -->
+    <div class="bg-gray-900/80 rounded-3xl p-5 sm:p-7 border border-gray-800 shadow-xl mb-8">
+      
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h2 class="text-base font-bold text-white flex items-center gap-2">
+          <span class="w-6 h-6 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/40 flex items-center justify-center text-xs font-extrabold">📅</span>
+          Elige una fecha
+        </h2>
+        
+        <!-- Botón para alternar la vista del calendario (idéntico a la imagen) -->
+        <button type="button" onclick="alternarModoCalendario()" id="btn-toggle-modo-cal" class="text-xs sm:text-sm font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1.5 transition">
+          <i data-lucide="calendar" class="w-4 h-4"></i> <span id="label-modo-cal">Ver calendario completo</span>
+        </button>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-12 gap-6 sm:gap-8">
+        
+        <!-- Columna Izquierda: Vista Calendario (Modo 1: Cuadrícula Mensual | Modo 2: Matriz Tradicional de Mes) -->
+        <div class="md:col-span-7">
+          <div class="flex items-center justify-between mb-3 px-1">
+            <span id="mes-anio-label" class="text-xs text-blue-400 font-bold uppercase tracking-wider">Noviembre 2026</span>
+            <div class="flex items-center gap-1">
+              <button onclick="cambiarMesRelativo(-1)" class="p-1 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition">
+                <i data-lucide="chevron-left" class="w-4 h-4"></i>
+              </button>
+              <button onclick="cambiarMesRelativo(1)" class="p-1 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition">
+                <i data-lucide="chevron-right" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+
+          <!-- Contenedor del Calendario -->
+          <div id="grid-calendario-mes" class="grid grid-cols-7 gap-1.5 sm:gap-2 text-center">
+            <!-- Días generados dinámicamente -->
+          </div>
+        </div>
+
+        <!-- Columna Derecha: Lista de Horarios Disponibles con Scroll Completo Sin Cortar -->
+        <div class="md:col-span-5 flex flex-col justify-start">
+          <h3 class="text-sm sm:text-base font-bold text-white mb-3">Lista de horarios disponibles:</h3>
+
+          <div id="lista-horas-container" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[360px] overflow-y-auto p-1.5 pb-12 custom-scroll">
+            <!-- Horas dinámicas -->
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- RESUMEN FINAL & CONFIRMACIÓN -->
+    <div class="bg-gray-900 rounded-3xl p-6 sm:p-8 border border-gray-800 shadow-2xl">
+      <h3 class="text-lg font-bold text-white border-b border-gray-800 pb-3 flex items-center gap-2">
+        <i data-lucide="receipt" class="w-5 h-5 text-blue-400"></i> Resumen de tu Reserva
+      </h3>
+
+      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 my-5 text-sm">
+        <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800">
+          <span class="text-xs text-gray-400 block font-medium">Servicio Seleccionado</span>
+          <span id="resumen-servicio" class="font-bold text-white text-base mt-1 block">--</span>
+          <span id="resumen-duracion" class="text-xs text-blue-400">-- min</span>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800">
+          <span class="text-xs text-gray-400 block font-medium">Fecha & Horario</span>
+          <span id="resumen-fecha-hora" class="font-bold text-emerald-400 text-base mt-1 block">Selecciona horario</span>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800">
+          <span class="text-xs text-gray-400 block font-medium">Precio Total</span>
+          <span id="resumen-precio" class="font-extrabold text-blue-400 text-2xl mt-0.5 block">$ 0</span>
+        </div>
+      </div>
+
+      <form id="form-cliente-reserva" onsubmit="confirmarReservaFinal(event)" class="space-y-4 pt-4 border-t border-gray-800/80">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-1">Tu Nombre Completo *</label>
+            <input type="text" id="cliente-nombre" required placeholder="Ej: Juan Pérez" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-1">Teléfono o WhatsApp *</label>
+            <input type="tel" id="cliente-telefono" required placeholder="Ej: 300 123 4567" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
+          </div>
+        </div>
+
+        <button type="submit" id="btn-confirmar-final" class="w-full py-4 rounded-2xl font-extrabold text-white bg-blue-600 hover:bg-blue-500 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 text-base transition transform active:scale-95">
+          <i data-lucide="check-circle" class="w-5 h-5"></i> Confirmar Cita Ahora
+        </button>
+      </form>
+    </div>
+
+  </main>
+
+  <!-- MODAL PARA VER FOTO GRANDE ESTILO INSTAGRAM -->
+  <div id="modal-foto-grande" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden" onclick="cerrarModalFotoGrande()">
+    <div class="relative max-w-sm sm:max-w-md w-full text-center" onclick="event.stopPropagation()">
+      <button onclick="cerrarModalFotoGrande()" class="absolute -top-10 right-0 text-gray-400 hover:text-white transition">
+        <i data-lucide="x" class="w-7 h-7"></i>
+      </button>
+      <div class="bg-gray-900 p-3 rounded-3xl border border-gray-800 shadow-2xl">
+        <img id="img-grande-src" src="" class="w-full h-80 sm:h-96 object-cover rounded-2xl border border-gray-800 shadow-inner">
+        <h4 id="img-grande-titulo" class="text-white font-bold text-lg mt-3">Barbería</h4>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL ÉXITO -->
+  <div id="success-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-gray-900 border border-gray-800 max-w-md w-full rounded-3xl p-6 sm:p-8 shadow-2xl text-center">
+      <div class="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto mb-4 text-3xl font-bold">
+        ✓
+      </div>
+      <h3 class="text-2xl font-extrabold text-white">¡Reserva Exitosa!</h3>
+      <p class="text-xs sm:text-sm text-gray-300 mt-1">Tu cita ha sido agendada en la barbería.</p>
+      
+      <div class="my-5 p-4 rounded-2xl bg-gray-950 border border-gray-800 text-left text-xs sm:text-sm space-y-2">
+        <div class="flex justify-between text-xs text-gray-400">
+          <span>Código:</span>
+          <span id="modal-codigo" class="font-mono text-blue-400 font-bold">--</span>
+        </div>
+        <div class="flex justify-between font-medium">
+          <span class="text-gray-400">Servicio:</span>
+          <span id="modal-servicio" class="text-white">--</span>
+        </div>
+        <div class="flex justify-between font-medium">
+          <span class="text-gray-400">Horario:</span>
+          <span id="modal-horario" class="text-emerald-400 font-semibold">--</span>
+        </div>
+      </div>
+
+      <div class="space-y-3">
+        <a id="modal-btn-whatsapp" target="_blank" class="w-full py-3.5 px-4 rounded-xl font-bold bg-[#25D366] hover:bg-[#20bd5a] text-black flex items-center justify-center gap-2 shadow-lg transition text-sm">
+          <i data-lucide="message-circle" class="w-5 h-5"></i> Enviar Confirmación a WhatsApp
+        </a>
+        <button onclick="cerrarModal()" class="w-full py-2.5 px-4 rounded-xl text-gray-400 hover:text-white transition text-xs sm:text-sm">
+          Aceptar y Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <footer class="border-t border-gray-800/80 py-6 text-center text-xs text-gray-500">
+    <p>© 2026 BarberFlow Pro • Reservas instantáneas en línea</p>
+    <a href="/login.html" class="text-gray-500 hover:text-blue-400 mt-1 inline-block">¿Eres barbero o dueño? Inicia sesión aquí</a>
+  </footer>
+
+  <script src="/js/client.js"></script>
+</body>
+</html>

@@ -1,0 +1,15 @@
+## Build & SDK
+bin/
+obj/
+
+## SQLite & Local DB
+*.db
+*.db-wal
+*.db-shm
+
+## VS & IDE
+.vs/
+.idea/
+*.user
+*.suo
+launchSettings.json
