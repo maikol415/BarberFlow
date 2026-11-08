@@ -12,6 +12,10 @@ RUN dotnet publish "BarberFlow.Api.csproj" -c Release -o /app/publish /p:UseAppH
 # Etapa 2: Entorno de ejecución
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
 WORKDIR /app
+
+# Instalar dependencias para SSL / Kerberos / PostgreSQL en Linux
+RUN apt-get update && apt-get install -y --no-install-recommends libgssapi-krb5-2 ca-certificates && rm -rf /var/lib/apt/lists/*
+
 COPY --from=build /app/publish .
 
 # Puerto estándar para Railway / Render

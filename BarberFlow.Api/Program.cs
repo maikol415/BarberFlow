@@ -25,7 +25,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
             var port = uri.Port > 0 ? uri.Port : 5432;
             var host = uri.Host;
             // Para Render / Supabase: si usa direct pooler o db host, forzar IPv4 si es necesario
-            var npgsqlConn = $"Host={host};Port={port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true;Timeout=30;Command Timeout=30";
+            var npgsqlConn = $"Host={host};Port={port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true;Timeout=60;Command Timeout=60;Pooling=false";
             options.UseNpgsql(npgsqlConn);
         }
         else
