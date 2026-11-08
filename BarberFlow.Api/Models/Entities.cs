@@ -39,6 +39,17 @@ public class Barberia
     public List<MiembroEquipo> Miembros { get; set; } = new();
     public List<Cita> Citas { get; set; } = new();
     public List<HorarioBloqueo> Bloqueos { get; set; } = new();
+    public List<Valoracion> Valoraciones { get; set; } = new();
+}
+
+public class Valoracion
+{
+    public int Id { get; set; }
+    public int BarberiaId { get; set; }
+    public string NombreCliente { get; set; } = string.Empty;
+    public int Estrellas { get; set; } = 5; // 1 a 5 estrellas
+    public string Comentario { get; set; } = string.Empty;
+    public DateTime FechaUtc { get; set; } = DateTime.UtcNow;
 }
 
 public class Servicio

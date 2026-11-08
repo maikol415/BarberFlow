@@ -54,6 +54,13 @@
     .custom-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 99px; }
     .avatar-zoom { transition: transform 0.25s ease; cursor: pointer; }
     .avatar-zoom:hover { transform: scale(1.06); }
+
+    /* CSS Fallback para asegurar renderizado perfecto en navegadores móviles (Samsung Internet, etc.) */
+    img { max-width: 100%; height: auto; }
+    .card-box { background-color: #111827; border: 1px solid #1F2937; border-radius: 1.5rem; }
+    .btn-brand { background-color: #2563EB; color: #ffffff; font-weight: bold; }
+    .star-rating-btn { cursor: pointer; font-size: 1.5rem; color: #4B5563; transition: color 0.15s; }
+    .star-rating-btn.active, .star-rating-btn:hover { color: #FBBF24; }
   </style>
 </head>
 <body class="min-h-screen flex flex-col selection:bg-blue-500 selection:text-white custom-scroll">
@@ -97,6 +104,9 @@
         <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-300">
           <span class="text-amber-400 font-bold flex items-center gap-1" id="barber-stars">★ 5.0</span>
           <span class="text-gray-400" id="barber-reviews">(0 valoraciones)</span>
+          <button type="button" onclick="abrirModalValoracion()" class="ml-1 text-xs px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 hover:bg-amber-500/20 font-medium transition flex items-center gap-1">
+            <i data-lucide="star" class="w-3 h-3"></i> Calificar
+          </button>
           <span class="text-gray-500">•</span>
           <span class="text-gray-300 font-medium" id="barber-appointments">0 agendamientos</span>
         </div>
@@ -207,11 +217,16 @@
         <i data-lucide="receipt" class="w-5 h-5 text-blue-400"></i> Resumen de tu Reserva
       </h3>
 
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 my-5 text-sm">
+      <div class="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4 my-5 text-sm" id="grid-resumen">
         <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800">
           <span class="text-xs text-gray-400 block font-medium">Servicio Seleccionado</span>
           <span id="resumen-servicio" class="font-bold text-white text-base mt-1 block">--</span>
           <span id="resumen-duracion" class="text-xs text-blue-400">-- min</span>
+        </div>
+        <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800 hidden" id="resumen-box-barbero">
+          <span class="text-xs text-gray-400 block font-medium">Profesional / Barbero</span>
+          <span id="resumen-barbero" class="font-bold text-white text-base mt-1 block">Cualquiera</span>
+          <span class="text-xs text-blue-400">Asignación rápida</span>
         </div>
         <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800">
           <span class="text-xs text-gray-400 block font-medium">Fecha & Horario</span>
@@ -242,6 +257,50 @@
     </div>
 
   </main>
+
+  <!-- MODAL VALORACIÓN DE CLIENTES -->
+  <div id="modal-valoracion" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-gray-900 border border-gray-800 max-w-sm sm:max-w-md w-full rounded-3xl p-6 sm:p-7 shadow-2xl relative">
+      <button onclick="cerrarModalValoracion()" class="absolute top-4 right-4 text-gray-400 hover:text-white transition">
+        <i data-lucide="x" class="w-6 h-6"></i>
+      </button>
+
+      <div class="text-center mb-5">
+        <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto mb-3 text-2xl">
+          ⭐
+        </div>
+        <h3 class="text-xl font-extrabold text-white">Califica tu Experiencia</h3>
+        <p class="text-xs text-gray-400 mt-1">¿Qué tal te pareció la atención en la barbería?</p>
+      </div>
+
+      <form id="form-valoracion" onsubmit="enviarValoracionCliente(event)" class="space-y-4">
+        <!-- Selector de Estrellas interactivo -->
+        <div class="flex items-center justify-center gap-2 py-2">
+          <input type="hidden" id="val-estrellas" value="5">
+          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(1)">★</button>
+          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(2)">★</button>
+          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(3)">★</button>
+          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(4)">★</button>
+          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(5)">★</button>
+        </div>
+        <p id="label-estrellas-desc" class="text-center text-xs font-semibold text-amber-400">Excelente (5 de 5)</p>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-400 mb-1">Tu Nombre *</label>
+          <input type="text" id="val-nombre" required placeholder="Ej: Carlos Mejía" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400">
+        </div>
+
+        <div>
+          <label class="block text-xs font-semibold text-gray-400 mb-1">Comentario u Opinión (Opcional)</label>
+          <textarea id="val-comentario" rows="2" placeholder="Excelente atención, muy buen corte..." class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"></textarea>
+        </div>
+
+        <button type="submit" id="btn-enviar-valoracion" class="w-full py-3.5 rounded-xl font-bold bg-amber-500 hover:bg-amber-400 text-gray-950 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 text-sm transition">
+          <i data-lucide="send" class="w-4 h-4"></i> Publicar Calificación
+        </button>
+      </form>
+    </div>
+  </div>
 
   <!-- MODAL PARA VER FOTO GRANDE ESTILO INSTAGRAM -->
   <div id="modal-foto-grande" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden" onclick="cerrarModalFotoGrande()">

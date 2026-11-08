@@ -320,6 +320,24 @@ public class AdminController : ControllerBase
         return Ok(miembro);
     }
 
+    [HttpPut("miembros/{id}")]
+    public async Task<IActionResult> ActualizarMiembro(int id, [FromBody] MiembroDto dto)
+    {
+        var barberiaId = ObtenerBarberiaId();
+        var miembro = await _context.Miembros.FirstOrDefaultAsync(m => m.Id == id && m.BarberiaId == barberiaId);
+        if (miembro == null) return NotFound(new { message = "Miembro no encontrado." });
+
+        miembro.Nombre = dto.Nombre.Trim();
+        miembro.Rol = dto.Rol.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.FotoUrl))
+        {
+            miembro.FotoUrl = dto.FotoUrl;
+        }
+
+        await _context.SaveChangesAsync();
+        return Ok(miembro);
+    }
+
     [HttpDelete("miembros/{id}")]
     public async Task<IActionResult> EliminarMiembro(int id)
     {

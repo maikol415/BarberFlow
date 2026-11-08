@@ -15,6 +15,7 @@ public class AppDbContext : DbContext
     public DbSet<MiembroEquipo> Miembros => Set<MiembroEquipo>();
     public DbSet<Cita> Citas => Set<Cita>();
     public DbSet<HorarioBloqueo> Bloqueos => Set<HorarioBloqueo>();
+    public DbSet<Valoracion> Valoraciones => Set<Valoracion>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -56,6 +57,12 @@ public class AppDbContext : DbContext
             .HasOne<Barberia>()
             .WithMany(b => b.Bloqueos)
             .HasForeignKey(hb => hb.BarberiaId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<Valoracion>()
+            .HasOne<Barberia>()
+            .WithMany(b => b.Valoraciones)
+            .HasForeignKey(v => v.BarberiaId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

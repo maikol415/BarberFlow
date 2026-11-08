@@ -458,6 +458,49 @@
     </div>
   </div>
 
+  <!-- MODAL PARA EDITAR BARBERO / MIEMBRO -->
+  <div id="modal-editar-miembro" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+    <div class="bg-gray-900 border border-gray-800 max-w-md w-full rounded-2xl p-6 shadow-2xl relative">
+      <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-800">
+        <h3 class="font-bold text-white text-base flex items-center gap-2">
+          <i data-lucide="user-check" class="w-4 h-4 text-blue-400"></i> Editar Barbero
+        </h3>
+        <button onclick="cerrarModalEditarMiembro()" class="text-gray-400 hover:text-white transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <form id="form-editar-miembro" onsubmit="guardarEdicionMiembro(event)" class="space-y-4">
+        <input type="hidden" id="edit-miembro-id">
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Nombre Barbero *</label>
+          <input type="text" id="edit-miembro-nom" required class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-400 mb-1">Especialidad / Rol *</label>
+          <input type="text" id="edit-miembro-rol" required class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+        </div>
+
+        <div class="flex items-center gap-3 pt-2">
+          <img id="edit-preview-foto-miembro" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><circle cx='12' cy='8' r='4'/><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/></svg>" class="w-12 h-12 rounded-full object-cover border border-blue-400/40 bg-gray-800 p-1">
+          <label class="py-1.5 px-3 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-200 cursor-pointer hover:border-blue-400 transition flex items-center gap-1.5">
+            <i data-lucide="image" class="w-3.5 h-3.5 text-blue-400"></i> Cambiar foto
+            <input type="file" id="edit-input-file-miembro" accept="image/*" class="hidden" onchange="subirFotoMiembroEdicion(event)">
+          </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-2 pt-3 border-t border-gray-800">
+          <button type="button" onclick="cerrarModalEditarMiembro()" class="py-2 px-4 rounded-lg text-xs font-semibold text-gray-400 hover:text-white transition">
+            Cancelar
+          </button>
+          <button type="submit" class="py-2 px-5 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-500 transition shadow-lg shadow-blue-500/20">
+            Guardar Cambios
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script src="/js/admin.js"></script>
 </body>
 </html>

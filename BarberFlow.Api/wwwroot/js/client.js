@@ -48,19 +48,24 @@ function renderEncabezado() {
   // Agendamientos y estrellas reales calculados desde la base de datos
   const totalAgendamientos = barberia.totalAgendamientos || 0;
   const totalCompletadas = barberia.totalCompletadas || 0;
+  const totalValoraciones = barberia.totalValoraciones || 0;
   const calif = barberia.calificacion ? Number(barberia.calificacion).toFixed(1) : '5.0';
 
   const starsEl = document.getElementById('barber-stars');
   if (starsEl) starsEl.innerText = `★ ${calif}`;
 
   const reviewsEl = document.getElementById('barber-reviews');
-  if (reviewsEl) reviewsEl.innerText = `(${totalCompletadas} valoraciones)`;
+  if (reviewsEl) reviewsEl.innerText = `(${totalValoraciones} valoraciones)`;
 
   const apptsEl = document.getElementById('barber-appointments');
   if (apptsEl) apptsEl.innerText = `${totalAgendamientos} agendamiento${totalAgendamientos === 1 ? '' : 's'}`;
 
   const logo = barberia.logoUrl || DEFAULT_AVATAR;
-  document.getElementById('barber-logo').src = logo;
+  const imgLogoEl = document.getElementById('barber-logo');
+  if (imgLogoEl) {
+    imgLogoEl.src = logo;
+    imgLogoEl.onerror = () => { imgLogoEl.src = DEFAULT_AVATAR; };
+  }
 
   if (barberia.telefonoWhatsApp) {
     const cleanPhone = barberia.telefonoWhatsApp.replace(/[^0-9]/g, '');
@@ -178,23 +183,40 @@ function filtrarYRenderizarTarjetas() {
   const container = document.getElementById('services-cards-grid');
   container.innerHTML = '';
 
-  // Filtrar por la categoría seleccionada (y por texto si el usuario busca)
-  let filtrados = todosLosServicios.filter(s => {
-    const catServicio = (s.categoria && s.categoria.trim()) ? s.categoria.trim() : 'Cortes';
-    const matchCat = catServicio === categoriaActiva;
-    const matchText = !textoBusqueda || 
-                      s.nombre.toLowerCase().includes(textoBusqueda) || 
-                      (s.descripcion && s.descripcion.toLowerCase().includes(textoBusqueda));
-    return matchCat && matchText;
-  });
+  let filtrados = [];
+  const tituloEl = document.getElementById('titulo-categoria-activa');
+
+  if (textoBusqueda) {
+    // Si el usuario escribe algo en el buscador, buscar en TODOS los servicios sin importar categoría
+    filtrados = todosLosServicios.filter(s => {
+      const nomMatch = s.nombre.toLowerCase().includes(textoBusqueda);
+      const descMatch = s.descripcion && s.descripcion.toLowerCase().includes(textoBusqueda);
+      const catMatch = s.categoria && s.categoria.toLowerCase().includes(textoBusqueda);
+      return nomMatch || descMatch || catMatch;
+    });
+
+    if (tituloEl) {
+      tituloEl.innerText = `Resultados de búsqueda: "${textoBusqueda}" (${filtrados.length})`;
+    }
+  } else {
+    // Si no hay texto de búsqueda, mostrar la categoría activa
+    filtrados = todosLosServicios.filter(s => {
+      const catServicio = (s.categoria && s.categoria.trim()) ? s.categoria.trim() : 'Cortes';
+      return catServicio === categoriaActiva;
+    });
+
+    if (tituloEl) {
+      tituloEl.innerText = categoriaActiva;
+    }
+  }
 
   if (filtrados.length === 0) {
-    container.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-gray-500">No se encontraron servicios en "${categoriaActiva}" con esa búsqueda.</div>`;
+    container.innerHTML = `<div class="col-span-full py-8 text-center text-xs text-gray-500">No se encontraron servicios con el término "${textoBusqueda}".</div>`;
     return;
   }
 
   filtrados.forEach((s, idx) => {
-    // Si no hay seleccionado, pre-seleccionar el primero de esta categoría
+    // Si no hay seleccionado, pre-seleccionar el primero
     if (!reservaActual.servicioId && idx === 0) {
       seleccionarServicio(s);
     }
@@ -217,11 +239,18 @@ function filtrarYRenderizarTarjetas() {
       duracionTexto = mins > 0 ? `${horas}h ${mins}min` : `alrededor de ${horas} hora${horas > 1 ? 's' : ''}`;
     }
 
+    const badgeCategoria = textoBusqueda && s.categoria 
+      ? `<span class="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20 mr-1.5 font-medium">${s.categoria}</span>`
+      : '';
+
     card.innerHTML = `
       <div>
         <div class="flex items-start justify-between gap-2">
-          <h4 class="font-extrabold text-white text-sm sm:text-base">${s.nombre}</h4>
-          <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold ${esSeleccionado ? 'bg-blue-500 text-white' : 'bg-gray-800 text-gray-400'}">
+          <div>
+            ${badgeCategoria}
+            <h4 class="font-extrabold text-white text-sm sm:text-base inline">${s.nombre}</h4>
+          </div>
+          <span class="text-xs px-2.5 py-0.5 rounded-full font-semibold flex-shrink-0 ${esSeleccionado ? 'bg-blue-500 text-white' : 'bg-gray-800 text-gray-400'}">
             ${esSeleccionado ? '✓ Elegido' : 'Elegir'}
           </span>
         </div>
@@ -274,15 +303,19 @@ function seleccionarServicio(s) {
 function configurarSelectorBarbero() {
   const miembros = barberia.miembros || [];
   const secBarbero = document.getElementById('seccion-selector-barbero');
+  const resumenBoxBarbero = document.getElementById('resumen-box-barbero');
 
   // Si la barbería desactivó la opción o solo tiene 1 barbero, OCULTAR el selector
   if (!barberia.mostrarSelectorBarbero || miembros.length <= 1) {
-    secBarbero.classList.add('hidden');
+    if (secBarbero) secBarbero.classList.add('hidden');
+    if (resumenBoxBarbero) resumenBoxBarbero.classList.add('hidden');
     reservaActual.barberoId = miembros.length > 0 ? miembros[0].id : null;
     return;
   }
 
-  secBarbero.classList.remove('hidden');
+  if (secBarbero) secBarbero.classList.remove('hidden');
+  if (resumenBoxBarbero) resumenBoxBarbero.classList.remove('hidden');
+
   const container = document.getElementById('barbers-container');
   container.innerHTML = '';
 
@@ -296,8 +329,12 @@ function configurarSelectorBarbero() {
       esPrimero ? 'border-blue-500 bg-blue-900/30 ring-1 ring-blue-500' : 'border-gray-800 bg-gray-950 hover:border-gray-700'
     }`;
     card.onclick = () => seleccionarBarbero(b);
+
+    const foto = b.fotoUrl || DEFAULT_AVATAR;
     card.innerHTML = `
-      <img src="${b.fotoUrl || DEFAULT_AVATAR}" class="w-11 h-11 rounded-full mx-auto object-cover border border-blue-400/30 mb-1.5 bg-gray-900 p-0.5">
+      <div class="relative group/avatar inline-block" onclick="event.stopPropagation(); abrirModalImagenGrande('${foto}', '${b.nombre}')">
+        <img src="${foto}" onerror="this.src='${DEFAULT_AVATAR}'" class="w-12 h-12 rounded-full mx-auto object-cover border border-blue-400/30 mb-1.5 bg-gray-900 p-0.5 hover:scale-105 transition shadow">
+      </div>
       <div class="font-bold text-xs text-white truncate">${b.nombre}</div>
       <div class="text-[10px] text-gray-400 truncate">${b.rol}</div>
     `;
@@ -312,6 +349,13 @@ function seleccionarBarbero(b) {
   });
   const act = document.getElementById(`barber-${b.id || 'any'}`);
   if (act) act.className = 'p-3 rounded-2xl border text-center cursor-pointer transition border-blue-500 bg-blue-900/30 ring-1 ring-blue-500';
+
+  // Actualizar nombre del barbero en el resumen
+  const resumenBarberoEl = document.getElementById('resumen-barbero');
+  if (resumenBarberoEl) {
+    resumenBarberoEl.innerText = b.nombre;
+  }
+
   renderHorariosDisponibles();
 }
 
@@ -709,6 +753,85 @@ async function confirmarReservaFinal(e) {
 function cerrarModal() {
   document.getElementById('success-modal').classList.add('hidden');
   window.location.reload();
+}
+
+// 6. Sistema de Valoración por Estrellas (Clientes)
+let estrellasSeleccionadas = 5;
+
+function abrirModalValoracion() {
+  document.getElementById('modal-valoracion').classList.remove('hidden');
+  seleccionarEstrella(5);
+}
+
+function cerrarModalValoracion() {
+  document.getElementById('modal-valoracion').classList.add('hidden');
+}
+
+function seleccionarEstrella(num) {
+  estrellasSeleccionadas = num;
+  document.getElementById('val-estrellas').value = num;
+
+  const descripciones = {
+    1: 'Mala (1 de 5)',
+    2: 'Regular (2 de 5)',
+    3: 'Buena (3 de 5)',
+    4: 'Muy Buena (4 de 5)',
+    5: 'Excelente (5 de 5)'
+  };
+  const descEl = document.getElementById('label-estrellas-desc');
+  if (descEl) descEl.innerText = descripciones[num] || `${num} de 5`;
+
+  const buttons = document.querySelectorAll('.star-rating-btn');
+  buttons.forEach((btn, idx) => {
+    if (idx < num) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+}
+
+async function enviarValoracionCliente(e) {
+  e.preventDefault();
+  const nombre = document.getElementById('val-nombre').value.trim();
+  const comentario = document.getElementById('val-comentario').value.trim();
+  const estrellas = parseInt(document.getElementById('val-estrellas').value) || 5;
+
+  const btn = document.getElementById('btn-enviar-valoracion');
+  btn.disabled = true;
+  btn.innerText = 'Enviando...';
+
+  try {
+    const res = await fetch('/api/public/valoraciones', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        barberiaSlug: barberia.slug,
+        nombreCliente: nombre,
+        estrellas: estrellas,
+        comentario: comentario
+      })
+    });
+
+    if (res.ok) {
+      alert('¡Muchas gracias por calificar a ' + barberia.nombre + '! ⭐');
+      cerrarModalValoracion();
+      // Recargar datos para refrescar promedio y contador
+      const ref = await fetch(`/api/public/barberia/${barberia.slug}`);
+      if (ref.ok) {
+        barberia = await ref.json();
+        renderEncabezado();
+      }
+    } else {
+      alert('No se pudo enviar la calificación.');
+    }
+  } catch (err) {
+    alert('Error al conectar con el servidor.');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i data-lucide="send" class="w-4 h-4"></i> Publicar Calificación';
+    lucide.createIcons();
+  }
 }
 
 window.addEventListener('DOMContentLoaded', initClient);

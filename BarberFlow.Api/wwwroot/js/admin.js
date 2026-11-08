@@ -106,6 +106,7 @@ async function subirFotoBarberia(e) {
 }
 
 let tempMiembroFotoUrl = '';
+let tempEditMiembroFotoUrl = '';
 async function subirFotoMiembro(e) {
   const file = e.target.files[0];
   if (!file) return;
@@ -128,6 +129,32 @@ async function subirFotoMiembro(e) {
       }
     } catch (err) {
       alert('Error al subir foto del barbero.');
+    }
+  };
+  reader.readAsDataURL(file);
+}
+
+async function subirFotoMiembroEdicion(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = async function(evt) {
+    const base64Data = evt.target.result;
+    document.getElementById('edit-preview-foto-miembro').src = base64Data;
+
+    try {
+      const res = await fetch('/api/admin/upload-image', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ imageData: base64Data })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        tempEditMiembroFotoUrl = data.url;
+      }
+    } catch (err) {
+      alert('Error al subir foto.');
     }
   };
   reader.readAsDataURL(file);
@@ -436,9 +463,14 @@ function renderListaMiembros(miembros) {
           <p class="text-xs text-gray-400">${m.rol}</p>
         </div>
       </div>
-      <button onclick="eliminarMiembro(${m.id})" class="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded bg-red-500/10 border border-red-500/20">
-        Eliminar
-      </button>
+      <div class="flex items-center gap-1.5">
+        <button onclick="abrirModalEditarMiembro(${JSON.stringify(m).replace(/"/g, '&quot;')})" class="text-blue-400 hover:text-blue-300 text-xs px-2.5 py-1 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center gap-1">
+          <i data-lucide="edit-2" class="w-3 h-3"></i> Editar
+        </button>
+        <button onclick="eliminarMiembro(${m.id})" class="text-red-400 hover:text-red-300 text-xs px-2.5 py-1 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center gap-1">
+          <i data-lucide="trash-2" class="w-3 h-3"></i> Eliminar
+        </button>
+      </div>
     `;
     container.appendChild(div);
   });
@@ -669,6 +701,46 @@ async function eliminarMiembro(id) {
     cargarPerfil();
   } catch (err) {
     alert('Error eliminando barbero.');
+  }
+}
+
+function abrirModalEditarMiembro(m) {
+  document.getElementById('edit-miembro-id').value = m.id;
+  document.getElementById('edit-miembro-nom').value = m.nombre;
+  document.getElementById('edit-miembro-rol').value = m.rol || '';
+  tempEditMiembroFotoUrl = m.fotoUrl || '';
+  document.getElementById('edit-preview-foto-miembro').src = m.fotoUrl || DEFAULT_AVATAR;
+  document.getElementById('modal-editar-miembro').classList.remove('hidden');
+}
+
+function cerrarModalEditarMiembro() {
+  document.getElementById('modal-editar-miembro').classList.add('hidden');
+}
+
+async function guardarEdicionMiembro(e) {
+  e.preventDefault();
+  const id = document.getElementById('edit-miembro-id').value;
+  const payload = {
+    nombre: document.getElementById('edit-miembro-nom').value.trim(),
+    rol: document.getElementById('edit-miembro-rol').value.trim(),
+    fotoUrl: tempEditMiembroFotoUrl || DEFAULT_AVATAR,
+    activo: true
+  };
+
+  try {
+    const res = await fetch(`/api/admin/miembros/${id}`, {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      cerrarModalEditarMiembro();
+      cargarPerfil();
+    } else {
+      alert('No se pudo guardar la edición del miembro.');
+    }
+  } catch (err) {
+    alert('Error al conectar con el servidor.');
   }
 }
 

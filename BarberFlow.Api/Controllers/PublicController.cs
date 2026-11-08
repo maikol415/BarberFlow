@@ -41,12 +41,15 @@ public class PublicController : ControllerBase
         var totalAgendamientosReales = await _context.Citas
             .CountAsync(c => c.BarberiaId == barberia.Id);
 
-        // Conteo de citas completadas para cálculo de valoración real
-        var totalCompletadas = await _context.Citas
-            .CountAsync(c => c.BarberiaId == barberia.Id && c.Estado == "Completada");
+        // Conteo de valoraciones reales de clientes
+        var valoraciones = await _context.Valoraciones
+            .Where(v => v.BarberiaId == barberia.Id)
+            .ToListAsync();
 
-        // Calificación real dinámica (5.0 si es nuevo o según satisfacción)
-        double calificacion = totalAgendamientosReales > 0 ? 5.0 : 5.0;
+        var totalValoraciones = valoraciones.Count;
+        double calificacion = totalValoraciones > 0 
+            ? Math.Round(valoraciones.Average(v => v.Estrellas), 1) 
+            : 5.0;
 
         return Ok(new
         {
@@ -89,7 +92,7 @@ public class PublicController : ControllerBase
             }),
             CitasOcupadas = citasOcupadas,
             TotalAgendamientos = totalAgendamientosReales,
-            TotalCompletadas = totalCompletadas,
+            TotalValoraciones = totalValoraciones,
             Calificacion = calificacion
         });
     }
@@ -170,4 +173,31 @@ public class PublicController : ControllerBase
             BarberiaNombre = barberia.Nombre
         });
     }
+
+    [HttpPost("valoraciones")]
+    public async Task<IActionResult> EnviarValoracion([FromBody] ValoracionDto dto)
+    {
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
+        if (dto.Estrellas < 1 || dto.Estrellas > 5)
+        {
+            return BadRequest(new { message = "La valoración debe ser de 1 a 5 estrellas." });
+        }
+
+        var val = new Valoracion
+        {
+            BarberiaId = barberia.Id,
+            NombreCliente = string.IsNullOrWhiteSpace(dto.NombreCliente) ? "Cliente" : dto.NombreCliente.Trim(),
+            Estrellas = dto.Estrellas,
+            Comentario = dto.Comentario?.Trim() ?? string.Empty
+        };
+
+        _context.Valoraciones.Add(val);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "¡Gracias por tu valoración!" });
+    }
 }
+
+public record ValoracionDto(string BarberiaSlug, string NombreCliente, int Estrellas, string? Comentario);
