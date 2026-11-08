@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using BarberFlow.Api.Data;
 using BarberFlow.Api.Models;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -85,7 +86,24 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.EnsureCreated();
+    
+    // Si es PostgreSQL (Supabase), crear las tablas si no existen
+    if (db.Database.IsNpgsql())
+    {
+        var creator = db.Database.GetService<Microsoft.EntityFrameworkCore.Storage.IRelationalDatabaseCreator>();
+        try
+        {
+            creator.CreateTables();
+        }
+        catch
+        {
+            // Las tablas ya existían
+        }
+    }
+    else
+    {
+        db.Database.EnsureCreated();
+    }
 
     if (!db.Barberos.Any())
     {
