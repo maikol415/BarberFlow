@@ -4,6 +4,11 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reservar Cita - BarberFlow Pro</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#2563EB">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <!-- CSS local preempaquetado para que nunca falle sin internet/CDN -->
   <link rel="stylesheet" href="/css/tailwind.min.css">
   <script src="/js/tailwind.cdn.js"></script>
@@ -362,5 +367,10 @@
   </footer>
 
   <script src="/js/client.js"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));
+    }
+  </script>
 </body>
 </html>
