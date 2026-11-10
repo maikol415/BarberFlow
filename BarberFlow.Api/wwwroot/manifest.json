@@ -1,8 +1,8 @@
 {
-  "name": "BarberFlow Admin",
+  "name": "BarberFlow Pro",
   "short_name": "BarberFlow",
   "description": "Gestión de citas y reservas para barberos profesionales",
-  "start_url": "/admin.html",
+  "start_url": "/login.html",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0B0F19",
