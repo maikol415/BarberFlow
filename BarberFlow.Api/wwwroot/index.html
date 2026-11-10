@@ -4,25 +4,29 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reservar Cita - BarberFlow Pro</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- CSS local preempaquetado para que nunca falle sin internet/CDN -->
+  <link rel="stylesheet" href="/css/tailwind.min.css">
+  <script src="/js/tailwind.cdn.js"></script>
+  <script src="/js/lucide.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+  <script src="/js/confetti.browser.min.js"></script>
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: {
-              gold: '#3B82F6',
-              goldHover: '#2563EB',
-              dark: '#0B0F19',
-              card: '#111827',
-              border: '#1F2937',
-              accent: '#60A5FA',
-            }
-          },
-          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+    if (window.tailwind) {
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                gold: '#3B82F6',
+                goldHover: '#2563EB',
+                dark: '#0B0F19',
+                card: '#111827',
+                border: '#1F2937',
+                accent: '#60A5FA',
+              }
+            },
+            fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+          }
         }
       }
     }
@@ -39,6 +43,8 @@
       border-radius: 9999px !important;
       object-fit: cover !important;
       display: block !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
     }
     @media (min-width: 640px) {
       #barber-logo {
@@ -55,7 +61,7 @@
     .avatar-zoom { transition: transform 0.25s ease; cursor: pointer; }
     .avatar-zoom:hover { transform: scale(1.06); }
 
-    /* CSS Fallback para asegurar renderizado perfecto en navegadores móviles (Samsung Internet, etc.) */
+    /* CSS Fallback para asegurar renderizado perfecto en cualquier navegador móvil */
     img { max-width: 100%; height: auto; }
     .card-box { background-color: #111827; border: 1px solid #1F2937; border-radius: 1.5rem; }
     .btn-brand { background-color: #2563EB; color: #ffffff; font-weight: bold; }

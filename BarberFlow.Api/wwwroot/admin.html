@@ -4,17 +4,20 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Panel Barbero - BarberFlow Pro</title>
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="stylesheet" href="/css/tailwind.min.css">
+  <script src="/js/tailwind.cdn.js"></script>
+  <script src="/js/lucide.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          colors: {
-            brand: { gold: '#3B82F6', goldHover: '#2563EB', card: '#111827', border: '#1F2937', accent: '#60A5FA' }
-          },
-          fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+    if (window.tailwind) {
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: { gold: '#3B82F6', goldHover: '#2563EB', card: '#111827', border: '#1F2937', accent: '#60A5FA' }
+            },
+            fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
+          }
         }
       }
     }
