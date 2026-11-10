@@ -174,7 +174,13 @@ using (var scope = app.Services.CreateScope())
 
 app.UseCors("AllowAll");
 app.UseDefaultFiles();
-app.UseStaticFiles();
+
+var fileOptions = new StaticFileOptions();
+var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProvider();
+provider.Mappings[".json"] = "application/json";
+provider.Mappings[".webmanifest"] = "application/manifest+json";
+fileOptions.ContentTypeProvider = provider;
+app.UseStaticFiles(fileOptions);
 
 app.UseAuthentication();
 app.UseAuthorization();
