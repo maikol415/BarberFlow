@@ -16,6 +16,30 @@ let reservaActual = {
 
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><circle cx='12' cy='8' r='4'/><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/></svg>";
 
+function obtenerFechaLocalIso(fechaObj = new Date()) {
+  const anio = fechaObj.getFullYear();
+  const mes = String(fechaObj.getMonth() + 1).padStart(2, '0');
+  const dia = String(fechaObj.getDate()).padStart(2, '0');
+  return `${anio}-${mes}-${dia}`;
+}
+
+// Convierte un string de hora (ej: "04:30pm" o "09:00am") a minutos desde medianoche
+function convertirHoraAMinutos(horaStr) {
+  if (!horaStr) return 0;
+  const str = horaStr.toLowerCase().trim();
+  const esPm = str.includes('pm');
+  const esAm = str.includes('am');
+  const clean = str.replace(/[apm\s]/g, '');
+  const [hStr, mStr] = clean.split(':');
+  let hh = parseInt(hStr) || 0;
+  const mm = parseInt(mStr) || 0;
+
+  if (esPm && hh < 12) hh += 12;
+  if (esAm && hh === 12) hh = 0;
+
+  return hh * 60 + mm;
+}
+
 async function initClient() {
   const urlParams = new URLSearchParams(window.location.search);
   const slug = urlParams.get('b') || 'barberia-jr';
@@ -388,14 +412,14 @@ function renderCalendario() {
   const diasSemanaNombres = ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'];
 
   if (modoCalendario === 'dias') {
-    // VISTA POR DÍAS (Estilo tarjetas idéntico a la imagen de referencia enviada por el usuario)
-    container.className = 'grid grid-cols-4 sm:grid-cols-7 gap-2 text-center';
+    // VISTA POR DÍAS (Estilo scroll horizontal o cuadrícula ordenada de 7 columnas)
+    container.className = 'grid grid-cols-7 gap-1.5 sm:gap-2 text-center';
 
     let diasMostrados = 0;
     let diaIndex = 0;
     let primerDiaValido = null;
 
-    // Generar próximos 21 días a partir de hoy o el mes seleccionado
+    // Generar próximos 21 días a partir de hoy local
     const fechaInicio = (mesOffset === 0) ? new Date() : new Date(anio, mes, 1);
 
     while (diasMostrados < 21 && diaIndex < 40) {
@@ -597,30 +621,48 @@ function renderHorariosDisponibles() {
   let horasLibres = [];
 
   const ahora = new Date();
-  const hoyIso = ahora.toISOString().split('T')[0];
+  const hoyIso = obtenerFechaLocalIso(ahora);
   const esHoy = reservaActual.fechaSeleccionada === hoyIso;
   // Margen de reacción para el mismo día: mínimo 2 horas hacia adelante (120 min)
   const ahoraEnMinutos = ahora.getHours() * 60 + ahora.getMinutes() + 120;
 
+  // Duración del servicio seleccionado en minutos (por defecto 40)
+  const servActual = todosLosServicios.find(s => s.id === reservaActual.servicioId);
+  const duracionServicioMin = servActual ? (servActual.duracionMinutos || 40) : 40;
+
   horariosGenerados.forEach(h => {
+    const turnoInicioMin = convertirHoraAMinutos(h);
+    const turnoFinMin = turnoInicioMin + duracionServicioMin;
+
     // Si la reserva es para hoy, no permitir horas antes del margen de 2 horas
-    if (esHoy) {
-      let [timePart, meridiem] = [h.slice(0, -2), h.slice(-2).toLowerCase()];
-      let [hh, mm] = timePart.split(':').map(Number);
-      if (meridiem === 'pm' && hh < 12) hh += 12;
-      if (meridiem === 'am' && hh === 12) hh = 0;
-      const horaMinutos = hh * 60 + mm;
-      if (horaMinutos < ahoraEnMinutos) {
-        return; // Salta esta hora porque está muy encima para hoy
-      }
+    if (esHoy && turnoInicioMin < ahoraEnMinutos) {
+      return;
     }
 
-    const estaBloqueada = bloqueos.some(b => b.fecha === reservaActual.fechaSeleccionada && b.hora && b.hora.toLowerCase() === h.toLowerCase());
-    const estaOcupada = citasOcupadas.some(c => 
-      c.fecha === reservaActual.fechaSeleccionada && 
-      c.hora.toLowerCase() === h.toLowerCase() &&
-      (reservaActual.barberoId == null || c.miembroEquipoId == null || c.miembroEquipoId === reservaActual.barberoId)
-    );
+    // Validación Matemática de Bloqueos (Cero traslapes con descansos)
+    const estaBloqueada = bloqueos.some(b => {
+      if (b.fecha !== reservaActual.fechaSeleccionada) return false;
+      if (!b.hora || b.hora === 'TODO_EL_DIA') return true;
+
+      const bloqueoInicioMin = convertirHoraAMinutos(b.hora);
+      // El bloqueo cubre mínimo 40 minutos o el intervalo configurado
+      const bloqueoFinMin = bloqueoInicioMin + (barberia.intervaloMinutos || 40);
+
+      // Hay traslape si el turno empieza antes de que termine el bloqueo Y termina después de que empieza el bloqueo
+      const hayTraslape = turnoInicioMin < bloqueoFinMin && turnoFinMin > bloqueoInicioMin;
+      return hayTraslape;
+    });
+
+    // Validación de Citas ya ocupadas
+    const estaOcupada = citasOcupadas.some(c => {
+      if (c.fecha !== reservaActual.fechaSeleccionada) return false;
+      const citaInicioMin = convertirHoraAMinutos(c.hora);
+      const citaFinMin = citaInicioMin + (barberia.intervaloMinutos || 40);
+
+      const mismoBarbero = (reservaActual.barberoId == null || c.miembroEquipoId == null || c.miembroEquipoId === reservaActual.barberoId);
+      const hayTraslape = turnoInicioMin < citaFinMin && turnoFinMin > citaInicioMin;
+      return mismoBarbero && hayTraslape;
+    });
 
     if (!estaBloqueada && !estaOcupada) {
       horasLibres.push(h);
