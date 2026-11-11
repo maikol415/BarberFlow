@@ -215,12 +215,7 @@ function filtrarYRenderizarTarjetas() {
     return;
   }
 
-  filtrados.forEach((s, idx) => {
-    // Si no hay seleccionado, pre-seleccionar el primero
-    if (!reservaActual.servicioId && idx === 0) {
-      seleccionarServicio(s);
-    }
-
+  filtrados.forEach((s) => {
     const esSeleccionado = reservaActual.servicioId === s.id;
 
     const card = document.createElement('div');
@@ -601,7 +596,25 @@ function renderHorariosDisponibles() {
 
   let horasLibres = [];
 
+  const ahora = new Date();
+  const hoyIso = ahora.toISOString().split('T')[0];
+  const esHoy = reservaActual.fechaSeleccionada === hoyIso;
+  // Margen de reacción para el mismo día: mínimo 2 horas hacia adelante (120 min)
+  const ahoraEnMinutos = ahora.getHours() * 60 + ahora.getMinutes() + 120;
+
   horariosGenerados.forEach(h => {
+    // Si la reserva es para hoy, no permitir horas antes del margen de 2 horas
+    if (esHoy) {
+      let [timePart, meridiem] = [h.slice(0, -2), h.slice(-2).toLowerCase()];
+      let [hh, mm] = timePart.split(':').map(Number);
+      if (meridiem === 'pm' && hh < 12) hh += 12;
+      if (meridiem === 'am' && hh === 12) hh = 0;
+      const horaMinutos = hh * 60 + mm;
+      if (horaMinutos < ahoraEnMinutos) {
+        return; // Salta esta hora porque está muy encima para hoy
+      }
+    }
+
     const estaBloqueada = bloqueos.some(b => b.fecha === reservaActual.fechaSeleccionada && b.hora && b.hora.toLowerCase() === h.toLowerCase());
     const estaOcupada = citasOcupadas.some(c => 
       c.fecha === reservaActual.fechaSeleccionada && 
@@ -682,15 +695,23 @@ function actualizarResumenHorario() {
 async function confirmarReservaFinal(e) {
   e.preventDefault();
   const nombre = document.getElementById('cliente-nombre').value.trim();
-  const telefono = document.getElementById('cliente-telefono').value.trim();
+  const rawTelefono = document.getElementById('cliente-telefono').value.trim();
+  const pais = document.getElementById('cliente-pais') ? document.getElementById('cliente-pais').value : '+57';
+  const telefonoLimpio = rawTelefono.replace(/[^0-9]/g, '');
+  const telefonoCompleto = `${pais}${telefonoLimpio}`;
 
-  if (!nombre || !telefono) {
+  if (!nombre || !rawTelefono) {
     alert('Por favor completa tu nombre y teléfono.');
     return;
   }
 
-  if (!reservaActual.servicioId || !reservaActual.fechaSeleccionada || !reservaActual.horaSeleccionada) {
-    alert('Por favor selecciona servicio, fecha y hora.');
+  if (!reservaActual.servicioId) {
+    alert('⚠️ Por favor elige primero el servicio que deseas reservar arriba.');
+    return;
+  }
+
+  if (!reservaActual.fechaSeleccionada || !reservaActual.horaSeleccionada) {
+    alert('Por favor selecciona una fecha y horario disponible.');
     return;
   }
 
@@ -699,7 +720,7 @@ async function confirmarReservaFinal(e) {
     servicioId: reservaActual.servicioId,
     miembroEquipoId: reservaActual.barberoId,
     nombreCliente: nombre,
-    telefonoCliente: telefono,
+    telefonoCliente: telefonoCompleto,
     fecha: reservaActual.fechaSeleccionada,
     hora: reservaActual.horaSeleccionada
   };
