@@ -281,6 +281,21 @@
       </form>
     </div>
 
+    <!-- SECCIÓN DE OPINIONES Y VALORACIONES DE CLIENTES -->
+    <div id="seccion-opiniones" class="mt-8 bg-gray-900/60 rounded-3xl p-6 sm:p-7 border border-gray-800 shadow-xl hidden">
+      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
+        <h3 class="font-bold text-white text-base sm:text-lg flex items-center gap-2">
+          <span class="text-amber-400">⭐</span> Opiniones de Clientes
+        </h3>
+        <button type="button" onclick="abrirModalValoracion()" class="text-xs px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 font-bold transition flex items-center gap-1.5">
+          <i data-lucide="star" class="w-3.5 h-3.5"></i> Dejar mi opinión
+        </button>
+      </div>
+      <div id="lista-opiniones-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <!-- Tarjetas dinámicas de opiniones -->
+      </div>
+    </div>
+
   </main>
 
   <!-- MODAL VALORACIÓN DE CLIENTES -->

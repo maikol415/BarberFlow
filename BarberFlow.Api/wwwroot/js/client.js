@@ -57,6 +57,7 @@ async function initClient() {
     renderCategoriasYServicios();
     configurarSelectorBarbero();
     renderCalendario();
+    renderOpiniones();
     lucide.createIcons();
   } catch (err) {
     console.error('Error cargando datos de la barbería:', err);
@@ -791,14 +792,23 @@ async function confirmarReservaFinal(e) {
     document.getElementById('modal-servicio').innerText = data.servicioNombre;
     document.getElementById('modal-horario').innerText = `${data.fecha} - ${data.hora}`;
 
+    // Obtener nombre del barbero asignado
+    const barberoElegido = barberia.miembros ? barberia.miembros.find(m => m.id === reservaActual.barberoId) : null;
+    const barberoNombre = barberoElegido ? barberoElegido.nombre : 'Master Barber';
+
     const msgWhatsApp = encodeURIComponent(
-      `¡Hola ${data.barberiaNombre}! 👋 Acabo de agendar una cita:\n\n` +
-      `👤 Cliente: ${nombre}\n` +
-      `✂️ Servicio: ${data.servicioNombre}\n` +
-      `📅 Fecha: ${data.fecha}\n` +
-      `⏰ Hora: ${data.hora}\n` +
-      `🔖 Código: ${data.codigoReserva}\n\n` +
-      `¡Quedo atento a su confirmación!`
+      `💈 *${data.barberiaNombre.toUpperCase()}* 💈\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Hola! 👋 Acabo de agendar una cita:\n\n` +
+      `👤 *Cliente:* ${nombre}\n` +
+      `✂️ *Servicio:* ${data.servicioNombre}\n` +
+      `💈 *Profesional:* ${barberoNombre}\n` +
+      `📅 *Fecha:* ${data.fecha}\n` +
+      `🕒 *Hora:* ${data.hora}\n` +
+      `🔖 *Código:* #${data.codigoReserva}\n\n` +
+      `📍 *Ubicación:* ${barberia.direccion || 'En la barbería'}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Quedo atento a su confirmación! ✂️🔥`
     );
 
     const cleanPhone = (data.barberiaWhatsApp || '').replace(/[^0-9]/g, '');
@@ -824,6 +834,40 @@ let estrellasSeleccionadas = 5;
 function abrirModalValoracion() {
   document.getElementById('modal-valoracion').classList.remove('hidden');
   seleccionarEstrella(5);
+}
+
+function renderOpiniones() {
+  const container = document.getElementById('lista-opiniones-cards');
+  const sec = document.getElementById('seccion-opiniones');
+  if (!container || !sec) return;
+
+  const opiniones = barberia.ultimasValoraciones || [];
+  if (opiniones.length === 0) {
+    sec.classList.add('hidden');
+    return;
+  }
+
+  sec.classList.remove('hidden');
+  container.innerHTML = '';
+
+  opiniones.forEach(op => {
+    const card = document.createElement('div');
+    card.className = 'p-3.5 rounded-2xl bg-gray-950/80 border border-gray-800 text-xs flex flex-col justify-between';
+    
+    let estrellasStr = '★'.repeat(op.estrellas || 5);
+
+    card.innerHTML = `
+      <div>
+        <div class="flex items-center justify-between mb-1">
+          <span class="font-bold text-white">${op.nombreCliente || 'Cliente'}</span>
+          <span class="text-amber-400 font-extrabold tracking-wider">${estrellasStr}</span>
+        </div>
+        <p class="text-gray-300 italic my-1">${op.comentario ? `"${op.comentario}"` : 'Excelente servicio y atención recomendada.'}</p>
+      </div>
+      <span class="text-[10px] text-gray-500 mt-2 block">${op.fecha || 'Reciente'}</span>
+    `;
+    container.appendChild(card);
+  });
 }
 
 function cerrarModalValoracion() {

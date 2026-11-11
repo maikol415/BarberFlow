@@ -745,6 +745,38 @@ async function guardarEdicionMiembro(e) {
   }
 }
 
+async function bloquearPausaRapida(tipo) {
+  const ahora = new Date();
+  const anio = ahora.getFullYear();
+  const mes = String(ahora.getMonth() + 1).padStart(2, '0');
+  const dia = String(ahora.getDate()).padStart(2, '0');
+  const hoyIso = `${anio}-${mes}-${dia}`;
+
+  let horas = [];
+  let motivo = '';
+
+  if (tipo === 'almuerzo') {
+    horas = ['12:30pm', '01:00pm', '01:30pm'];
+    motivo = '🍱 Almuerzo';
+  } else if (tipo === 'tarde') {
+    horas = ['04:30pm', '05:00pm', '05:30pm'];
+    motivo = '☕ Pausa de la Tarde';
+  }
+
+  for (const h of horas) {
+    try {
+      await fetch('/api/admin/bloqueos', {
+        method: 'POST',
+        headers: getAuthHeaders(),
+        body: JSON.stringify({ fecha: hoyIso, hora: h, motivo: motivo })
+      });
+    } catch (err) {}
+  }
+
+  alert(`¡${motivo} bloqueado para hoy con éxito!`);
+  cargarPerfil();
+}
+
 async function agregarBloqueo(e) {
   e.preventDefault();
   const payload = {

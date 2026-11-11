@@ -44,17 +44,27 @@ public class PublicController : ControllerBase
         // Conteo de valoraciones reales de clientes
         int totalValoraciones = 0;
         double calificacion = 5.0;
+        object ultimasValoraciones = new List<object>();
 
         try
         {
             var valoraciones = await _context.Valoraciones
                 .Where(v => v.BarberiaId == barberia.Id)
+                .OrderByDescending(v => v.FechaUtc)
                 .ToListAsync();
 
             totalValoraciones = valoraciones.Count;
             calificacion = totalValoraciones > 0 
                 ? Math.Round(valoraciones.Average(v => v.Estrellas), 1) 
                 : 5.0;
+
+            ultimasValoraciones = valoraciones.Take(4).Select(v => new
+            {
+                v.NombreCliente,
+                v.Estrellas,
+                v.Comentario,
+                Fecha = v.FechaUtc.ToString("dd MMM yyyy")
+            }).ToList();
         }
         catch (Exception ex)
         {
@@ -103,7 +113,8 @@ public class PublicController : ControllerBase
             CitasOcupadas = citasOcupadas,
             TotalAgendamientos = totalAgendamientosReales,
             TotalValoraciones = totalValoraciones,
-            Calificacion = calificacion
+            Calificacion = calificacion,
+            UltimasValoraciones = ultimasValoraciones
         });
     }
 
