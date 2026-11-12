@@ -41,7 +41,38 @@ public class AdminController : ControllerBase
 
         if (barberia == null) return NotFound();
 
-        return Ok(barberia);
+        List<BotReglaRespuesta> reglas = new();
+        try
+        {
+            reglas = await _context.BotReglas.Where(r => r.BarberiaId == barberiaId).ToListAsync();
+        }
+        catch {}
+
+        return Ok(new
+        {
+            barberia.Id,
+            barberia.Nombre,
+            barberia.Slug,
+            barberia.Descripcion,
+            barberia.Direccion,
+            barberia.TelefonoWhatsApp,
+            barberia.LogoUrl,
+            barberia.HorarioTexto,
+            barberia.HoraApertura,
+            barberia.HoraCierre,
+            barberia.IntervaloMinutos,
+            barberia.DiasLaborales,
+            barberia.MostrarSelectorBarbero,
+            barberia.BotActivo,
+            barberia.MensajeBienvenidaBot,
+            barberia.MensajeDerivacionHumana,
+            barberia.PlantillaConfirmacion,
+            barberia.PlantillaRecordatorio,
+            Servicios = barberia.Servicios,
+            Miembros = barberia.Miembros,
+            Bloqueos = barberia.Bloqueos,
+            BotReglas = reglas
+        });
     }
 
     [HttpPut("perfil")]
@@ -66,6 +97,12 @@ public class AdminController : ControllerBase
         if (dto.IntervaloMinutos >= 15) barberia.IntervaloMinutos = dto.IntervaloMinutos;
         if (!string.IsNullOrWhiteSpace(dto.DiasLaborales)) barberia.DiasLaborales = dto.DiasLaborales;
         barberia.MostrarSelectorBarbero = dto.MostrarSelectorBarbero;
+
+        if (dto.BotActivo.HasValue) barberia.BotActivo = dto.BotActivo.Value;
+        if (dto.MensajeBienvenidaBot != null) barberia.MensajeBienvenidaBot = dto.MensajeBienvenidaBot.Trim();
+        if (dto.MensajeDerivacionHumana != null) barberia.MensajeDerivacionHumana = dto.MensajeDerivacionHumana.Trim();
+        if (dto.PlantillaConfirmacion != null) barberia.PlantillaConfirmacion = dto.PlantillaConfirmacion.Trim();
+        if (dto.PlantillaRecordatorio != null) barberia.PlantillaRecordatorio = dto.PlantillaRecordatorio.Trim();
 
         await _context.SaveChangesAsync();
         return Ok(new { message = "Configuración actualizada con éxito.", barberia });
@@ -395,5 +432,51 @@ public class AdminController : ControllerBase
         _context.Bloqueos.Remove(bloqueo);
         await _context.SaveChangesAsync();
         return Ok(new { message = "Bloqueo eliminado y horario habilitado." });
+    }
+
+    // GESTIÓN DE REGLAS DE BOT DE WHATSAPP
+    [HttpGet("bot/reglas")]
+    public async Task<IActionResult> ObtenerReglasBot()
+    {
+        var barberiaId = ObtenerBarberiaId();
+        var reglas = await _context.BotReglas
+            .Where(r => r.BarberiaId == barberiaId)
+            .OrderBy(r => r.Id)
+            .ToListAsync();
+        return Ok(reglas);
+    }
+
+    [HttpPost("bot/reglas")]
+    public async Task<IActionResult> CrearReglaBot([FromBody] CrearBotReglaDto dto)
+    {
+        var barberiaId = ObtenerBarberiaId();
+        if (string.IsNullOrWhiteSpace(dto.PalabrasClave) || string.IsNullOrWhiteSpace(dto.Respuesta))
+        {
+            return BadRequest(new { message = "Las palabras clave y la respuesta son obligatorias." });
+        }
+
+        var regla = new BotReglaRespuesta
+        {
+            BarberiaId = barberiaId,
+            PalabrasClave = dto.PalabrasClave.Trim().ToLower(),
+            Respuesta = dto.Respuesta.Trim(),
+            Activo = true
+        };
+
+        _context.BotReglas.Add(regla);
+        await _context.SaveChangesAsync();
+        return Ok(regla);
+    }
+
+    [HttpDelete("bot/reglas/{id}")]
+    public async Task<IActionResult> EliminarReglaBot(int id)
+    {
+        var barberiaId = ObtenerBarberiaId();
+        var regla = await _context.BotReglas.FirstOrDefaultAsync(r => r.Id == id && r.BarberiaId == barberiaId);
+        if (regla == null) return NotFound();
+
+        _context.BotReglas.Remove(regla);
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Regla de bot eliminada." });
     }
 }
