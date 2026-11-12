@@ -70,6 +70,24 @@ async function cargarPerfil() {
     renderListaServicios(barberiaActual.servicios || []);
     renderListaMiembros(barberiaActual.miembros || []);
     renderListaBloqueos(barberiaActual.bloqueos || []);
+
+    // Cargar datos de Bot de WhatsApp
+    const chkBot = document.getElementById('conf-bot-activo');
+    if (chkBot) chkBot.checked = barberiaActual.botActivo !== false;
+
+    const txtBienvenida = document.getElementById('conf-bot-bienvenida');
+    if (txtBienvenida) txtBienvenida.value = barberiaActual.mensajeBienvenidaBot || '¡Hola! 💈 Bienvenido a {barberia}. ¿En qué podemos ayudarte hoy?\n\n1️⃣ Agendar una cita\n2️⃣ Ver precios y servicios\n3️⃣ Horarios y ubicación';
+
+    const txtDerivacion = document.getElementById('conf-bot-derivacion');
+    if (txtDerivacion) txtDerivacion.value = barberiaActual.mensajeDerivacionHumana || 'He recibido tu mensaje. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno, te responderá personalmente por este chat. ¡Muchas gracias por tu paciencia!';
+
+    const txtConfirmacion = document.getElementById('conf-bot-confirmacion');
+    if (txtConfirmacion) txtConfirmacion.value = barberiaActual.plantillaConfirmacion || '💈 ¡Hola {cliente}! Tu reserva en {barberia} está *CONFIRMADA* 🎉\n\n✂️ *Servicio:* {servicio}\n💈 *Barbero:* {barbero}\n📅 *Fecha:* {fecha}\n⏰ *Hora:* {hora}\n📍 *Dirección:* {direccion}\n\n¡Te esperamos con la silla lista! ✂️🚀';
+
+    const txtRecordatorio = document.getElementById('conf-bot-recordatorio');
+    if (txtRecordatorio) txtRecordatorio.value = barberiaActual.plantillaRecordatorio || '⏰ ¡Hola {cliente}! Te recordamos tu cita programada en {barberia}:\n\n✂️ *Servicio:* {servicio}\n📅 *Fecha:* {fecha}\n⏰ *Hora:* {hora}\n📍 *Dirección:* {direccion}\n\nPor favor procura llegar 5 minutos antes. ¡Nos vemos pronto! 💈✂️';
+
+    renderListaReglasBot(barberiaActual.botReglas || []);
   } catch (err) {
     console.error('Error cargando perfil:', err);
   }
@@ -1011,10 +1029,14 @@ function mostrarSeccion(sec) {
   document.getElementById('sec-citas').classList.add('hidden');
   document.getElementById('sec-perfil').classList.add('hidden');
   document.getElementById('sec-horarios').classList.add('hidden');
+  const secBot = document.getElementById('sec-bot');
+  if (secBot) secBot.classList.add('hidden');
 
   document.getElementById('tab-btn-citas').className = 'px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition';
   document.getElementById('tab-btn-perfil').className = 'px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition';
   document.getElementById('tab-btn-horarios').className = 'px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition';
+  const tabBot = document.getElementById('tab-btn-bot');
+  if (tabBot) tabBot.className = 'px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition flex items-center gap-1.5';
 
   if (sec === 'citas') {
     document.getElementById('sec-citas').classList.remove('hidden');
@@ -1025,7 +1047,124 @@ function mostrarSeccion(sec) {
   } else if (sec === 'horarios') {
     document.getElementById('sec-horarios').classList.remove('hidden');
     document.getElementById('tab-btn-horarios').className = 'px-4 py-2 rounded-xl font-bold bg-blue-600 text-white whitespace-nowrap transition';
+  } else if (sec === 'bot') {
+    if (secBot) secBot.classList.remove('hidden');
+    if (tabBot) tabBot.className = 'px-4 py-2 rounded-xl font-bold bg-blue-600 text-white whitespace-nowrap transition flex items-center gap-1.5';
   }
+}
+
+// FUNCIONES DEL BOT DE WHATSAPP
+async function guardarConfiguracionBot() {
+  const payload = {
+    nombre: barberiaActual.nombre,
+    descripcion: barberiaActual.descripcion,
+    direccion: barberiaActual.direccion,
+    telefonoWhatsApp: barberiaActual.telefonoWhatsApp,
+    horarioTexto: barberiaActual.horarioTexto,
+    logoUrl: barberiaActual.logoUrl,
+    horaApertura: barberiaActual.horaApertura,
+    horaCierre: barberiaActual.horaCierre,
+    intervaloMinutos: barberiaActual.intervaloMinutos,
+    diasLaborales: barberiaActual.diasLaborales,
+    mostrarSelectorBarbero: barberiaActual.mostrarSelectorBarbero,
+    botActivo: document.getElementById('conf-bot-activo').checked,
+    mensajeBienvenidaBot: document.getElementById('conf-bot-bienvenida').value,
+    mensajeDerivacionHumana: document.getElementById('conf-bot-derivacion').value,
+    plantillaConfirmacion: document.getElementById('conf-bot-confirmacion').value,
+    plantillaRecordatorio: document.getElementById('conf-bot-recordatorio').value
+  };
+
+  try {
+    const res = await fetch('/api/admin/perfil', {
+      method: 'PUT',
+      headers: getAuthHeaders(),
+      body: JSON.stringify(payload)
+    });
+    if (res.ok) {
+      alert('¡Configuración y plantillas del Bot guardadas con éxito!');
+      cargarPerfil();
+    } else {
+      alert('Error guardando configuración del bot.');
+    }
+  } catch (err) {
+    alert('Error al conectar con el servidor.');
+  }
+}
+
+function renderListaReglasBot(reglas) {
+  const container = document.getElementById('lista-reglas-bot');
+  if (!container) return;
+  container.innerHTML = '';
+
+  if (!reglas || reglas.length === 0) {
+    container.innerHTML = `<p class="text-xs text-gray-500 italic py-2">No has agregado respuestas personalizadas aún. ¡Crea la primera arriba para parqueadero, pagos, etc.!</p>`;
+    return;
+  }
+
+  reglas.forEach(r => {
+    const div = document.createElement('div');
+    div.className = 'p-3 bg-gray-950 border border-gray-800 rounded-xl flex items-start justify-between gap-3';
+    div.innerHTML = `
+      <div class="flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
+            Palabras: ${r.palabrasClave}
+          </span>
+        </div>
+        <p class="text-xs text-gray-200 mt-1 leading-relaxed">
+          <strong class="text-emerald-400">Respuesta:</strong> ${r.respuesta}
+        </p>
+      </div>
+      <button onclick="eliminarReglaBot(${r.id})" class="text-xs px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 flex items-center gap-1 transition">
+        <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+      </button>
+    `;
+    container.appendChild(div);
+  });
+  lucide.createIcons();
+}
+
+async function crearReglaBot(e) {
+  e.preventDefault();
+  const claves = document.getElementById('regla-claves').value.trim();
+  const respuesta = document.getElementById('regla-respuesta').value.trim();
+
+  if (!claves || !respuesta) {
+    alert('Por favor completa las palabras clave y la respuesta.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/admin/bot/reglas', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ palabrasClave: claves, respuesta: respuesta })
+    });
+
+    if (res.ok) {
+      document.getElementById('regla-claves').value = '';
+      document.getElementById('regla-respuesta').value = '';
+      cargarPerfil();
+    } else {
+      alert('Error creando regla.');
+    }
+  } catch (err) {
+    alert('Error al conectar con el servidor.');
+  }
+}
+
+async function eliminarReglaBot(id) {
+  if (!confirm('¿Deseas eliminar esta regla de respuesta?')) return;
+  try {
+    const res = await fetch(`/api/admin/bot/reglas/${id}`, {
+      method: 'DELETE',
+      headers: getAuthHeaders()
+    });
+    if (res.ok) cargarPerfil();
+  } catch (err) {
+    alert('Error eliminando regla.');
+  }
+}
 }
 
 async function eliminarBarberiaCompleta() {

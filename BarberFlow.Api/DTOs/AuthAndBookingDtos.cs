@@ -34,7 +34,24 @@ public record UpdateBarberiaDto(
     string HoraCierre,
     int IntervaloMinutos,
     string DiasLaborales,
-    bool MostrarSelectorBarbero
+    bool MostrarSelectorBarbero,
+    bool? BotActivo = true,
+    string? MensajeBienvenidaBot = null,
+    string? MensajeDerivacionHumana = null,
+    string? PlantillaConfirmacion = null,
+    string? PlantillaRecordatorio = null
+);
+
+public record BotReglaDto(
+    int Id,
+    string PalabrasClave,
+    string Respuesta,
+    bool Activo
+);
+
+public record CrearBotReglaDto(
+    string PalabrasClave,
+    string Respuesta
 );
 
 public record ServicioDto(

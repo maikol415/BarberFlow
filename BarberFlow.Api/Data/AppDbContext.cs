@@ -16,6 +16,7 @@ public class AppDbContext : DbContext
     public DbSet<Cita> Citas => Set<Cita>();
     public DbSet<HorarioBloqueo> Bloqueos => Set<HorarioBloqueo>();
     public DbSet<Valoracion> Valoraciones => Set<Valoracion>();
+    public DbSet<BotReglaRespuesta> BotReglas => Set<BotReglaRespuesta>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {

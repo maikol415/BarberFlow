@@ -40,6 +40,23 @@ public class Barberia
     public List<Cita> Citas { get; set; } = new();
     public List<HorarioBloqueo> Bloqueos { get; set; } = new();
     public List<Valoracion> Valoraciones { get; set; } = new();
+    public List<BotReglaRespuesta> BotReglas { get; set; } = new();
+
+    // Configuración y plantillas del Bot
+    public bool BotActivo { get; set; } = true;
+    public string MensajeBienvenidaBot { get; set; } = "¡Hola! 💈 Bienvenido a {barberia}. ¿En qué podemos ayudarte hoy?\n\n1️⃣ Agendar una cita\n2️⃣ Ver precios y servicios\n3️⃣ Horarios y ubicación";
+    public string MensajeDerivacionHumana { get; set; } = "He recibido tu mensaje. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno, te responderá personalmente por este chat. ¡Muchas gracias por tu paciencia!";
+    public string PlantillaConfirmacion { get; set; } = "";
+    public string PlantillaRecordatorio { get; set; } = "";
+}
+
+public class BotReglaRespuesta
+{
+    public int Id { get; set; }
+    public int BarberiaId { get; set; }
+    public string PalabrasClave { get; set; } = string.Empty; // Ej: "ubicacion,direccion,donde quedan"
+    public string Respuesta { get; set; } = string.Empty;     // Texto que responderá el bot
+    public bool Activo { get; set; } = true;
 }
 
 public class Valoracion
