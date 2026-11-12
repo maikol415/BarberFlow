@@ -37,43 +37,12 @@ public class AdminController : ControllerBase
             .Include(b => b.Servicios)
             .Include(b => b.Miembros)
             .Include(b => b.Bloqueos)
+            .Include(b => b.BotReglas)
             .FirstOrDefaultAsync(b => b.Id == barberiaId);
 
         if (barberia == null) return NotFound();
 
-        // Cargar reglas de bot de manera segura si la tabla existe
-        List<BotReglaRespuesta> reglas = new();
-        try
-        {
-            reglas = await _context.BotReglas.Where(r => r.BarberiaId == barberiaId).ToListAsync();
-        }
-        catch {}
-
-        return Ok(new
-        {
-            barberia.Id,
-            barberia.Nombre,
-            barberia.Slug,
-            barberia.Descripcion,
-            barberia.Direccion,
-            barberia.TelefonoWhatsApp,
-            barberia.LogoUrl,
-            barberia.HorarioTexto,
-            barberia.HoraApertura,
-            barberia.HoraCierre,
-            barberia.IntervaloMinutos,
-            barberia.DiasLaborales,
-            barberia.MostrarSelectorBarbero,
-            barberia.BotActivo,
-            barberia.MensajeBienvenidaBot,
-            barberia.MensajeDerivacionHumana,
-            barberia.PlantillaConfirmacion,
-            barberia.PlantillaRecordatorio,
-            Servicios = barberia.Servicios,
-            Miembros = barberia.Miembros,
-            Bloqueos = barberia.Bloqueos,
-            BotReglas = reglas
-        });
+        return Ok(barberia);
     }
 
     [HttpPut("perfil")]
