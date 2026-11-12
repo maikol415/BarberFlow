@@ -88,10 +88,41 @@ async function cargarPerfil() {
     if (txtDerivacion) txtDerivacion.value = barberiaActual.mensajeDerivacionHumana || 'He recibido tu mensaje. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno, te responderá personalmente por este chat. ¡Muchas gracias por tu paciencia!';
 
     const txtConfirmacion = document.getElementById('conf-bot-confirmacion');
-    if (txtConfirmacion) txtConfirmacion.value = barberiaActual.plantillaConfirmacion || '💈 ¡Hola {cliente}! Tu reserva en {barberia} está *CONFIRMADA* 🎉\n\n✂️ *Servicio:* {servicio}\n💈 *Barbero:* {barbero}\n📅 *Fecha:* {fecha}\n⏰ *Hora:* {hora}\n📍 *Dirección:* {direccion}\n\n¡Te esperamos con la silla lista! ✂️🚀';
+    if (txtConfirmacion) txtConfirmacion.value = barberiaActual.plantillaConfirmacion || 
+      `💈 *{barberia}* 💈\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Hola {cliente}! 👋\n` +
+      `Tu cita ha sido *CONFIRMADA* con éxito 🎉\n\n` +
+      `📋 *Detalles de tu turno:*\n` +
+      `✂️ *Servicio:* {servicio}\n` +
+      `💈 *Profesional:* {barbero}\n` +
+      `📅 *Fecha:* {fecha}\n` +
+      `⏰ *Hora:* {hora}\n` +
+      `🔖 *Código:* {codigo}\n` +
+      `📍 *Ubicación:* {direccion}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¿Necesitas gestionar tu turno?\n` +
+      `• Responde *SI* para reconfirmar asistencia ✅\n` +
+      `• Responde *CANCELAR* si se te presentó un imprevisto ❌\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Te esperamos con la mejor energía! ✂️🔥`;
 
     const txtRecordatorio = document.getElementById('conf-bot-recordatorio');
-    if (txtRecordatorio) txtRecordatorio.value = barberiaActual.plantillaRecordatorio || '⏰ ¡Hola {cliente}! Te recordamos tu cita programada en {barberia}:\n\n✂️ *Servicio:* {servicio}\n📅 *Fecha:* {fecha}\n⏰ *Hora:* {hora}\n📍 *Dirección:* {direccion}\n\nPor favor procura llegar 5 minutos antes. ¡Nos vemos pronto! 💈✂️';
+    if (txtRecordatorio) txtRecordatorio.value = barberiaActual.plantillaRecordatorio || 
+      `💈 *{barberia}* 💈\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Hola {cliente}! ⏳\n` +
+      `Te recordamos que tienes una cita programada:\n\n` +
+      `✂️ *Servicio:* {servicio}\n` +
+      `💈 *Profesional:* {barbero}\n` +
+      `📅 *Fecha:* {fecha}\n` +
+      `⏰ *Hora:* {hora}\n` +
+      `📍 *Dirección:* {direccion}\n\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `Por favor procura llegar 5 minutos antes ⏰\n` +
+      `¿Confirmas tu asistencia para tener tu silla lista? Responde *CONFIRMO* ✅\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Nos vemos pronto! 💈✂️`;
 
     renderListaReglasBot(barberiaActual.botReglas || []);
   } catch (err) {
