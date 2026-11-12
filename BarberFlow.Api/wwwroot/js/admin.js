@@ -907,7 +907,8 @@ async function guardarCitaManual(e) {
   const nombre = document.getElementById('manual-cliente-nom').value.trim();
   const rawTel = document.getElementById('manual-cliente-tel').value.trim();
   const telefonoLimpio = rawTel.replace(/[^0-9]/g, '');
-  const telefonoCompleto = `+57${telefonoLimpio}`;
+  const pais = document.getElementById('manual-cliente-pais') ? document.getElementById('manual-cliente-pais').value : '+57';
+  const telefonoCompleto = `${pais}${telefonoLimpio}`;
 
   const servicioId = parseInt(document.getElementById('manual-servicio').value);
   const miembroId = parseInt(document.getElementById('manual-barbero').value);
@@ -970,7 +971,8 @@ async function guardarCitaManual(e) {
         `¡Te esperamos puntual! ✂️🔥`
       );
 
-      window.open(`https://wa.me/57${telefonoLimpio}?text=${msgConfirm}`, '_blank');
+      const cleanPais = pais.replace('+', '');
+      window.open(`https://wa.me/${cleanPais}${telefonoLimpio}?text=${msgConfirm}`, '_blank');
     } else {
       alert(data.message || 'No se pudo agendar la cita.');
     }

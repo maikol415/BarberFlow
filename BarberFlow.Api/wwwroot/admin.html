@@ -565,9 +565,20 @@
         </div>
 
         <div>
-          <label class="block text-xs text-gray-400 mb-1">WhatsApp del Cliente (10 dígitos) *</label>
+          <label class="block text-xs text-gray-400 mb-1">WhatsApp del Cliente *</label>
           <div class="flex items-center gap-1.5">
-            <span class="bg-gray-800 px-2.5 py-2 rounded-lg text-xs text-gray-300 font-bold border border-gray-700">🇨🇴 +57</span>
+            <select id="manual-cliente-pais" class="bg-gray-800 border border-gray-700 rounded-lg px-2 py-2 text-xs text-gray-200 focus:outline-none focus:border-blue-500 cursor-pointer flex-shrink-0">
+              <option value="+57" selected>🇨🇴 +57</option>
+              <option value="+1">🇺🇸 +1</option>
+              <option value="+34">🇪🇸 +34</option>
+              <option value="+52">🇲🇽 +52</option>
+              <option value="+54">🇦🇷 +54</option>
+              <option value="+56">🇨🇱 +56</option>
+              <option value="+51">🇵🇪 +51</option>
+              <option value="+58">🇻🇪 +58</option>
+              <option value="+593">🇪🇨 +593</option>
+              <option value="+507">🇵🇦 +507</option>
+            </select>
             <input type="tel" id="manual-cliente-tel" required placeholder="Ej: 300 123 4567" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
           </div>
         </div>
