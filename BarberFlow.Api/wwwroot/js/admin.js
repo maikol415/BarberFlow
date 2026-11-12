@@ -35,6 +35,12 @@ async function cargarPerfil() {
       cerrarSesion();
       return;
     }
+    if (!res.ok) {
+      const errData = await res.json().catch(() => ({}));
+      console.error('Error del servidor cargando perfil:', errData);
+      document.getElementById('admin-barberia-nombre').innerText = 'Error al cargar perfil';
+      return;
+    }
     barberiaActual = await res.json();
 
     document.getElementById('admin-barberia-nombre').innerText = barberiaActual.nombre;
