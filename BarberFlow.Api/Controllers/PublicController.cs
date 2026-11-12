@@ -86,6 +86,9 @@ public class PublicController : ControllerBase
             barberia.IntervaloMinutos,
             barberia.DiasLaborales,
             barberia.MostrarSelectorBarbero,
+            barberia.BotActivo,
+            barberia.MensajeBienvenidaBot,
+            barberia.MensajeDerivacionHumana,
             Servicios = barberia.Servicios.Select(s => new
             {
                 s.Id,
