@@ -203,21 +203,9 @@ app.UseAuthorization();
 // Endpoint de salud ligero para mantener despierto Render 24/7 sin tocar la base de datos
 app.MapGet("/ping", () => Results.Ok(new { status = "active", time = DateTime.UtcNow }));
 
-app.MapGet("/diag-db", async (AppDbContext db) =>
-{
-    try
-    {
-        var canConnect = await db.Database.CanConnectAsync();
-        var barberosCount = await db.Barberos.CountAsync();
-        var barberiasCount = await db.Barberias.CountAsync();
-        var primerSlug = await db.Barberias.Select(b => b.Slug).FirstOrDefaultAsync();
-        return Results.Ok(new { canConnect, barberosCount, barberiasCount, primerSlug });
-    }
-    catch (Exception ex)
-    {
-        return Results.Json(new { error = ex.Message, detail = ex.ToString() }, statusCode: 500);
-    }
-});
+app.MapControllers();
+
+app.Run();
 
 app.MapControllers();
 
