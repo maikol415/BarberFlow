@@ -20,102 +20,108 @@ public class PublicController : ControllerBase
     [HttpGet("barberia/{slug}")]
     public async Task<IActionResult> ObtenerBarberia(string slug)
     {
-        var barberia = await _context.Barberias
-            .Include(b => b.Servicios.Where(s => s.Activo))
-            .Include(b => b.Miembros.Where(m => m.Activo))
-            .Include(b => b.Bloqueos)
-            .FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
-
-        if (barberia == null)
-        {
-            return NotFound(new { message = "Barbería no encontrada." });
-        }
-
-        // Citas reservadas actualmente para no permitir sobreposiciones
-        var citasOcupadas = await _context.Citas
-            .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
-            .Select(c => new { c.Fecha, c.Hora, c.MiembroEquipoId })
-            .ToListAsync();
-
-        // Conteo real de agendamientos históricos en el sistema
-        var totalAgendamientosReales = await _context.Citas
-            .CountAsync(c => c.BarberiaId == barberia.Id);
-
-        // Conteo de valoraciones reales de clientes
-        int totalValoraciones = 0;
-        double calificacion = 5.0;
-        object ultimasValoraciones = new List<object>();
-
         try
         {
-            var valoraciones = await _context.Valoraciones
-                .Where(v => v.BarberiaId == barberia.Id)
-                .OrderByDescending(v => v.FechaUtc)
+            var barberia = await _context.Barberias
+                .Include(b => b.Servicios.Where(s => s.Activo))
+                .Include(b => b.Miembros.Where(m => m.Activo))
+                .Include(b => b.Bloqueos)
+                .FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+
+            if (barberia == null)
+            {
+                return NotFound(new { message = "Barbería no encontrada." });
+            }
+
+            // Citas reservadas actualmente para no permitir sobreposiciones
+            var citasOcupadas = await _context.Citas
+                .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
+                .Select(c => new { c.Fecha, c.Hora, c.MiembroEquipoId })
                 .ToListAsync();
 
-            totalValoraciones = valoraciones.Count;
-            calificacion = totalValoraciones > 0 
-                ? Math.Round(valoraciones.Average(v => v.Estrellas), 1) 
-                : 5.0;
+            // Conteo real de agendamientos históricos en el sistema
+            var totalAgendamientosReales = await _context.Citas
+                .CountAsync(c => c.BarberiaId == barberia.Id);
 
-            ultimasValoraciones = valoraciones.Take(4).Select(v => new
+            int totalValoraciones = 0;
+            double calificacion = 5.0;
+            object ultimasValoraciones = new List<object>();
+
+            try
             {
-                v.NombreCliente,
-                v.Estrellas,
-                v.Comentario,
-                Fecha = v.FechaUtc.ToString("dd MMM yyyy")
-            }).ToList();
+                var valoraciones = await _context.Valoraciones
+                    .Where(v => v.BarberiaId == barberia.Id)
+                    .OrderByDescending(v => v.FechaUtc)
+                    .ToListAsync();
+
+                totalValoraciones = valoraciones.Count;
+                calificacion = totalValoraciones > 0 
+                    ? Math.Round(valoraciones.Average(v => v.Estrellas), 1) 
+                    : 5.0;
+
+                ultimasValoraciones = valoraciones.Take(4).Select(v => new
+                {
+                    v.NombreCliente,
+                    v.Estrellas,
+                    v.Comentario,
+                    Fecha = v.FechaUtc.ToString("dd MMM yyyy")
+                }).ToList();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Nota: Valoraciones no consultadas todavía: {ex.Message}");
+            }
+
+            return Ok(new
+            {
+                barberia.Id,
+                barberia.Nombre,
+                barberia.Slug,
+                barberia.Descripcion,
+                barberia.Direccion,
+                barberia.TelefonoWhatsApp,
+                barberia.LogoUrl,
+                barberia.HorarioTexto,
+                barberia.HoraApertura,
+                barberia.HoraCierre,
+                barberia.IntervaloMinutos,
+                barberia.DiasLaborales,
+                barberia.MostrarSelectorBarbero,
+                Servicios = barberia.Servicios.Select(s => new
+                {
+                    s.Id,
+                    s.Categoria,
+                    s.Nombre,
+                    s.Precio,
+                    s.DuracionMinutos,
+                    s.Descripcion,
+                    s.Icono
+                }),
+                Miembros = barberia.Miembros.Select(m => new
+                {
+                    m.Id,
+                    m.Nombre,
+                    m.Rol,
+                    m.FotoUrl
+                }),
+                Bloqueos = barberia.Bloqueos.Select(bl => new
+                {
+                    bl.Id,
+                    bl.Fecha,
+                    bl.Hora,
+                    bl.Motivo
+                }),
+                CitasOcupadas = citasOcupadas,
+                TotalAgendamientos = totalAgendamientosReales,
+                TotalValoraciones = totalValoraciones,
+                Calificacion = calificacion,
+                UltimasValoraciones = ultimasValoraciones
+            });
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Nota: Valoraciones no consultadas todavía: {ex.Message}");
+            return StatusCode(500, new { message = "Error obteniendo barberia", error = ex.Message, details = ex.ToString() });
         }
-
-        return Ok(new
-        {
-            barberia.Id,
-            barberia.Nombre,
-            barberia.Slug,
-            barberia.Descripcion,
-            barberia.Direccion,
-            barberia.TelefonoWhatsApp,
-            barberia.LogoUrl,
-            barberia.HorarioTexto,
-            barberia.HoraApertura,
-            barberia.HoraCierre,
-            barberia.IntervaloMinutos,
-            barberia.DiasLaborales,
-            barberia.MostrarSelectorBarbero,
-            Servicios = barberia.Servicios.Select(s => new
-            {
-                s.Id,
-                s.Categoria,
-                s.Nombre,
-                s.Precio,
-                s.DuracionMinutos,
-                s.Descripcion,
-                s.Icono
-            }),
-            Miembros = barberia.Miembros.Select(m => new
-            {
-                m.Id,
-                m.Nombre,
-                m.Rol,
-                m.FotoUrl
-            }),
-            Bloqueos = barberia.Bloqueos.Select(bl => new
-            {
-                bl.Id,
-                bl.Fecha,
-                bl.Hora,
-                bl.Motivo
-            }),
-            CitasOcupadas = citasOcupadas,
-            TotalAgendamientos = totalAgendamientosReales,
-            TotalValoraciones = totalValoraciones,
-            Calificacion = calificacion,
-            UltimasValoraciones = ultimasValoraciones
-        });
     }
 
     [HttpPost("citas")]
