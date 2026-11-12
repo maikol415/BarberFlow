@@ -640,14 +640,23 @@ function renderHorariosDisponibles() {
       return;
     }
 
-    // Validación Matemática de Bloqueos (Cero traslapes con descansos)
+    // Validación Matemática de Bloqueos (Cero traslapes con descansos, horas fijas o rangos libres)
     const estaBloqueada = bloqueos.some(b => {
       if (b.fecha !== reservaActual.fechaSeleccionada) return false;
       if (!b.hora || b.hora === 'TODO_EL_DIA') return true;
 
-      const bloqueoInicioMin = convertirHoraAMinutos(b.hora);
-      // El bloqueo cubre mínimo 40 minutos o el intervalo configurado
-      const bloqueoFinMin = bloqueoInicioMin + (barberia.intervaloMinutos || 40);
+      let bloqueoInicioMin = 0;
+      let bloqueoFinMin = 0;
+
+      // Soporte para rango libre: "12:00-14:30"
+      if (b.hora.includes('-')) {
+        const [dPart, hPart] = b.hora.split('-');
+        bloqueoInicioMin = convertirHoraAMinutos(dPart);
+        bloqueoFinMin = convertirHoraAMinutos(hPart);
+      } else {
+        bloqueoInicioMin = convertirHoraAMinutos(b.hora);
+        bloqueoFinMin = bloqueoInicioMin + (barberia.intervaloMinutos || 40);
+      }
 
       // Hay traslape si el turno empieza antes de que termine el bloqueo Y termina después de que empieza el bloqueo
       const hayTraslape = turnoInicioMin < bloqueoFinMin && turnoFinMin > bloqueoInicioMin;

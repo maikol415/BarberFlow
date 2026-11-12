@@ -71,6 +71,24 @@ public class AdminController : ControllerBase
         return Ok(new { message = "Configuración actualizada con éxito.", barberia });
     }
 
+    // REINICIAR DATOS DE PRUEBA (MODO LANZAMIENTO)
+    [HttpPost("limpiar-datos-prueba")]
+    public async Task<IActionResult> LimpiarDatosPrueba()
+    {
+        var barberiaId = ObtenerBarberiaId();
+        
+        // 1. Eliminar todas las citas de prueba de esta barbería
+        var citas = await _context.Citas.Where(c => c.BarberiaId == barberiaId).ToListAsync();
+        _context.Citas.RemoveRange(citas);
+
+        // 2. Eliminar bloqueos de horarios de prueba
+        var bloqueos = await _context.Bloqueos.Where(b => b.BarberiaId == barberiaId).ToListAsync();
+        _context.Bloqueos.RemoveRange(bloqueos);
+
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Todos los datos de prueba han sido limpiados con éxito. ¡Listo para iniciar operaciones!" });
+    }
+
     // ELIMINAR BARBERÍA Y CUENTA POR COMPLETO
     [HttpDelete("eliminar-barberia")]
     public async Task<IActionResult> EliminarBarberia()

@@ -274,22 +274,38 @@ function renderTablaCitas() {
     tr.className = 'hover:bg-white/[0.02] transition';
 
     const phoneClean = c.telefonoCliente.replace(/[^0-9]/g, '');
+    const nomBarberia = (barberiaActual?.nombre || 'BARBERÍA').toUpperCase();
+    const dirBarberia = barberiaActual?.direccion || 'En nuestro local';
     
     const msgConfirmada = encodeURIComponent(
-      `¡Hola ${c.nombreCliente}! 👋 Tu cita en *${barberiaActual?.nombre || 'la barbería'}* ha sido *CONFIRMADA* con éxito.\n\n` +
-      `✂️ Servicio: ${c.servicio}\n` +
-      `📅 Fecha: ${c.fecha}\n` +
-      `⏰ Hora: ${c.hora}\n` +
-      `🔖 Código: ${c.codigoReserva}\n\n` +
-      `¡Te esperamos con gusto!`
+      `💈 *${nomBarberia}* 💈\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Hola ${c.nombreCliente}! 👋\n` +
+      `Tu cita ha sido *CONFIRMADA* con éxito.\n\n` +
+      `📋 *Detalles de tu turno:*\n` +
+      `✂️ *Servicio:* ${c.servicio}\n` +
+      `💈 *Profesional:* ${c.barbero || 'Master Barber'}\n` +
+      `📅 *Fecha:* ${c.fecha}\n` +
+      `⏰ *Hora:* ${c.hora}\n` +
+      `🔖 *Código:* #${c.codigoReserva}\n\n` +
+      `📍 *Ubicación:* ${dirBarberia}\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Te esperamos puntual para darte la mejor atención! ✂️🔥`
     );
 
     const msgRecordatorio = encodeURIComponent(
-      `¡Hola ${c.nombreCliente}! ⏰ Te recordamos tu cita próxima en *${barberiaActual?.nombre || 'la barbería'}*:\n\n` +
-      `📅 Fecha: ${c.fecha}\n` +
-      `⏰ Hora: ${c.hora}\n` +
-      `✂️ Servicio: ${c.servicio}\n\n` +
-      `Por favor llega 5 minutos antes. ¡Nos vemos pronto!`
+      `💈 *${nomBarberia}* 💈\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Hola ${c.nombreCliente}! ⏳\n` +
+      `Te recordamos que tienes una cita programada:\n\n` +
+      `✂️ *Servicio:* ${c.servicio}\n` +
+      `💈 *Profesional:* ${c.barbero || 'Master Barber'}\n` +
+      `📅 *Fecha:* ${c.fecha}\n` +
+      `⏰ *Hora:* ${c.hora}\n` +
+      `📍 *Dirección:* ${dirBarberia}\n\n` +
+      `Por favor procura llegar 5 minutos antes.\n` +
+      `━━━━━━━━━━━━━━━━━━━━\n` +
+      `¡Tu silla ya está lista! ✂️🚀`
     );
 
     const enlaceWhatsAppConfirm = `https://wa.me/${phoneClean}?text=${msgConfirmada}`;
@@ -777,12 +793,52 @@ async function bloquearPausaRapida(tipo) {
   cargarPerfil();
 }
 
+function alternarCamposBloqueo() {
+  const tipo = document.getElementById('bloq-tipo').value;
+  const colRango = document.getElementById('col-bloq-rango');
+  const colHora = document.getElementById('col-bloq-hora');
+
+  if (tipo === 'dia') {
+    colRango.classList.add('hidden');
+    colHora.classList.add('hidden');
+  } else if (tipo === 'rango') {
+    colRango.classList.remove('hidden');
+    colHora.classList.add('hidden');
+  } else if (tipo === 'hora') {
+    colRango.classList.add('hidden');
+    colHora.classList.remove('hidden');
+  }
+}
+
 async function agregarBloqueo(e) {
   e.preventDefault();
+  const fecha = document.getElementById('bloq-fecha').value;
+  const tipo = document.getElementById('bloq-tipo').value;
+  const motivo = document.getElementById('bloq-motivo').value.trim() || 'Descanso';
+
+  let horaString = 'TODO_EL_DIA';
+
+  if (tipo === 'rango') {
+    const desde = document.getElementById('bloq-desde').value;
+    const hasta = document.getElementById('bloq-hasta').value;
+    if (!desde || !hasta) {
+      alert('Por favor selecciona las horas Desde y Hasta.');
+      return;
+    }
+    horaString = `${desde}-${hasta}`;
+  } else if (tipo === 'hora') {
+    const exacta = document.getElementById('bloq-hora-exacta').value;
+    if (!exacta) {
+      alert('Por favor selecciona la hora a bloquear.');
+      return;
+    }
+    horaString = exacta;
+  }
+
   const payload = {
-    fecha: document.getElementById('bloq-fecha').value,
-    hora: document.getElementById('bloq-hora').value,
-    motivo: document.getElementById('bloq-motivo').value.trim()
+    fecha: fecha,
+    hora: horaString,
+    motivo: motivo
   };
 
   try {
@@ -811,6 +867,141 @@ async function eliminarBloqueo(id) {
     cargarPerfil();
   } catch (err) {
     alert('Error al eliminar bloqueo.');
+  }
+}
+
+// ----------------- AGENDAMIENTO MANUAL (TABLET / LOCAL) -----------------
+function abrirModalCitaManual() {
+  const modal = document.getElementById('modal-cita-manual');
+  if (!modal) return;
+
+  // Llenar selectores con servicios y barberos actuales
+  const servSelect = document.getElementById('manual-servicio');
+  servSelect.innerHTML = (barberiaActual?.servicios || []).map(s => 
+    `<option value="${s.id}">${s.nombre} ($${Number(s.precio).toLocaleString()} - ${s.duracionMinutos}m)</option>`
+  ).join('');
+
+  const barbSelect = document.getElementById('manual-barbero');
+  const miembros = barberiaActual?.miembros || [];
+  barbSelect.innerHTML = miembros.map(m => 
+    `<option value="${m.id}">${m.nombre} (${m.rol})</option>`
+  ).join('');
+
+  // Fecha de hoy por defecto
+  const hoy = new Date();
+  const anio = hoy.getFullYear();
+  const mes = String(hoy.getMonth() + 1).padStart(2, '0');
+  const dia = String(hoy.getDate()).padStart(2, '0');
+  document.getElementById('manual-fecha').value = `${anio}-${mes}-${dia}`;
+
+  modal.classList.remove('hidden');
+}
+
+function cerrarModalCitaManual() {
+  const modal = document.getElementById('modal-cita-manual');
+  if (modal) modal.classList.add('hidden');
+}
+
+async function guardarCitaManual(e) {
+  e.preventDefault();
+  const nombre = document.getElementById('manual-cliente-nom').value.trim();
+  const rawTel = document.getElementById('manual-cliente-tel').value.trim();
+  const telefonoLimpio = rawTel.replace(/[^0-9]/g, '');
+  const telefonoCompleto = `+57${telefonoLimpio}`;
+
+  const servicioId = parseInt(document.getElementById('manual-servicio').value);
+  const miembroId = parseInt(document.getElementById('manual-barbero').value);
+  const fecha = document.getElementById('manual-fecha').value;
+  const rawHora = document.getElementById('manual-hora').value; // ej: "14:30"
+
+  // Convertir hora militar a formato am/pm legible (ej: 02:30pm)
+  const [hhStr, mmStr] = rawHora.split(':');
+  let hh = parseInt(hhStr);
+  const ampm = hh >= 12 ? 'pm' : 'am';
+  let hh12 = hh % 12;
+  if (hh12 === 0) hh12 = 12;
+  const horaFormateada = `${String(hh12).padStart(2, '0')}:${mmStr}${ampm}`;
+
+  const payload = {
+    barberiaSlug: barberiaActual.slug,
+    servicioId: servicioId,
+    miembroEquipoId: miembroId,
+    nombreCliente: nombre,
+    telefonoCliente: telefonoCompleto,
+    fecha: fecha,
+    hora: horaFormateada
+  };
+
+  const btn = document.getElementById('btn-guardar-manual');
+  btn.disabled = true;
+  btn.innerText = 'Agendando...';
+
+  try {
+    const res = await fetch('/api/public/citas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      alert(`¡Cita agendada con éxito para ${nombre} a las ${horaFormateada}!`);
+      cerrarModalCitaManual();
+      document.getElementById('form-cita-manual').reset();
+      cargarCitas();
+
+      // Opción de enviar confirmación inmediata al WhatsApp del cliente
+      const servObj = (barberiaActual.servicios || []).find(s => s.id === servicioId);
+      const barbObj = (barberiaActual.miembros || []).find(m => m.id === miembroId);
+      const nomBarberia = (barberiaActual.nombre || 'BARBERÍA').toUpperCase();
+
+      const msgConfirm = encodeURIComponent(
+        `💈 *${nomBarberia}* 💈\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `¡Hola ${nombre}! 👋\n` +
+        `Tu cita ha sido agendada con éxito en nuestro local:\n\n` +
+        `✂️ *Servicio:* ${servObj?.nombre || 'Servicio'}\n` +
+        `💈 *Profesional:* ${barbObj?.nombre || 'Master Barber'}\n` +
+        `📅 *Fecha:* ${fecha}\n` +
+        `⏰ *Hora:* ${horaFormateada}\n` +
+        `🔖 *Código:* #${data.codigoReserva}\n\n` +
+        `📍 *Ubicación:* ${barberiaActual.direccion || 'En la barbería'}\n` +
+        `━━━━━━━━━━━━━━━━━━━━\n` +
+        `¡Te esperamos puntual! ✂️🔥`
+      );
+
+      window.open(`https://wa.me/57${telefonoLimpio}?text=${msgConfirm}`, '_blank');
+    } else {
+      alert(data.message || 'No se pudo agendar la cita.');
+    }
+  } catch (err) {
+    alert('Error conectando con el servidor.');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'Confirmar y Agendar';
+  }
+}
+
+async function limpiarDatosPrueba() {
+  if (!confirm('⚠️ ¿Deseas limpiar todas las citas y bloqueos de prueba?\n\nTus servicios, precios y barberos permanecerán intactos, pero las estadísticas volverán a $0 para arrancar el lanzamiento oficial.')) {
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/admin/limpiar-datos-prueba', {
+      method: 'POST',
+      headers: getAuthHeaders()
+    });
+    const data = await res.json();
+    if (res.ok) {
+      alert(data.message);
+      cargarCitas();
+      cargarPerfil();
+    } else {
+      alert('No se pudo limpiar los datos.');
+    }
+  } catch (err) {
+    alert('Error al conectar con el servidor.');
   }
 }
 
