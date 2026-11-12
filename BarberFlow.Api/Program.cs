@@ -31,7 +31,22 @@ builder.Services.AddDbContext<AppDbContext>(options =>
         }
         else
         {
-            options.UseNpgsql(supabaseConn);
+            // Si viene en formato normal ADO.NET (Host=...;Port=6543...)
+            // Asegurar parámetros robustos para el Supabase Pooler
+            var connBuilder = supabaseConn;
+            if (!connBuilder.Contains("Pooling=", StringComparison.OrdinalIgnoreCase))
+            {
+                connBuilder += ";Pooling=false";
+            }
+            if (!connBuilder.Contains("Timeout=", StringComparison.OrdinalIgnoreCase))
+            {
+                connBuilder += ";Timeout=30;Command Timeout=30";
+            }
+            if (!connBuilder.Contains("Keepalive=", StringComparison.OrdinalIgnoreCase))
+            {
+                connBuilder += ";Keepalive=30";
+            }
+            options.UseNpgsql(connBuilder);
         }
     }
     else if (useSqlServer)
