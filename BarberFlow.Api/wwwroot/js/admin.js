@@ -1171,7 +1171,6 @@ async function eliminarReglaBot(id) {
     alert('Error eliminando regla.');
   }
 }
-}
 
 async function eliminarBarberiaCompleta() {
   if (!confirm('⚠️ ¿Estás SEGURO de eliminar por completo tu barbería y tu cuenta?\n\nEsta acción borrará todas tus citas, servicios y configuración permanentemente.')) {
