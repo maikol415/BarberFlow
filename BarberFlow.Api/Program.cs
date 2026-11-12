@@ -185,6 +185,9 @@ app.UseStaticFiles(fileOptions);
 app.UseAuthentication();
 app.UseAuthorization();
 
+// Endpoint de salud ligero para mantener despierto Render 24/7 sin tocar la base de datos
+app.MapGet("/ping", () => Results.Ok(new { status = "active", time = DateTime.UtcNow }));
+
 app.MapControllers();
 
 app.Run();
