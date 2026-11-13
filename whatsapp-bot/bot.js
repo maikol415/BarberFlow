@@ -141,6 +141,9 @@ async function iniciarBot() {
       return;
     }
 
+    // Limpiar caracteres invisibles, espacios y emojis para comparar números
+    const soloNumeros = texto.replace(/[^0-9]/g, '');
+
     try {
       const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`);
       if (!res.ok) return;
@@ -149,23 +152,20 @@ async function iniciarBot() {
 
       if (barberia.botActivo === false) return;
 
-      // Simular que el bot está escribiendo (typing presence) para respuesta natural
-      await sock.sendPresenceUpdate('composing', remitente);
-      await new Promise(r => setTimeout(r, 1200));
-
       // 1. Preguntas Frecuentes personalizadas desde el panel
       const reglas = barberia.botReglas || [];
       for (const regla of reglas) {
         const palabras = regla.palabrasClave.split(',').map(p => p.trim().toLowerCase());
         if (palabras.some(p => p && texto.includes(p))) {
           await sock.sendMessage(remitente, { text: regla.respuesta });
-          await sock.sendPresenceUpdate('paused', remitente);
           return;
         }
       }
 
-      // 2. Precios y Servicios (alta prioridad en detección)
+      // 2. Precios y Servicios (opción 2 o palabras clave)
       if (
+        soloNumeros === '2' ||
+        texto === '2' ||
         texto.includes('precio') || 
         texto.includes('cuanto vale') || 
         texto.includes('cuánto vale') || 
@@ -175,8 +175,7 @@ async function iniciarBot() {
         texto.includes('costo') || 
         texto.includes('servicio') || 
         texto.includes('corte') || 
-        texto.includes('barba') || 
-        texto === '2'
+        texto.includes('barba')
       ) {
         const nombreBarberia = barberia.nombre || 'BarberFlow';
         let lista = `💈 *Servicios y Precios — ${nombreBarberia}*\n`;
@@ -198,12 +197,13 @@ async function iniciarBot() {
         lista += `_O si deseas atención personalizada, déjanos tu duda y el barbero te responderá._ ✨`;
 
         await sock.sendMessage(remitente, { text: lista });
-        await sock.sendPresenceUpdate('paused', remitente);
         return;
       }
 
-      // 3. Saludos / Menú principal
+      // 3. Saludos / Menú principal (opción 1 o saludos)
       if (
+        soloNumeros === '1' ||
+        texto === '1' ||
         texto.includes('hola') || 
         texto.includes('buenas') || 
         texto.includes('buenos dias') || 
@@ -212,8 +212,7 @@ async function iniciarBot() {
         texto.includes('buenas noches') || 
         texto.includes('info') || 
         texto.includes('menu') || 
-        texto.includes('menú') || 
-        texto === '1'
+        texto.includes('menú')
       ) {
         const msj = `💈 *Bienvenido a ${barberia.nombre || 'BarberFlow'}*\n\n` +
           `¿En qué te podemos colaborar hoy?\n\n` +
@@ -226,18 +225,25 @@ async function iniciarBot() {
           `_Escribe el número de tu opción (1, 2 o 3) o déjanos tu duda y el barbero te responderá._ ✨`;
 
         await sock.sendMessage(remitente, { text: msj });
-        await sock.sendPresenceUpdate('paused', remitente);
         return;
       }
 
-      // 4. Ubicación / Dónde quedan
-      if (texto.includes('donde') || texto.includes('dónde') || texto.includes('direccion') || texto.includes('dirección') || texto.includes('ubicacion') || texto.includes('ubicación') || texto === '3') {
+      // 4. Ubicación / Dónde quedan (opción 3 o palabras clave)
+      if (
+        soloNumeros === '3' ||
+        texto === '3' ||
+        texto.includes('donde') || 
+        texto.includes('dónde') || 
+        texto.includes('direccion') || 
+        texto.includes('dirección') || 
+        texto.includes('ubicacion') || 
+        texto.includes('ubicación')
+      ) {
         const ubi = `📍 *Ubicación y Horario de Atención:*\n\n` +
           `🏠 *Dirección:* ${barberia.direccion || 'Calle 45 # 12-34'}\n` +
           `⏰ *Horario:* ${barberia.horarioTexto || 'Lunes a Sábado 9:00 AM - 8:00 PM'}\n\n` +
           `📅 *Reserva tu cita aquí para no hacer fila:* \n👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}`;
         await sock.sendMessage(remitente, { text: ubi });
-        await sock.sendPresenceUpdate('paused', remitente);
         return;
       }
 
