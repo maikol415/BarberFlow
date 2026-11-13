@@ -33,6 +33,11 @@ public class PublicController : ControllerBase
                 return NotFound(new { message = "Barbería no encontrada." });
             }
 
+            var botReglas = await _context.BotReglas
+                .Where(r => r.BarberiaId == barberia.Id && r.Activo)
+                .Select(r => new { r.Id, r.PalabrasClave, r.Respuesta })
+                .ToListAsync();
+
             // Citas reservadas actualmente para no permitir sobreposiciones
             var citasOcupadas = await _context.Citas
                 .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
@@ -87,6 +92,10 @@ public class PublicController : ControllerBase
                 barberia.IntervaloMinutos,
                 barberia.DiasLaborales,
                 barberia.MostrarSelectorBarbero,
+                barberia.BotActivo,
+                barberia.MensajeBienvenidaBot,
+                barberia.MensajeDerivacionHumana,
+                BotReglas = botReglas,
                 Servicios = barberia.Servicios.Select(s => new
                 {
                     s.Id,
