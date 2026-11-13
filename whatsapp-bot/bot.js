@@ -109,16 +109,22 @@ async function iniciarBot() {
     // 🛡️ REGLA 1: Ignorar grupos
     if (!remitente || remitente.includes('@g.us')) return;
 
+    console.log(`[Mensaje Recibido] De: ${remitente} | fromMe: ${msg.key.fromMe}`);
+
     const ahora = Date.now();
 
     // 🛡️ REGLA 2: Si el barbero escribió personalmente, callar el bot 45 min
     if (msg.key.fromMe) {
+      console.log(`[Anti-Spam] Barbero respondió manualmente a ${remitente}. Silenciando bot 45 min para este contacto.`);
       pausaPorIntervencionHumana.set(remitente, ahora + (45 * 60 * 1000));
       return;
     }
 
     const pausaHasta = pausaPorIntervencionHumana.get(remitente) || 0;
-    if (ahora < pausaHasta) return;
+    if (ahora < pausaHasta) {
+      console.log(`[Anti-Spam] Contacto ${remitente} en pausa por intervención humana activa.`);
+      return;
+    }
 
     const texto = (
       msg.message.conversation ||
@@ -136,40 +142,103 @@ async function iniciarBot() {
 
       if (barberia.botActivo === false) return;
 
-      // 1. Preguntas Frecuentes
+      // Simular que el bot está escribiendo (typing presence) para respuesta natural
+      await sock.sendPresenceUpdate('composing', remitente);
+      await new Promise(r => setTimeout(r, 1200));
+
+      // 1. Preguntas Frecuentes personalizadas desde el panel
       const reglas = barberia.botReglas || [];
       for (const regla of reglas) {
         const palabras = regla.palabrasClave.split(',').map(p => p.trim().toLowerCase());
         if (palabras.some(p => p && texto.includes(p))) {
           await sock.sendMessage(remitente, { text: regla.respuesta });
+          await sock.sendPresenceUpdate('paused', remitente);
           return;
         }
       }
 
-      // 2. Saludos / Menú
-      if (texto.includes('hola') || texto.includes('buenas') || texto.includes('info') || texto === 'menu' || texto === '1') {
-        const bienvenida = (barberia.mensajeBienvenidaBot || '¡Hola! 💈 Bienvenido a {barberia}.')
-          .replace('{barberia}', barberia.nombre || 'la barbería');
-        const msj = `${bienvenida}\n\n` +
-          `1️⃣ *Agendar turno en línea:*\n👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}\n\n` +
-          `2️⃣ *Ubicación y Horario:*\n📍 ${barberia.direccion}\n⏰ ${barberia.horarioTexto}\n\n` +
-          `¿En qué más te podemos ayudar? ✂️`;
-        await sock.sendMessage(remitente, { text: msj });
-        return;
-      }
+      // 2. Precios y Servicios (alta prioridad en detección)
+      if (
+        texto.includes('precio') || 
+        texto.includes('cuanto vale') || 
+        texto.includes('cuánto vale') || 
+        texto.includes('cuanto cuesta') || 
+        texto.includes('cuánto cuesta') || 
+        texto.includes('valor') || 
+        texto.includes('costo') || 
+        texto.includes('servicio') || 
+        texto.includes('corte') || 
+        texto.includes('barba') || 
+        texto === '2'
+      ) {
+        const nombreBarberia = barberia.nombre || 'BarberFlow';
+        let lista = `💈 *Servicios y Precios — ${nombreBarberia}*\n`;
+        lista += `─────────────────────────\n\n`;
 
-      // 3. Precios y Servicios
-      if (texto.includes('precio') || texto.includes('costo') || texto.includes('cuanto vale') || texto.includes('servicio') || texto === '2') {
-        let lista = `💈 *Precios de ${barberia.nombre}:*\n\n`;
-        (barberia.servicios || []).forEach(s => {
-          lista += `✂️ *${s.nombre}* - $ ${Number(s.precio).toLocaleString()}\n`;
-        });
-        lista += `\n📅 *Reserva aquí:* https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}`;
+        if (barberia.servicios && barberia.servicios.length > 0) {
+          barberia.servicios.forEach(s => {
+            lista += `✂️ *${s.nombre}*\n`;
+            lista += `   └ 💵 *$${Number(s.precio).toLocaleString('es-CO')}* · ⏱️ ${s.duracionMinutos || 30} min\n\n`;
+          });
+        } else {
+          lista += `✂️ *Corte Clásico / Fade:* $ 30.000\n✂️ *Corte + Barba:* $ 30.000\n✂️ *Diseño de Barba:* $ 12.000\n\n`;
+        }
+
+        lista += `─────────────────────────\n`;
+        lista += `⚡ *¿Deseas asegurar tu turno ahora?*\n`;
+        lista += `Agenda en 30 segundos sin esperas aquí:\n`;
+        lista += `👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}\n\n`;
+        lista += `_O si deseas atención personalizada, déjanos tu duda y el barbero te responderá._ ✨`;
+
         await sock.sendMessage(remitente, { text: lista });
+        await sock.sendPresenceUpdate('paused', remitente);
         return;
       }
 
-      // 🛡️ REGLA 3: Derivación humana máx 1 vez cada 2 horas por persona
+      // 3. Saludos / Menú principal
+      if (
+        texto.includes('hola') || 
+        texto.includes('buenas') || 
+        texto.includes('buenos dias') || 
+        texto.includes('buenos días') || 
+        texto.includes('buenas tardes') || 
+        texto.includes('buenas noches') || 
+        texto.includes('info') || 
+        texto.includes('menu') || 
+        texto.includes('menú') || 
+        texto === '1'
+      ) {
+        const bienvenida = (barberia.mensajeBienvenidaBot || '¡Hola! 💈 Bienvenido a {barberia}.')
+          .replace('{barberia}', barberia.nombre || 'BarberFlow');
+
+        const msj = `${bienvenida}\n\n` +
+          `✨ *¿Cómo te podemos colaborar hoy?*\n\n` +
+          `1️⃣ 📅 *Agendar tu cita en línea:*\n` +
+          `👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}\n\n` +
+          `2️⃣ 💈 *Ver precios y catálogo de cortes:*\n` +
+          `   _Escribe "precios" para ver la lista completa._\n\n` +
+          `3️⃣ 📍 *Ubicación y Horarios:*\n` +
+          `   📍 ${barberia.direccion || 'Sede principal'}\n` +
+          `   ⏰ ${barberia.horarioTexto || 'Lunes a Sábado'}\n\n` +
+          `_Escribe el número de tu opción o déjanos tu mensaje y te atenderemos con gusto._ ✂️`;
+
+        await sock.sendMessage(remitente, { text: msj });
+        await sock.sendPresenceUpdate('paused', remitente);
+        return;
+      }
+
+      // 4. Ubicación / Dónde quedan
+      if (texto.includes('donde') || texto.includes('dónde') || texto.includes('direccion') || texto.includes('dirección') || texto.includes('ubicacion') || texto.includes('ubicación') || texto === '3') {
+        const ubi = `📍 *Ubicación y Horario de Atención:*\n\n` +
+          `🏠 *Dirección:* ${barberia.direccion || 'Calle 45 # 12-34'}\n` +
+          `⏰ *Horario:* ${barberia.horarioTexto || 'Lunes a Sábado 9:00 AM - 8:00 PM'}\n\n` +
+          `📅 *Reserva tu cita aquí para no hacer fila:* \n👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}`;
+        await sock.sendMessage(remitente, { text: ubi });
+        await sock.sendPresenceUpdate('paused', remitente);
+        return;
+      }
+
+      // 🛡️ REGLA 4: Derivación humana máx 1 vez cada 2 horas por persona
       const ultimaVezDerivado = ultimaRespuestaHumana.get(remitente) || 0;
       const dosHorasMs = 2 * 60 * 60 * 1000;
 
@@ -178,7 +247,10 @@ async function iniciarBot() {
           'He recibido tu mensaje. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno, te responderá personalmente por este chat. ¡Muchas gracias por tu paciencia!';
         
         await sock.sendMessage(remitente, { text: derivacion });
+        await sock.sendPresenceUpdate('paused', remitente);
         ultimaRespuestaHumana.set(remitente, ahora);
+      } else {
+        await sock.sendPresenceUpdate('paused', remitente);
       }
 
     } catch (e) {
