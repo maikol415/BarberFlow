@@ -104,92 +104,77 @@ async function iniciarBot() {
   });
 
   sock.ev.on('messages.upsert', async (m) => {
-    const msg = m.messages[0];
-    if (!msg.message) return;
+    try {
+      if (!m.messages || m.messages.length === 0) return;
+      const msg = m.messages[0];
+      if (!msg.message) return;
 
-    const remitente = msg.key.remoteJid;
-    // 🛡️ REGLA 1: Ignorar grupos
-    if (!remitente || remitente.includes('@g.us')) return;
+      const remitente = msg.key.remoteJid;
+      // 🛡️ REGLA 1: Ignorar grupos y difusiones
+      if (!remitente || remitente.includes('@g.us') || remitente.includes('broadcast')) return;
 
-    console.log(`[Mensaje Recibido] De: ${remitente} | fromMe: ${msg.key.fromMe}`);
+      const ahora = Date.now();
 
-    const ahora = Date.now();
+      // 🛡️ REGLA 2: Si el barbero escribió personalmente, callar el bot 45 min
+      if (msg.key.fromMe) {
+        console.log(`[Anti-Spam] Barbero respondió manualmente a ${remitente}. Silenciando bot 45 min.`);
+        pausaPorIntervencionHumana.set(remitente, ahora + (45 * 60 * 1000));
+        return;
+      }
 
-    // 🛡️ REGLA 2: Si el barbero escribió personalmente, callar el bot 45 min
-    if (msg.key.fromMe) {
-      console.log(`[Anti-Spam] Barbero respondió manualmente a ${remitente}. Silenciando bot 45 min para este contacto.`);
-      pausaPorIntervencionHumana.set(remitente, ahora + (45 * 60 * 1000));
-      return;
-    }
+      const pausaHasta = pausaPorIntervencionHumana.get(remitente) || 0;
+      if (ahora < pausaHasta) {
+        console.log(`[Anti-Spam] Contacto ${remitente} en pausa por intervención humana activa.`);
+        return;
+      }
 
-    const pausaHasta = pausaPorIntervencionHumana.get(remitente) || 0;
-    if (ahora < pausaHasta) {
-      console.log(`[Anti-Spam] Contacto ${remitente} en pausa por intervención humana activa.`);
-      return;
-    }
+      // Extraer texto de cualquier formato de mensaje
+      const texto = (
+        msg.message.conversation ||
+        msg.message.extendedTextMessage?.text ||
+        msg.message.imageMessage?.caption ||
+        msg.message.videoMessage?.caption ||
+        msg.message.buttonsResponseMessage?.selectedButtonId ||
+        msg.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
+        ''
+      ).toLowerCase().trim();
 
-    // Extraer texto de cualquier formato de mensaje (conversación directa, respuesta extendida, pie de foto, etc.)
-    const texto = (
-      msg.message.conversation ||
-      msg.message.extendedTextMessage?.text ||
-      msg.message.imageMessage?.caption ||
-      msg.message.videoMessage?.caption ||
-      ''
-    ).toLowerCase().trim();
+      if (!texto) {
+        console.log(`[Mensaje Recibido] Sin texto (sticker/multimedia).`);
+        return;
+      }
 
-    // Si mandó solo un sticker, imagen o audio sin texto
-    if (!texto) {
-      console.log(`[Mensaje Recibido] Mensaje sin texto (sticker/audio/media) de ${remitente}. Ignorando.`);
-      return;
-    }
+      console.log(`[Mensaje Recibido] Remitente: ${remitente} | Texto: "${texto}"`);
 
     // Limpiar caracteres invisibles, espacios y emojis para comparar números
     const soloNumeros = texto.replace(/[^0-9]/g, '');
 
-    console.log(`[Mensaje Recibido] De: ${remitente} | Texto: "${texto}" | fromMe: ${msg.key.fromMe}`);
-
     try {
-      // Usar caché rápido de datos para no esperar 4 segundos a la API cada vez
-      let barberia = cacheBarberia;
-      const ahoraTs = Date.now();
-      if (!barberia || ahoraTs - ultimaCargaCache > 30000) {
-        try {
-          const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`, { timeout: 6000 });
-          if (res.ok) {
-            const data = await res.json();
-            barberia = data.barberia || data;
-            cacheBarberia = barberia;
-            ultimaCargaCache = ahoraTs;
+      // Usar datos locales directos e inmediatos para respuesta cero-milisegundos
+      const barberia = {
+        nombre: 'Barberia JR',
+        botActivo: true,
+        direccion: 'Calle 45 # 12-34',
+        horarioTexto: 'Lunes a Sábado 9:00 AM - 8:00 PM',
+        servicios: [
+          { nombre: 'Corte Moderno', precio: 30000, duracionMinutos: 30 },
+          { nombre: 'Corte más Barba', precio: 30000, duracionMinutos: 60 },
+          { nombre: 'Diseño de Barba', precio: 12000, duracionMinutos: 20 },
+          { nombre: 'Corte + exfoliación facial', precio: 32000, duracionMinutos: 60 },
+          { nombre: 'Limpieza facial profunda', precio: 17000, duracionMinutos: 40 },
+          { nombre: 'Arreglo de uñas', precio: 35000, duracionMinutos: 60 },
+          { nombre: 'Lavado de manos', precio: 15000, duracionMinutos: 30 }
+        ]
+      };
+
+      // 1. Preguntas Frecuentes personalizadas
+      if (cacheBarberia && cacheBarberia.botReglas) {
+        for (const regla of cacheBarberia.botReglas) {
+          const palabras = regla.palabrasClave.split(',').map(p => p.trim().toLowerCase());
+          if (palabras.some(p => p && texto.includes(p))) {
+            await sock.sendMessage(remitente, { text: regla.respuesta });
+            return;
           }
-        } catch (fetchErr) {
-          console.error('[Cache] Usando datos locales por lentitud de red externa');
-        }
-      }
-
-      if (!barberia) {
-        barberia = {
-          nombre: 'Barberia JR',
-          botActivo: true,
-          direccion: 'Calle 45 # 12-34',
-          horarioTexto: 'Lunes a Sábado 9:00 AM - 8:00 PM',
-          servicios: [
-            { nombre: 'Corte Moderno', precio: 30000, duracionMinutos: 30 },
-            { nombre: 'Corte más Barba', precio: 30000, duracionMinutos: 60 },
-            { nombre: 'Diseño de Barba', precio: 12000, duracionMinutos: 20 },
-            { nombre: 'Limpieza facial profunda', precio: 17000, duracionMinutos: 40 }
-          ]
-        };
-      }
-
-      if (barberia.botActivo === false) return;
-
-      // 1. Preguntas Frecuentes personalizadas desde el panel
-      const reglas = barberia.botReglas || [];
-      for (const regla of reglas) {
-        const palabras = regla.palabrasClave.split(',').map(p => p.trim().toLowerCase());
-        if (palabras.some(p => p && texto.includes(p))) {
-          await sock.sendMessage(remitente, { text: regla.respuesta });
-          return;
         }
       }
 
