@@ -1203,18 +1203,64 @@ async function eliminarReglaBot(id) {
   }
 }
 
-function abrirModalVincularWhatsApp() {
+let intervalPollBot = null;
+
+async function abrirModalVincularWhatsApp() {
   const modal = document.getElementById('modal-vincular-whatsapp');
-  if (modal) {
-    const iframe = document.getElementById('iframe-qr-bot');
-    if (iframe) iframe.src = 'http://localhost:3001?t=' + Date.now();
-    modal.classList.remove('hidden');
+  if (!modal) return;
+
+  const contenedorQr = modal.querySelector('.bg-white');
+  contenedorQr.innerHTML = `
+    <div id="box-qr-dinamico" class="flex flex-col items-center justify-center p-4">
+      <div class="text-xs text-gray-500 font-semibold mb-2" id="txt-estado-qr">Cargando código QR...</div>
+      <img id="img-qr-live" class="w-[220px] h-[220px] rounded-lg hidden" alt="QR WhatsApp">
+      <div id="loader-qr" class="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin my-8"></div>
+    </div>
+  `;
+
+  modal.classList.remove('hidden');
+
+  async function consultarEstadoBot() {
+    try {
+      const res = await fetch('http://localhost:3001/api/status');
+      if (!res.ok) return;
+      const data = await res.json();
+
+      const txt = document.getElementById('txt-estado-qr');
+      const img = document.getElementById('img-qr-live');
+      const loader = document.getElementById('loader-qr');
+
+      if (data.conectado) {
+        if (txt) txt.innerHTML = `<span class="text-emerald-600 font-bold text-sm">✅ ¡WhatsApp Vinculado Exitosamente!</span>`;
+        if (img) img.classList.add('hidden');
+        if (loader) loader.classList.add('hidden');
+        clearInterval(intervalPollBot);
+        return;
+      }
+
+      if (data.qr && data.qr.startsWith('data:image')) {
+        if (img) {
+          img.src = data.qr;
+          img.classList.remove('hidden');
+        }
+        if (loader) loader.classList.add('hidden');
+        if (txt) txt.innerText = data.estado || 'Apunta con la cámara de WhatsApp';
+      }
+    } catch (err) {
+      const txt = document.getElementById('txt-estado-qr');
+      if (txt) txt.innerText = 'Conectando con el servicio de WhatsApp...';
+    }
   }
+
+  consultarEstadoBot();
+  if (intervalPollBot) clearInterval(intervalPollBot);
+  intervalPollBot = setInterval(consultarEstadoBot, 3000);
 }
 
 function cerrarModalVincularWhatsApp() {
   const modal = document.getElementById('modal-vincular-whatsapp');
   if (modal) modal.classList.add('hidden');
+  if (intervalPollBot) clearInterval(intervalPollBot);
 }
 
 async function eliminarBarberiaCompleta() {

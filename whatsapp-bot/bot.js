@@ -7,50 +7,65 @@ const PORT = process.env.PORT || 3001;
 const API_BASE_URL = process.env.BARBERFLOW_API_URL || 'https://barberflow-aos9.onrender.com/api/public';
 const BARBERIA_SLUG = process.env.BARBERIA_SLUG || 'barberia-jr';
 
-// Control inteligente anti-spam:
-// 1. Si el barbero escribe en el chat, el bot se calla en esa conversación durante 45 minutos.
-// 2. La derivación humana solo se manda 1 sola vez cada 2 horas por persona para evitar repetición.
-const ultimaRespuestaHumana = new Map(); // clienteJid -> timestamp
-const pausaPorIntervencionHumana = new Map(); // clienteJid -> timestamp
+const ultimaRespuestaHumana = new Map();
+const pausaPorIntervencionHumana = new Map();
 
 let ultimoQrDataUrl = '';
 let estadoConexion = 'Generando QR...';
+let estaConectado = false;
 
+// API REST y Web Server para el Modal del Admin
 http.createServer((req, res) => {
+  // Encabezados CORS para que el Admin en Render pueda consultar el estado y el QR
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
+  // Endpoint JSON para el modal
+  if (req.url.startsWith('/api/status')) {
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({
+      conectado: estaConectado,
+      estado: estadoConexion,
+      qr: ultimoQrDataUrl
+    }));
+    return;
+  }
+
+  // Página embedeable dentro del iframe del modal
   res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
   res.end(`
     <!DOCTYPE html>
     <html lang="es">
     <head>
       <meta charset="UTF-8">
-      <title>Conectar WhatsApp - BarberFlow</title>
-      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>QR WhatsApp</title>
       <style>
-        body { font-family: sans-serif; background: #0B0F19; color: white; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }
-        .card { background: #111827; border: 1px solid #1F2937; border-radius: 20px; padding: 25px; max-width: 380px; text-align: center; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        .qr-img { width: 260px; height: 260px; border-radius: 12px; margin: 15px auto; display: block; background: white; padding: 10px; }
-        h2 { margin: 0; color: #3B82F6; }
-        p { color: #9CA3AF; font-size: 13px; line-height: 1.4; }
-        .status { margin-top: 10px; font-weight: bold; color: #10B981; font-size: 14px; }
+        body { font-family: sans-serif; background: transparent; color: #111827; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 10px; text-align: center; }
+        .qr-img { width: 230px; height: 230px; border-radius: 12px; margin: 0 auto; display: block; }
+        .status { margin-top: 10px; font-weight: bold; color: #059669; font-size: 13px; }
       </style>
       <meta http-equiv="refresh" content="4">
     </head>
     <body>
-      <div class="card">
-        <h2>💈 BarberFlow Bot</h2>
-        <p>Abre WhatsApp en tu teléfono > <strong>Dispositivos vinculados</strong> > <strong>Vincular un dispositivo</strong></p>
-        ${
-          ultimoQrDataUrl.startsWith('data:image') 
-            ? `<img src="${ultimoQrDataUrl}" class="qr-img" alt="QR WhatsApp">` 
-            : `<div style="padding:40px;color:#9CA3AF;">${ultimoQrDataUrl || 'Generando código QR...'}</div>`
-        }
-        <div class="status">${estadoConexion}</div>
-      </div>
+      ${
+        estaConectado 
+          ? `<div style="padding:20px;"><h3 style="color:#059669;margin:0;">✅ ¡WhatsApp Conectado!</h3><p style="color:#4B5563;font-size:12px;margin-top:5px;">El bot está activo y listo para responder.</p></div>`
+          : ultimoQrDataUrl.startsWith('data:image') 
+            ? `<img src="${ultimoQrDataUrl}" class="qr-img" alt="Código QR"><div class="status">${estadoConexion}</div>` 
+            : `<div style="padding:30px;color:#6B7280;font-size:13px;">Generando código QR...</div>`
+      }
     </body>
     </html>
   `);
 }).listen(PORT, () => {
-  console.log(`Visor QR de WhatsApp activo en el puerto ${PORT}`);
+  console.log(`Servidor del Bot y API de estado escuchando en el puerto ${PORT}`);
 });
 
 async function iniciarBot() {
@@ -63,23 +78,26 @@ async function iniciarBot() {
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
-      ultimoQrDataUrl = await QRCode.toDataURL(qr, { width: 300, margin: 2 });
-      estadoConexion = '📱 Escanea el QR con la cámara de WhatsApp';
+      estaConectado = false;
+      ultimoQrDataUrl = await QRCode.toDataURL(qr, { width: 280, margin: 2 });
+      estadoConexion = 'Apunta con la cámara de WhatsApp';
       console.log('Nuevo QR generado.');
     }
 
     if (connection === 'close') {
+      estaConectado = false;
       const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
       if (shouldReconnect) {
-        estadoConexion = 'Reconectando con WhatsApp...';
+        estadoConexion = 'Reconectando...';
         iniciarBot();
       } else {
         estadoConexion = 'Sesión cerrada. Escanea de nuevo.';
       }
     } else if (connection === 'open') {
-      ultimoQrDataUrl = '✅ ¡WhatsApp Conectado Exitosamente!';
-      estadoConexion = '🟢 Bot en línea protegiendo contra spam';
-      console.log('¡Bot conectado y protegido contra spam!');
+      estaConectado = true;
+      ultimoQrDataUrl = '';
+      estadoConexion = 'Conectado';
+      console.log('¡WhatsApp en línea y conectado!');
     }
   });
 
@@ -88,23 +106,19 @@ async function iniciarBot() {
     if (!msg.message) return;
 
     const remitente = msg.key.remoteJid;
-    if (!remitente || remitente.includes('@g.us')) return; // Ignorar grupos
+    // 🛡️ REGLA 1: Ignorar grupos
+    if (!remitente || remitente.includes('@g.us')) return;
 
     const ahora = Date.now();
 
-    // 🛡️ REGLA 1 ANTI-SPAM: Si el mensaje lo envió el propio barbero desde su celular:
+    // 🛡️ REGLA 2: Si el barbero escribió personalmente, callar el bot 45 min
     if (msg.key.fromMe) {
-      // El barbero está hablando personalmente con el cliente.
-      // Silenciar el bot para este cliente durante 45 minutos.
       pausaPorIntervencionHumana.set(remitente, ahora + (45 * 60 * 1000));
       return;
     }
 
-    // Si el barbero intervino recientemente en este chat, el bot NO interrumpe
     const pausaHasta = pausaPorIntervencionHumana.get(remitente) || 0;
-    if (ahora < pausaHasta) {
-      return; // El barbero está conversando, el bot se queda callado
-    }
+    if (ahora < pausaHasta) return;
 
     const texto = (
       msg.message.conversation ||
@@ -122,7 +136,7 @@ async function iniciarBot() {
 
       if (barberia.botActivo === false) return;
 
-      // 1. REGLAS PERSONALIZADAS (Preguntas Frecuentes: parqueadero, métodos de pago, etc.)
+      // 1. Preguntas Frecuentes
       const reglas = barberia.botReglas || [];
       for (const regla of reglas) {
         const palabras = regla.palabrasClave.split(',').map(p => p.trim().toLowerCase());
@@ -132,7 +146,7 @@ async function iniciarBot() {
         }
       }
 
-      // 2. SALUDOS O MENÚ PRINCIPAL
+      // 2. Saludos / Menú
       if (texto.includes('hola') || texto.includes('buenas') || texto.includes('info') || texto === 'menu' || texto === '1') {
         const bienvenida = (barberia.mensajeBienvenidaBot || '¡Hola! 💈 Bienvenido a {barberia}.')
           .replace('{barberia}', barberia.nombre || 'la barbería');
@@ -144,19 +158,18 @@ async function iniciarBot() {
         return;
       }
 
-      // 3. CONSULTA DE PRECIOS Y SERVICIOS
+      // 3. Precios y Servicios
       if (texto.includes('precio') || texto.includes('costo') || texto.includes('cuanto vale') || texto.includes('servicio') || texto === '2') {
         let lista = `💈 *Precios de ${barberia.nombre}:*\n\n`;
         (barberia.servicios || []).forEach(s => {
           lista += `✂️ *${s.nombre}* - $ ${Number(s.precio).toLocaleString()}\n`;
         });
-        lista += `\n📅 *Reserva tu turno aquí:* https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}`;
+        lista += `\n📅 *Reserva aquí:* https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}`;
         await sock.sendMessage(remitente, { text: lista });
         return;
       }
 
-      // 🛡️ REGLA 2 ANTI-SPAM (DERIVACIÓN HUMANA INTELIGENTE):
-      // Si la persona pregunta algo no reconocido, solo se envía el mensaje 1 SOLA VEZ cada 2 horas
+      // 🛡️ REGLA 3: Derivación humana máx 1 vez cada 2 horas por persona
       const ultimaVezDerivado = ultimaRespuestaHumana.get(remitente) || 0;
       const dosHorasMs = 2 * 60 * 60 * 1000;
 
@@ -167,10 +180,9 @@ async function iniciarBot() {
         await sock.sendMessage(remitente, { text: derivacion });
         ultimaRespuestaHumana.set(remitente, ahora);
       }
-      // Si ya se le envió en las últimas 2 horas, el bot NO vuelve a mandar nada. Cero spam.
 
     } catch (e) {
-      console.error('Error en bot:', e);
+      console.error('Error procesando mensaje en bot:', e);
     }
   });
 }
