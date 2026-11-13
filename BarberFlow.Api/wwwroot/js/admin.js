@@ -1203,6 +1203,20 @@ async function eliminarReglaBot(id) {
   }
 }
 
+function abrirModalVincularWhatsApp() {
+  const modal = document.getElementById('modal-vincular-whatsapp');
+  if (modal) {
+    const iframe = document.getElementById('iframe-qr-bot');
+    if (iframe) iframe.src = 'http://localhost:3001?t=' + Date.now();
+    modal.classList.remove('hidden');
+  }
+}
+
+function cerrarModalVincularWhatsApp() {
+  const modal = document.getElementById('modal-vincular-whatsapp');
+  if (modal) modal.classList.add('hidden');
+}
+
 async function eliminarBarberiaCompleta() {
   if (!confirm('⚠️ ¿Estás SEGURO de eliminar por completo tu barbería y tu cuenta?\n\nEsta acción borrará todas tus citas, servicios y configuración permanentemente.')) {
     return;

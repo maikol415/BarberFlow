@@ -1,15 +1,11 @@
-## Build & SDK
-bin/
-obj/
-
-## SQLite & Local DB
+BarberFlow.Api/bin/
+BarberFlow.Api/obj/
 *.db
-*.db-wal
 *.db-shm
-
-## VS & IDE
-.vs/
+*.db-wal
+BarberFlow.Api/wwwroot/uploads/*
+!BarberFlow.Api/wwwroot/uploads/.gitkeep
+whatsapp-bot/node_modules/
+whatsapp-bot/auth_info_baileys/
+.vscode/
 .idea/
-*.user
-*.suo
-launchSettings.json
