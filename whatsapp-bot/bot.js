@@ -9,6 +9,8 @@ const BARBERIA_SLUG = process.env.BARBERIA_SLUG || 'barberia-jr';
 
 const ultimaRespuestaHumana = new Map();
 const pausaPorIntervencionHumana = new Map();
+let cacheBarberia = null;
+let ultimaCargaCache = 0;
 
 let ultimoQrDataUrl = '';
 let estadoConexion = 'Generando QR...';
@@ -144,11 +146,40 @@ async function iniciarBot() {
     // Limpiar caracteres invisibles, espacios y emojis para comparar números
     const soloNumeros = texto.replace(/[^0-9]/g, '');
 
+    console.log(`[Mensaje Recibido] De: ${remitente} | Texto: "${texto}" | fromMe: ${msg.key.fromMe}`);
+
     try {
-      const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      const barberia = data.barberia || data;
+      // Usar caché rápido de datos para no esperar 4 segundos a la API cada vez
+      let barberia = cacheBarberia;
+      const ahoraTs = Date.now();
+      if (!barberia || ahoraTs - ultimaCargaCache > 30000) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`, { timeout: 6000 });
+          if (res.ok) {
+            const data = await res.json();
+            barberia = data.barberia || data;
+            cacheBarberia = barberia;
+            ultimaCargaCache = ahoraTs;
+          }
+        } catch (fetchErr) {
+          console.error('[Cache] Usando datos locales por lentitud de red externa');
+        }
+      }
+
+      if (!barberia) {
+        barberia = {
+          nombre: 'Barberia JR',
+          botActivo: true,
+          direccion: 'Calle 45 # 12-34',
+          horarioTexto: 'Lunes a Sábado 9:00 AM - 8:00 PM',
+          servicios: [
+            { nombre: 'Corte Moderno', precio: 30000, duracionMinutos: 30 },
+            { nombre: 'Corte más Barba', precio: 30000, duracionMinutos: 60 },
+            { nombre: 'Diseño de Barba', precio: 12000, duracionMinutos: 20 },
+            { nombre: 'Limpieza facial profunda', precio: 17000, duracionMinutos: 40 }
+          ]
+        };
+      }
 
       if (barberia.botActivo === false) return;
 
