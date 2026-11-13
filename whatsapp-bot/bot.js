@@ -30,7 +30,19 @@ http.createServer((req, res) => {
     return;
   }
 
-  // Endpoint JSON para el modal
+  // Endpoint para resetear sesión manualmente si se traba
+  if (req.url.startsWith('/api/reset')) {
+    try {
+      fs.rmSync('./auth_info_baileys', { recursive: true, force: true });
+    } catch (e) {}
+    ultimoQrDataUrl = '';
+    estaConectado = false;
+    estadoConexion = 'Generando nuevo QR...';
+    iniciarBot();
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ ok: true, mensaje: 'Sesión reseteada. QR en camino.' }));
+    return;
+  }
   if (req.url.startsWith('/api/status')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
