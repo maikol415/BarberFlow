@@ -2,6 +2,7 @@ import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeys
 import QRCode from 'qrcode';
 import http from 'http';
 import fetch from 'node-fetch';
+import fs from 'fs';
 
 const PORT = process.env.PORT || 3001;
 const API_BASE_URL = process.env.BARBERFLOW_API_URL || 'https://barberflow-aos9.onrender.com/api/public';
@@ -88,12 +89,20 @@ async function iniciarBot() {
 
     if (connection === 'close') {
       estaConectado = false;
-      const shouldReconnect = (lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+      const statusCode = (lastDisconnect?.error)?.output?.statusCode;
+      const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
+      console.log(`[Conexión cerrada] StatusCode: ${statusCode} | shouldReconnect: ${shouldReconnect}`);
+      
       if (shouldReconnect) {
-        estadoConexion = 'Reconectando...';
-        iniciarBot();
+        estadoConexion = 'Reconectando automáticamente...';
+        setTimeout(iniciarBot, 3000);
       } else {
-        estadoConexion = 'Sesión cerrada. Escanea de nuevo.';
+        estadoConexion = 'Sesión expirada. Generando nuevo código QR...';
+        // Limpiar credenciales viejas para forzar QR fresco
+        try {
+          fs.rmSync('./auth_info_baileys', { recursive: true, force: true });
+        } catch (e) {}
+        setTimeout(iniciarBot, 2000);
       }
     } else if (connection === 'open') {
       estaConectado = true;
