@@ -1222,7 +1222,13 @@ async function abrirModalVincularWhatsApp() {
 
   async function consultarEstadoBot() {
     try {
-      const res = await fetch('http://localhost:3001/api/status');
+      // Consultar directamente el bot en la nube (Render) o fallback local
+      let res;
+      try {
+        res = await fetch('https://barberflow-bot.onrender.com/api/status');
+      } catch (e) {
+        res = await fetch('http://localhost:3001/api/status');
+      }
       if (!res.ok) return;
       const data = await res.json();
 
