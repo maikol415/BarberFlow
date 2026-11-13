@@ -126,13 +126,20 @@ async function iniciarBot() {
       return;
     }
 
+    // Extraer texto de cualquier formato de mensaje (conversación directa, respuesta extendida, pie de foto, etc.)
     const texto = (
       msg.message.conversation ||
       msg.message.extendedTextMessage?.text ||
+      msg.message.imageMessage?.caption ||
+      msg.message.videoMessage?.caption ||
       ''
     ).toLowerCase().trim();
 
-    if (!texto) return;
+    // Si mandó solo un sticker, imagen o audio sin texto
+    if (!texto) {
+      console.log(`[Mensaje Recibido] Mensaje sin texto (sticker/audio/media) de ${remitente}. Ignorando.`);
+      return;
+    }
 
     try {
       const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`);
@@ -208,19 +215,15 @@ async function iniciarBot() {
         texto.includes('menú') || 
         texto === '1'
       ) {
-        const bienvenida = (barberia.mensajeBienvenidaBot || '¡Hola! 💈 Bienvenido a {barberia}.')
-          .replace('{barberia}', barberia.nombre || 'BarberFlow');
-
-        const msj = `${bienvenida}\n\n` +
-          `✨ *¿Cómo te podemos colaborar hoy?*\n\n` +
+        const msj = `💈 *Bienvenido a ${barberia.nombre || 'BarberFlow'}*\n\n` +
+          `¿En qué te podemos colaborar hoy?\n\n` +
           `1️⃣ 📅 *Agendar tu cita en línea:*\n` +
           `👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}\n\n` +
-          `2️⃣ 💈 *Ver precios y catálogo de cortes:*\n` +
-          `   _Escribe "precios" para ver la lista completa._\n\n` +
+          `2️⃣ ✂️ *Ver precios y catálogo de servicios:*\n` +
+          `   _(Responde "2" o escribe "precios")_\n\n` +
           `3️⃣ 📍 *Ubicación y Horarios:*\n` +
-          `   📍 ${barberia.direccion || 'Sede principal'}\n` +
-          `   ⏰ ${barberia.horarioTexto || 'Lunes a Sábado'}\n\n` +
-          `_Escribe el número de tu opción o déjanos tu mensaje y te atenderemos con gusto._ ✂️`;
+          `   _(Responde "3" o escribe "ubicación")_\n\n` +
+          `_Escribe el número de tu opción (1, 2 o 3) o déjanos tu duda y el barbero te responderá._ ✨`;
 
         await sock.sendMessage(remitente, { text: msj });
         await sock.sendPresenceUpdate('paused', remitente);
