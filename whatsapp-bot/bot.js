@@ -167,10 +167,9 @@ async function iniciarBot() {
 
       console.log(`[Mensaje Recibido] Remitente: ${remitente} | Texto: "${texto}"`);
 
-    // Limpiar caracteres invisibles, espacios y emojis para comparar números
-    const soloNumeros = texto.replace(/[^0-9]/g, '');
+      // Limpiar caracteres invisibles, espacios y emojis para comparar números
+      const soloNumeros = texto.replace(/[^0-9]/g, '');
 
-    try {
       // Usar datos locales directos e inmediatos para respuesta cero-milisegundos
       const barberia = {
         nombre: 'Barberia JR',
