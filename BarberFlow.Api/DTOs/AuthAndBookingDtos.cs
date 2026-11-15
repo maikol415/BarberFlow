@@ -81,7 +81,8 @@ public record CrearCitaPublicaDto(
     [Required] string NombreCliente,
     [Required] string TelefonoCliente,
     [Required] string Fecha,
-    [Required] string Hora
+    [Required] string Hora,
+    int? ReagendarCitaId = null
 );
 
 public record CambiarEstadoCitaDto(

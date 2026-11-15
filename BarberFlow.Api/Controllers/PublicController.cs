@@ -202,6 +202,16 @@ public class PublicController : ControllerBase
             Estado = "Confirmada"
         };
 
+        // Si es un reagendamiento, cancelar automáticamente la cita anterior
+        if (dto.ReagendarCitaId.HasValue)
+        {
+            var citaAnterior = await _context.Citas.FindAsync(dto.ReagendarCitaId.Value);
+            if (citaAnterior != null && citaAnterior.BarberiaId == barberia.Id)
+            {
+                citaAnterior.Estado = "Cancelada";
+            }
+        }
+
         _context.Citas.Add(cita);
         await _context.SaveChangesAsync();
 

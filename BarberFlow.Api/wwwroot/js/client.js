@@ -775,7 +775,8 @@ async function confirmarReservaFinal(e) {
     nombreCliente: nombre,
     telefonoCliente: telefonoCompleto,
     fecha: reservaActual.fechaSeleccionada,
-    hora: reservaActual.horaSeleccionada
+    hora: reservaActual.horaSeleccionada,
+    reagendarCitaId: citaIdReagendar ? parseInt(citaIdReagendar) : null
   };
 
   const btn = document.getElementById('btn-confirmar-final');
@@ -838,8 +839,9 @@ function cerrarModal() {
   window.location.reload();
 }
 
-// 6. Sistema de Valoración por Estrellas (Clientes)
+// 6. Sistema de Valoración por Estrellas (Clientes) y Reagendamiento
 let citaIdCalificar = null;
+let citaIdReagendar = null;
 
 async function verificarParametrosUrl() {
   const params = new URLSearchParams(window.location.search);
@@ -857,6 +859,13 @@ async function verificarParametrosUrl() {
     } catch (e) {
       console.log('Error cargando cita para calificar:', e);
     }
+  }
+
+  const reagendarId = params.get('reagendar');
+  if (reagendarId) {
+    citaIdReagendar = reagendarId;
+    const banner = document.getElementById('banner-reagendar-aviso');
+    if (banner) banner.classList.remove('hidden');
   }
 }
 

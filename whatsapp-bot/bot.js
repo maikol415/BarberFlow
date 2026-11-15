@@ -344,6 +344,21 @@ async function iniciarBot() {
                 `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
 
               await enviarMensajeHumano(sock, remitente, msjCancelado);
+
+              // 🔔 NOTIFICAR INMEDIATAMENTE AL BARBERO QUE SE CANCELÓ UN TURNO
+              try {
+                const jidBarbero = formatearJidWhatsApp(barberia.telefonoWhatsApp);
+                if (jidBarbero && jidBarbero !== remitente) {
+                  const msjAvisoBarbero = 
+                    `🔔 *Notificación de Agenda:*\n` +
+                    `El cliente *${nombreCliente}* canceló su turno del *${estado.citaFecha}* a las *${estado.citaHora}*.\n\n` +
+                    `✅ Ese horario quedó libre automáticamente en tu calendario web.`;
+                  await sock.sendMessage(jidBarbero, { text: msjAvisoBarbero });
+                }
+              } catch (errBarbero) {
+                console.error('Error notificando al barbero sobre cancelación:', errBarbero);
+              }
+
               return;
             }
           } catch (e) {
@@ -544,7 +559,21 @@ async function iniciarBot() {
         texto.includes('info')
       ) {
         estadoCliente.set(remitente, { nivel: 'INICIO' });
-        const msj = `💈 *Bienvenido a ${barberia.nombre || 'Barberia JR'}*\n\n` +
+
+        // Intentar consultar si ya es un cliente conocido en el sistema
+        let saludoPersonalizado = `💈 *Bienvenido a ${barberia.nombre || 'Barberia JR'}*`;
+        try {
+          const resCli = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telBusqueda}`);
+          if (resCli.ok) {
+            const datosCita = await resCli.json();
+            if (datosCita && datosCita.nombreCliente) {
+              const primer = obtenerPrimerNombre(datosCita.nombreCliente);
+              saludoPersonalizado = `💈 *¡Hola ${primer}! Qué gusto tenerte de vuelta en ${barberia.nombre || 'Barberia JR'}*`;
+            }
+          }
+        } catch (e) {}
+
+        const msj = `${saludoPersonalizado}\n\n` +
           `¿En qué te podemos colaborar hoy?\n\n` +
           `1️⃣ 📅 *Agendar tu cita en línea:*\n` +
           `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
