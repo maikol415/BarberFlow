@@ -132,7 +132,7 @@ async function cargarPerfil() {
     const inputTitular = document.getElementById('conf-bot-titular');
     if (inputTitular) inputTitular.value = barberiaActual.titularCuenta || '';
     const inputDatosPago = document.getElementById('conf-bot-datospago');
-    if (inputDatosPago) inputDatosPago.value = barberiaActual.datosPago || 'Aceptamos Efectivo en caja, transferencias Nequi/Daviplata y tarjeta Débito.';
+    if (inputDatosPago) inputDatosPago.value = barberiaActual.datosPago || 'Aceptamos efectivo en el local, transferencias por Nequi y Bancolombia.';
 
     renderListaReglasBot(barberiaActual.botReglas || []);
   } catch (err) {

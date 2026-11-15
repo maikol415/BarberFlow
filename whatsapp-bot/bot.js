@@ -308,7 +308,7 @@ async function iniciarBot() {
         }
 
         if (barberia.numeroDaviplata) {
-          msgPago += `🏦 *Bancolombia / A la Mano:* ${barberia.numeroDaviplata}\n`;
+          msgPago += `🏦 *Bancolombia:* ${barberia.numeroDaviplata}\n`;
         }
 
         if (barberia.titularCuenta) {

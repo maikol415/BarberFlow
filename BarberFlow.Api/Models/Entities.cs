@@ -41,8 +41,8 @@ public class Barberia
     public List<HorarioBloqueo> Bloqueos { get; set; } = new();
     public List<Valoracion> Valoraciones { get; set; } = new();
 
-    // Métodos de pago y transferencias (Nequi, Daviplata, Efectivo)
-    public string DatosPago { get; set; } = "Aceptamos Efectivo en el local, transferencias por Nequi y Daviplata.";
+    // Métodos de pago y transferencias (Nequi, Bancolombia, Efectivo)
+    public string DatosPago { get; set; } = "Aceptamos efectivo en el local, transferencias por Nequi y Bancolombia.";
     public string NumeroNequi { get; set; } = "";
     public string NumeroDaviplata { get; set; } = "";
     public string TitularCuenta { get; set; } = "";
