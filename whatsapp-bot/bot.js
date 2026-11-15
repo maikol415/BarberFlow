@@ -336,13 +336,14 @@ async function iniciarBot() {
             const resCanc = await fetch(`${API_BASE_URL}/bot/cancelar-cita/${estado.citaId}`, { method: 'POST' });
             if (resCanc.ok) {
               estadoCliente.set(remitente, { nivel: 'INICIO' });
-              await enviarMensajeHumano(
-                sock,
-                remitente,
-                `✅ Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* ha sido cancelada con éxito.\n\n` +
-                `El horario quedó liberado. Si deseas reagendar cuando gustes, puedes hacerlo aquí:\n` +
-                `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`
-              );
+              const nombreCliente = estado.citaNombre || 'amigo';
+              const msjCancelado = 
+                `✅ ¡Listo ${nombreCliente}! Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* ha sido cancelada correctamente.\n\n` +
+                `Lamentamos que no nos puedas acompañar en esta ocasión, ¡esperamos verte muy pronto en la barbería! 💈✂️\n\n` +
+                `Cuando desees volver a agendar tu espacio, estaremos encantados de atenderte aquí:\n` +
+                `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
+
+              await enviarMensajeHumano(sock, remitente, msjCancelado);
               return;
             }
           } catch (e) {
@@ -372,7 +373,8 @@ async function iniciarBot() {
               nivel: 'CONFIRMAR_CANCELACION',
               citaId: cita.id,
               citaFecha: cita.fecha,
-              citaHora: cita.hora
+              citaHora: cita.hora,
+              citaNombre: primerNombre
             });
 
             const msjConfirmacion = 
