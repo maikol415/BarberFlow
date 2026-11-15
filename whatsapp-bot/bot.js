@@ -134,20 +134,8 @@ async function iniciarBot() {
       // 🛡️ REGLA 1: Ignorar grupos y difusiones
       if (!remitente || remitente.includes('@g.us') || remitente.includes('broadcast')) return;
 
-      const ahora = Date.now();
-
-      // 🛡️ REGLA 2: Si el barbero escribió personalmente, callar el bot 45 min
-      if (msg.key.fromMe) {
-        console.log(`[Anti-Spam] Barbero respondió manualmente a ${remitente}. Silenciando bot 45 min.`);
-        pausaPorIntervencionHumana.set(remitente, ahora + (45 * 60 * 1000));
-        return;
-      }
-
-      const pausaHasta = pausaPorIntervencionHumana.get(remitente) || 0;
-      if (ahora < pausaHasta) {
-        console.log(`[Anti-Spam] Contacto ${remitente} en pausa por intervención humana activa.`);
-        return;
-      }
+      // ⚠️ IMPORTANTE: Si el mensaje lo envió el propio bot, ignorarlo para no procesarse a sí mismo
+      if (msg.key.fromMe) return;
 
       // Extraer texto de cualquier formato de mensaje
       const texto = (
