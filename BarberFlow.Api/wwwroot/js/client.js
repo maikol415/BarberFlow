@@ -799,36 +799,21 @@ async function confirmarReservaFinal(e) {
     }
 
     // Modal de confirmación exitosa
-    document.getElementById('modal-codigo').innerText = data.codigoReserva;
-    document.getElementById('modal-servicio').innerText = data.servicioNombre;
+    document.getElementById('modal-codigo').innerText = data.codigoReserva || '#BF-CITA';
+    document.getElementById('modal-servicio').innerText = data.servicioNombre || 'Servicio';
     document.getElementById('modal-horario').innerText = `${data.fecha} - ${data.hora}`;
 
-    // Obtener nombre del barbero asignado
-    const barberoElegido = barberia.miembros ? barberia.miembros.find(m => m.id === reservaActual.barberoId) : null;
-    const barberoNombre = barberoElegido ? barberoElegido.nombre : 'Master Barber';
+    const modalSuccess = document.getElementById('success-modal');
+    if (modalSuccess) modalSuccess.classList.remove('hidden');
 
-    const msgWhatsApp = encodeURIComponent(
-      `💈 *${data.barberiaNombre.toUpperCase()}* 💈\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Hola! 👋 Acabo de agendar una cita:\n\n` +
-      `👤 *Cliente:* ${nombre}\n` +
-      `✂️ *Servicio:* ${data.servicioNombre}\n` +
-      `💈 *Profesional:* ${barberoNombre}\n` +
-      `📅 *Fecha:* ${data.fecha}\n` +
-      `🕒 *Hora:* ${data.hora}\n` +
-      `🔖 *Código:* #${data.codigoReserva}\n\n` +
-      `📍 *Ubicación:* ${barberia.direccion || 'En la barbería'}\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Quedo atento a su confirmación! ✂️🔥`
-    );
-
-    const cleanPhone = (data.barberiaWhatsApp || '').replace(/[^0-9]/g, '');
-    document.getElementById('modal-btn-whatsapp').href = `https://wa.me/${cleanPhone}?text=${msgWhatsApp}`;
-    document.getElementById('success-modal').classList.remove('hidden');
-
-    confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+    try {
+      if (typeof confetti === 'function') {
+        confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } });
+      }
+    } catch (e) {}
   } catch (err) {
-    alert('No se pudo conectar con el servidor.');
+    console.error('Error en confirmación:', err);
+    alert('Hubo un inconveniente al confirmar. Por favor verifica tu conexión o intenta nuevamente.');
     btn.disabled = false;
     btn.innerText = 'Confirmar Cita Ahora';
   }
