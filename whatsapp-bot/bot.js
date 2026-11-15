@@ -7,21 +7,95 @@ import fs from 'fs';
 const PORT = process.env.PORT || 3001;
 const API_BASE_URL = process.env.BARBERFLOW_API_URL || 'https://barberflow-aos9.onrender.com/api/public';
 const BARBERIA_SLUG = process.env.BARBERIA_SLUG || 'barberia-jr';
+const BASE_WEB_URL = process.env.BARBERFLOW_WEB_URL || 'https://barberflow-aos9.onrender.com';
 
-const ultimaRespuestaHumana = new Map();
-const estadoCliente = new Map(); // Para saber si está en el menú principal o dentro de categorías de servicios
+const ultimaInteraccionCliente = new Map(); // Para saber cuándo habló por última vez
+const estadoCliente = new Map(); // Menús o confirmaciones de cancelación
 let cacheBarberia = null;
 let ultimaCargaCache = 0;
 
 let ultimoQrDataUrl = '';
 let estadoConexion = 'Generando QR...';
 let estaConectado = false;
+let socketActivo = null;
 
-// API REST y Web Server para el Modal del Admin
-http.createServer((req, res) => {
-  // Encabezados CORS para que el Admin en Render pueda consultar el estado y el QR
+// Control de envío único del Anuncio Matutino diario
+let ultimoDiaAnuncioEnviado = '';
+
+// Utilidad para extraer solo el primer nombre
+function obtenerPrimerNombre(nombreCompleto) {
+  if (!nombreCompleto) return 'Cliente';
+  const partes = nombreCompleto.trim().split(/\s+/);
+  const primer = partes[0] || 'Cliente';
+  return primer.charAt(0).toUpperCase() + primer.slice(1).toLowerCase();
+}
+
+// Formatear teléfono a JID de Baileys (ej: 573001234567@s.whatsapp.net)
+function formatearJidWhatsApp(telefono) {
+  if (!telefono) return null;
+  let limpio = telefono.replace(/[^0-9]/g, '');
+  if (limpio.length === 10 && limpio.startsWith('3')) {
+    limpio = `57${limpio}`; // Código país Colombia por defecto
+  }
+  return `${limpio}@s.whatsapp.net`;
+}
+
+// Función auxiliar para responder de forma natural (escribiendo... ~1.8s)
+const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
+  try {
+    if (!sock || !estaConectado) return false;
+    await sock.sendPresenceUpdate('composing', remitente);
+    await new Promise(r => setTimeout(r, 1800));
+    await sock.sendMessage(remitente, { text: textoRespuesta });
+    await sock.sendPresenceUpdate('paused', remitente);
+    return true;
+  } catch (err) {
+    console.error('Error enviando mensaje WhatsApp:', err);
+    return false;
+  }
+};
+
+// Cargar o refrescar datos de la barbería en segundo plano cada 60s
+async function obtenerDatosBarberia() {
+  const ahoraTs = Date.now();
+  if (!cacheBarberia || ahoraTs - ultimaCargaCache > 60000) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`, { timeout: 4000 });
+      if (res.ok) {
+        const data = await res.json();
+        cacheBarberia = data.barberia || data;
+        ultimaCargaCache = ahoraTs;
+      }
+    } catch (fetchErr) {
+      console.log('Nota: usando cache local para barbería:', fetchErr.message);
+    }
+  }
+
+  return cacheBarberia || {
+    nombre: 'Barberia JR',
+    botActivo: true,
+    direccion: 'Calle 45 # 12-34',
+    telefonoWhatsApp: '573001234567',
+    horarioTexto: 'Lunes a Sábado 9:00 AM - 8:00 PM',
+    anuncioMatutinoActivo: true,
+    horaAnuncioSemana: '08:00',
+    horaAnuncioSabado: '08:00',
+    horaAnuncioDomingo: '09:00',
+    servicios: [
+      { categoria: 'Cortes', nombre: 'Corte Moderno', precio: 30000, duracionMinutos: 30 },
+      { categoria: 'Cortes', nombre: 'Corte más Barba', precio: 30000, duracionMinutos: 60 },
+      { categoria: 'Cortes', nombre: 'Diseño de Barba', precio: 12000, duracionMinutos: 20 },
+      { categoria: 'Limpieza facial', nombre: 'Limpieza facial profunda', precio: 17000, duracionMinutos: 40 },
+      { categoria: 'Uñas', nombre: 'Arreglo de uñas', precio: 35000, duracionMinutos: 60 }
+    ]
+  };
+}
+
+// ----------------- SERVIDOR HTTP Y WEBHOOKS -----------------
+http.createServer(async (req, res) => {
+  // Encabezados CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
@@ -30,7 +104,7 @@ http.createServer((req, res) => {
     return;
   }
 
-  // Endpoint para resetear sesión manualmente si se traba
+  // 1. Endpoint para resetear sesión de WhatsApp
   if (req.url.startsWith('/api/reset')) {
     try {
       fs.rmSync('./auth_info_baileys', { recursive: true, force: true });
@@ -43,6 +117,8 @@ http.createServer((req, res) => {
     res.end(JSON.stringify({ ok: true, mensaje: 'Sesión reseteada. QR en camino.' }));
     return;
   }
+
+  // 2. Endpoint de Estado del Bot para el panel de administración
   if (req.url.startsWith('/api/status')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
@@ -50,6 +126,76 @@ http.createServer((req, res) => {
       estado: estadoConexion,
       qr: ultimoQrDataUrl
     }));
+    return;
+  }
+
+  // 3. Webhook: Notificación Automática de Cita Agendada (Web ➔ WhatsApp)
+  if (req.method === 'POST' && req.url.startsWith('/api/notificar-cita')) {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', async () => {
+      try {
+        const payload = JSON.parse(body || '{}');
+        const {
+          citaId,
+          codigoReserva,
+          barberiaNombre,
+          barberiaDireccion,
+          nombreCliente,
+          telefonoCliente,
+          servicio,
+          fecha,
+          hora,
+          total
+        } = payload;
+
+        if (!telefonoCliente || !socketActivo || !estaConectado) {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ enviado: false, razon: 'Bot no conectado o sin teléfono' }));
+          return;
+        }
+
+        const jid = formatearJidWhatsApp(telefonoCliente);
+        const primerNombre = obtenerPrimerNombre(nombreCliente);
+        const ultimaVez = ultimaInteraccionCliente.get(jid) || 0;
+        const ahora = Date.now();
+        const yaHabloReciente = (ahora - ultimaVez) < (30 * 60 * 1000); // 30 minutos
+
+        let saludoInicial = yaHabloReciente
+          ? `¡Listo ${primerNombre}! ✅ Tu turno ha quedado agendado en el sistema 💈`
+          : `¡Hola ${primerNombre}! 👋 Gracias por reservar en *${barberiaNombre || 'Barbería JR'}* 💈✂️`;
+
+        const msgConfirmacion = 
+          `${saludoInicial}\n\n` +
+          `📋 *Detalles de tu Cita:*\n` +
+          `✂️ *Servicio:* ${servicio}\n` +
+          `📅 *Fecha:* ${fecha}\n` +
+          `⏰ *Hora:* ${hora}\n` +
+          `🔖 *Código:* ${codigoReserva || '#BF-CITA'}\n` +
+          `💵 *Valor:* $${Number(total || 0).toLocaleString('es-CO')}\n` +
+          `📍 *Dirección:* ${barberiaDireccion || 'En la barbería'}\n\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `💡 *Gestión rápida de tu cita:*\n` +
+          `• Responde *SI* para reconfirmar que asistirás ✅\n` +
+          `• Responde *CANCELAR* si te surge un imprevisto ❌\n` +
+          `• Responde *REAGENDAR* si deseas cambiar de horario 🔄\n` +
+          `━━━━━━━━━━━━━━━━━━━━\n` +
+          `¡Te esperamos con la mejor atención! 💈✨`;
+
+        await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
+        ultimaInteraccionCliente.set(jid, ahora);
+
+        // Agendar recordatorio de reseña post-cita (ejemplo: 2 horas después de la cita)
+        agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora);
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ enviado: true, jid }));
+      } catch (err) {
+        console.error('Error enviando notificación automática de cita:', err);
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message }));
+      }
+    });
     return;
   }
 
@@ -80,12 +226,35 @@ http.createServer((req, res) => {
     </html>
   `);
 }).listen(PORT, () => {
-  console.log(`Servidor del Bot y API de estado escuchando en el puerto ${PORT}`);
+  console.log(`Servidor del Bot y Webhooks activo en el puerto ${PORT}`);
 });
 
+// Función para enviar solicitud de reseña post-cita (calificación 1 a 5 estrellas verificada)
+function agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora) {
+  // Simulador programado: 2 horas de retraso (o 10 minutos para demostración si es el mismo día)
+  // Calculamos la hora de envío prudente
+  setTimeout(async () => {
+    try {
+      if (!socketActivo || !estaConectado) return;
+      const urlCalificar = `${BASE_WEB_URL}/index.html?calificar=${citaId}`;
+      const msgResena = 
+        `¡Hola ${primerNombre}! 👋 Esperamos que hayas quedado 10/10 con tu corte de hoy en *${barberiaNombre || 'Barbería JR'}* 💈✂️\n\n` +
+        `Tu opinión es muy importante para nosotros. ¿Podrías dejarnos tu calificación y comentario aquí en menos de 10 segundos? ⭐\n\n` +
+        `👉 ${urlCalificar}\n\n` +
+        `¡Muchas gracias por preferirnos! 🔥`;
+
+      await enviarMensajeHumano(socketActivo, jid, msgResena);
+    } catch (e) {
+      console.log('Error enviando encuesta post-cita:', e.message);
+    }
+  }, 2 * 60 * 60 * 1000); // 2 horas
+}
+
+// ----------------- MOTOR DEL BOT BAILEYS -----------------
 async function iniciarBot() {
   const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
   const sock = makeWASocket({ auth: state, printQRInTerminal: false });
+  socketActivo = sock;
 
   sock.ev.on('creds.update', saveCreds);
 
@@ -110,7 +279,6 @@ async function iniciarBot() {
         setTimeout(iniciarBot, 3000);
       } else {
         estadoConexion = 'Sesión expirada. Generando nuevo código QR...';
-        // Limpiar credenciales viejas para forzar QR fresco
         try {
           fs.rmSync('./auth_info_baileys', { recursive: true, force: true });
         } catch (e) {}
@@ -134,74 +302,140 @@ async function iniciarBot() {
       // 🛡️ REGLA 1: Ignorar grupos y difusiones
       if (!remitente || remitente.includes('@g.us') || remitente.includes('broadcast')) return;
 
-      // ⚠️ IMPORTANTE: Si el mensaje lo envió el propio bot, ignorarlo para no procesarse a sí mismo
+      // ⚠️ Ignorar mensajes propios
       if (msg.key.fromMe) return;
 
-      // Extraer texto de cualquier formato de mensaje
       const texto = (
         msg.message.conversation ||
         msg.message.extendedTextMessage?.text ||
         msg.message.imageMessage?.caption ||
         msg.message.videoMessage?.caption ||
-        msg.message.buttonsResponseMessage?.selectedButtonId ||
-        msg.message.listResponseMessage?.singleSelectReply?.selectedRowId ||
         ''
       ).toLowerCase().trim();
 
-      if (!texto) {
-        console.log(`[Mensaje Recibido] Sin texto (sticker/multimedia).`);
+      if (!texto) return;
+
+      const ahora = Date.now();
+      ultimaInteraccionCliente.set(remitente, ahora);
+      const soloNumeros = texto.replace(/[^0-9]/g, '');
+
+      const barberia = await obtenerDatosBarberia();
+      if (barberia.botActivo === false) return;
+
+      // Extraer número de teléfono del remitente (ej: 573001234567@s.whatsapp.net -> 3001234567)
+      const telSoloDigitos = remitente.replace(/[^0-9]/g, '');
+      const telBusqueda = telSoloDigitos.startsWith('57') ? telSoloDigitos.substring(2) : telSoloDigitos;
+
+      const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
+
+      // ----------------- FLUJO DE CANCELACIÓN CON CONFIRMACIÓN SEGURA -----------------
+      if (estado.nivel === 'CONFIRMAR_CANCELACION') {
+        if (soloNumeros === '1' || texto.includes('si') || texto.includes('sí') || texto.includes('cancelar')) {
+          // Confirmó cancelar la cita
+          try {
+            const resCanc = await fetch(`${API_BASE_URL}/bot/cancelar-cita/${estado.citaId}`, { method: 'POST' });
+            if (resCanc.ok) {
+              estadoCliente.set(remitente, { nivel: 'INICIO' });
+              await enviarMensajeHumano(
+                sock,
+                remitente,
+                `✅ Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* ha sido cancelada con éxito.\n\n` +
+                `El horario quedó liberado. Si deseas reagendar cuando gustes, puedes hacerlo aquí:\n` +
+                `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`
+              );
+              return;
+            }
+          } catch (e) {
+            console.error('Error cancelando cita en API:', e);
+          }
+        } else if (soloNumeros === '2' || texto.includes('no') || texto.includes('mantener')) {
+          // Desea mantener la cita
+          estadoCliente.set(remitente, { nivel: 'INICIO' });
+          await enviarMensajeHumano(
+            sock,
+            remitente,
+            `👍 ¡Perfecto! Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* sigue firme y reservada. ¡Te esperamos! 💈✂️`
+          );
+          return;
+        }
+      }
+
+      // 1. SOLICITUD DE CANCELACIÓN ("cancelar", "cancelar cita", etc.)
+      if (texto.includes('cancelar') || texto.includes('cancelo') || texto === 'cancelar cita') {
+        try {
+          const res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telBusqueda}`);
+          if (res.ok) {
+            const cita = await res.json();
+            const primerNombre = obtenerPrimerNombre(cita.nombreCliente);
+
+            estadoCliente.set(remitente, {
+              nivel: 'CONFIRMAR_CANCELACION',
+              citaId: cita.id,
+              citaFecha: cita.fecha,
+              citaHora: cita.hora
+            });
+
+            const msjConfirmacion = 
+              `Hola ${primerNombre}, encontramos tu cita agendada:\n\n` +
+              `✂️ *Servicio:* ${cita.servicio}\n` +
+              `📅 *Fecha:* ${cita.fecha}\n` +
+              `⏰ *Hora:* ${cita.hora}\n` +
+              `🔖 *Código:* ${cita.codigoReserva}\n\n` +
+              `¿Deseas confirmar la cancelación de este turno?\n\n` +
+              `*1*️⃣ Sí, cancelar mi cita ❌\n` +
+              `*2*️⃣ No, mantener mi turno ✅\n\n` +
+              `_Responde con el número *1* o *2*._`;
+
+            await enviarMensajeHumano(sock, remitente, msjConfirmacion);
+            return;
+          } else {
+            await enviarMensajeHumano(
+              sock,
+              remitente,
+              `No encontramos citas activas asociadas a este número de WhatsApp. Si necesitas agendar una nueva, puedes hacerlo aquí:\n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`
+            );
+            return;
+          }
+        } catch (e) {
+          console.error('Error buscando cita cliente:', e);
+        }
+      }
+
+      // 2. SOLICITUD DE REAGENDAR ("reagendar", "cambiar cita", "mover turno")
+      if (texto.includes('reagendar') || texto.includes('cambiar fecha') || texto.includes('cambiar hora') || texto.includes('mover cita')) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telBusqueda}`);
+          let urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
+          let detalle = '';
+
+          if (res.ok) {
+            const cita = await res.json();
+            urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${cita.id}`;
+            detalle = ` de tu cita actual (${cita.servicio} - ${cita.fecha} ${cita.hora})`;
+          }
+
+          const msjReagendar = 
+            `🔄 *Reagendar Turno — ${barberia.nombre || 'Barbería JR'}*\n\n` +
+            `Para elegir tu nuevo día y hora disponible en segundos sin demoras ni textos largos, ingresa a nuestro calendario visual aquí:\n\n` +
+            `👉 ${urlReagendar}\n\n` +
+            `_Al seleccionar tu nuevo horario, tu turno anterior se actualizará automáticamente._ ✨`;
+
+          await enviarMensajeHumano(sock, remitente, msjReagendar);
+          return;
+        } catch (e) {}
+      }
+
+      // 3. RESPUESTAS A CONFIRMACIÓN ("si", "confirmo", "asistiré", "confirmado")
+      if (texto === 'si' || texto === 'sí' || texto === 'confirmo' || texto === 'confirmar' || texto === 'confirmado' || texto === 'asistire' || texto === 'asistiré') {
+        await enviarMensajeHumano(
+          sock,
+          remitente,
+          `¡Excelente! ✅ Tu turno ha sido reconfirmado. Tu barbero tendrá tu estación lista y limpia a tu llegada. ¡Nos vemos pronto! 💈✂️`
+        );
         return;
       }
 
-      console.log(`[Mensaje Recibido] Remitente: ${remitente} | Texto: "${texto}"`);
-
-      // Limpiar caracteres invisibles, espacios y emojis para comparar números
-      const soloNumeros = texto.replace(/[^0-9]/g, '');
-
-      // Función auxiliar para responder de forma natural (escribiendo... ~1.8s)
-      const enviarMensajeHumano = async (textoRespuesta) => {
-        try {
-          await sock.sendPresenceUpdate('composing', remitente);
-          await new Promise(r => setTimeout(r, 1800));
-          await sock.sendMessage(remitente, { text: textoRespuesta });
-          await sock.sendPresenceUpdate('paused', remitente);
-        } catch (err) {
-          console.error('Error enviando mensaje:', err);
-        }
-      };
-
-      // Cargar o refrescar datos de la barbería en segundo plano cada 60s
-      const ahoraTs = Date.now();
-      if (!cacheBarberia || ahoraTs - ultimaCargaCache > 60000) {
-        try {
-          const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`, { timeout: 4000 });
-          if (res.ok) {
-            const data = await res.json();
-            cacheBarberia = data.barberia || data;
-            ultimaCargaCache = ahoraTs;
-          }
-        } catch (fetchErr) {}
-      }
-
-      const barberia = cacheBarberia || {
-        nombre: 'Barberia JR',
-        botActivo: true,
-        direccion: 'Calle 45 # 12-34',
-        horarioTexto: 'Lunes a Sábado 9:00 AM - 8:00 PM',
-        servicios: [
-          { categoria: 'Cortes', nombre: 'Corte Moderno', precio: 30000, duracionMinutos: 30 },
-          { categoria: 'Cortes', nombre: 'Corte más Barba', precio: 30000, duracionMinutos: 60 },
-          { categoria: 'Cortes', nombre: 'Diseño de Barba', precio: 12000, duracionMinutos: 20 },
-          { categoria: 'Cortes', nombre: 'Corte + exfoliación facial', precio: 32000, duracionMinutos: 60 },
-          { categoria: 'Limpieza facial', nombre: 'Limpieza facial profunda', precio: 17000, duracionMinutos: 40 },
-          { categoria: 'Uñas', nombre: 'Arreglo de uñas', precio: 35000, duracionMinutos: 60 },
-          { categoria: 'Uñas', nombre: 'Lavado de manos', precio: 15000, duracionMinutos: 30 }
-        ]
-      };
-
-      if (barberia.botActivo === false) return;
-
-      // Agrupar servicios dinámicamente por categoría
+      // Agrupar categorías de servicios
       const serviciosLista = barberia.servicios || [];
       const categoriasMap = new Map();
       serviciosLista.forEach(s => {
@@ -211,35 +445,33 @@ async function iniciarBot() {
       });
       const categoriasNombres = Array.from(categoriasMap.keys());
 
-      // 1. Preguntas Frecuentes personalizadas desde el panel
+      // 4. Preguntas Frecuentes personalizadas desde el panel
       const reglas = barberia.botReglas || [];
       for (const regla of reglas) {
         const palabras = regla.palabrasClave.split(',').map(p => p.trim().toLowerCase());
         if (palabras.some(p => p && texto.includes(p))) {
-          await enviarMensajeHumano(regla.respuesta);
+          await enviarMensajeHumano(sock, remitente, regla.respuesta);
           return;
         }
       }
 
-      const nivelActual = estadoCliente.get(remitente) || 'INICIO';
-
-      // 0. Si el cliente escribe "0" o "menu" o "volver", regresa al menú principal
+      // Regresar al menú principal con 0 o inicio
       if (soloNumeros === '0' || texto === 'menu' || texto === 'menú' || texto === 'volver' || texto === 'inicio') {
-        estadoCliente.set(remitente, 'INICIO');
+        estadoCliente.set(remitente, { nivel: 'INICIO' });
         const msj = `💈 *Bienvenido a ${barberia.nombre || 'Barberia JR'}*\n\n` +
           `¿En qué te podemos colaborar hoy?\n\n` +
           `1️⃣ 📅 *Agendar tu cita en línea:*\n` +
-          `👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}\n\n` +
+          `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
           `2️⃣ ✂️ *Ver servicios y precios por categorías*\n\n` +
           `3️⃣ 📍 *Ubicación y Horarios*\n\n` +
           `4️⃣ 💳 *Métodos de Pago (Nequi / Bancolombia)*\n\n` +
           `_Responde con el número de tu opción (1, 2, 3 o 4) o escribe tu duda._ ✨`;
-        await enviarMensajeHumano(msj);
+        await enviarMensajeHumano(sock, remitente, msj);
         return;
       }
 
-      // SI EL CLIENTE ESTÁ DENTRO DEL SUBMENÚ DE SERVICIOS
-      if (nivelActual === 'SERVICIOS') {
+      // SUBMENÚ DE CATEGORÍAS DE SERVICIOS
+      if (estado.nivel === 'SERVICIOS') {
         const opcionCatIndex = parseInt(soloNumeros, 10) - 1;
         if (!isNaN(opcionCatIndex) && opcionCatIndex >= 0 && opcionCatIndex < categoriasNombres.length) {
           const catSeleccionada = categoriasNombres[opcionCatIndex];
@@ -254,15 +486,15 @@ async function iniciarBot() {
           });
 
           lista += `─────────────────────────\n`;
-          lista += `📅 *Reserva tu turno aquí:* \n👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}\n\n`;
+          lista += `📅 *Reserva tu turno aquí:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n`;
           lista += `_Responde *0* para volver al menú principal._`;
 
-          await enviarMensajeHumano(lista);
+          await enviarMensajeHumano(sock, remitente, lista);
           return;
         }
       }
 
-      // 2. Precios y Servicios (Abrir submenú de categorías)
+      // 5. Precios y Servicios (Abrir submenú de categorías)
       if (
         soloNumeros === '2' ||
         texto === '2' ||
@@ -271,12 +503,11 @@ async function iniciarBot() {
         texto.includes('servicio') || 
         texto.includes('cuanto vale') || 
         texto.includes('cuánto vale') || 
-        texto.includes('cuanto cuesta') || 
         texto.includes('costo') || 
         texto.includes('cortes') || 
         texto.includes('corte')
       ) {
-        estadoCliente.set(remitente, 'SERVICIOS');
+        estadoCliente.set(remitente, { nivel: 'SERVICIOS' });
 
         let menuServicios = `💈 *Catálogo de Servicios — ${barberia.nombre || 'Barberia JR'}*\n`;
         menuServicios += `Elige la categoría que deseas consultar:\n\n`;
@@ -294,11 +525,11 @@ async function iniciarBot() {
         menuServicios += `\n*0*️⃣ 🔙 *Volver al menú principal*\n\n`;
         menuServicios += `_Responde con el número de la categoría para ver sus precios._`;
 
-        await enviarMensajeHumano(menuServicios);
+        await enviarMensajeHumano(sock, remitente, menuServicios);
         return;
       }
 
-      // 3. Saludos / Menú principal
+      // 6. Saludos / Menú principal
       if (
         soloNumeros === '1' ||
         texto === '1' ||
@@ -310,21 +541,21 @@ async function iniciarBot() {
         texto.includes('buenas noches') || 
         texto.includes('info')
       ) {
-        estadoCliente.set(remitente, 'INICIO');
+        estadoCliente.set(remitente, { nivel: 'INICIO' });
         const msj = `💈 *Bienvenido a ${barberia.nombre || 'Barberia JR'}*\n\n` +
           `¿En qué te podemos colaborar hoy?\n\n` +
           `1️⃣ 📅 *Agendar tu cita en línea:*\n` +
-          `👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}\n\n` +
+          `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
           `2️⃣ ✂️ *Ver servicios y precios por categorías*\n\n` +
           `3️⃣ 📍 *Ubicación y Horarios*\n\n` +
           `4️⃣ 💳 *Métodos de Pago (Nequi / Bancolombia)*\n\n` +
           `_Responde con el número de tu opción (1, 2, 3 o 4) o escribe tu duda._ ✨`;
 
-        await enviarMensajeHumano(msj);
+        await enviarMensajeHumano(sock, remitente, msj);
         return;
       }
 
-      // 4. Ubicación / Dónde quedan
+      // 7. Ubicación / Dónde quedan
       if (
         soloNumeros === '3' ||
         texto === '3' ||
@@ -338,12 +569,12 @@ async function iniciarBot() {
         const ubi = `📍 *Ubicación y Horario de Atención:*\n\n` +
           `🏠 *Dirección:* ${barberia.direccion || 'Calle 45 # 12-34'}\n` +
           `⏰ *Horario:* ${barberia.horarioTexto || 'Lunes a Sábado 9:00 AM - 8:00 PM'}\n\n` +
-          `📅 *Reserva tu cita aquí para no hacer fila:* \n👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}`;
-        await enviarMensajeHumano(ubi);
+          `📅 *Reserva tu cita aquí para no hacer fila:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
+        await enviarMensajeHumano(sock, remitente, ubi);
         return;
       }
 
-      // 5. Métodos de Pago y Transferencias
+      // 8. Métodos de Pago
       if (
         soloNumeros === '4' ||
         texto === '4' ||
@@ -375,23 +606,23 @@ async function iniciarBot() {
         }
 
         msgPago += `\n─────────────────────────\n`;
-        msgPago += `📅 *Reserva tu cita aquí:* \n👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}`;
+        msgPago += `📅 *Reserva tu cita aquí:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
 
-        await enviarMensajeHumano(msgPago);
+        await enviarMensajeHumano(sock, remitente, msgPago);
         return;
       }
 
-      // 6. DERIVACIÓN HUMANA INTELIGENTE (Para cualquier pregunta libre)
-      const ahora = Date.now();
-      const ultimaVezDerivado = ultimaRespuestaHumana.get(remitente) || 0;
+      // 9. DERIVACIÓN HUMANA INTELIGENTE (Preguntas libres o dudas no mapeadas)
+      const ultimaVezDerivado = estado.ultimaDerivacion || 0;
       const diezMinutosMs = 10 * 60 * 1000;
 
       if (ahora - ultimaVezDerivado > diezMinutosMs) {
         const derivacion = barberia.mensajeDerivacionHumana || 
           'He tomado nota de tu consulta. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno te responderá personalmente por este chat.';
         
-        await enviarMensajeHumano(derivacion);
-        ultimaRespuestaHumana.set(remitente, ahora);
+        await enviarMensajeHumano(sock, remitente, derivacion);
+        estado.ultimaDerivacion = ahora;
+        estadoCliente.set(remitente, estado);
       }
 
     } catch (e) {
@@ -399,5 +630,84 @@ async function iniciarBot() {
     }
   });
 }
+
+// ----------------- CRON: ANUNCIO MATUTINO DIARIO CONFIGURABLE -----------------
+setInterval(async () => {
+  try {
+    if (!socketActivo || !estaConectado) return;
+
+    // Obtener hora actual en zona horaria local de Colombia (UTC-5)
+    const fechaActual = new Date();
+    const formatterHora = new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    });
+    const formatterDiaSemana = new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota',
+      weekday: 'short'
+    });
+    const formatterFechaIso = new Intl.DateTimeFormat('es-CO', {
+      timeZone: 'America/Bogota',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    });
+
+    const horaMinutoActual = formatterHora.format(fechaActual); // ej: "08:00"
+    const diaSemana = formatterDiaSemana.format(fechaActual).toLowerCase(); // lun, mar, mié, jue, vie, sáb, dom
+    const fechaIso = formatterFechaIso.format(fechaActual).split('/').reverse().join('-'); // YYYY-MM-DD
+
+    // Evitar disparar más de una vez por día
+    if (ultimoDiaAnuncioEnviado === fechaIso) return;
+
+    const barberia = await obtenerDatosBarberia();
+    if (!barberia.anuncioMatutinoActivo) return;
+
+    // Determinar la hora configurada por el barbero según el día
+    let horaObjetivo = barberia.horaAnuncioSemana || '08:00';
+    if (diaSemana.includes('sáb') || diaSemana.includes('sab')) {
+      horaObjetivo = barberia.horaAnuncioSabado || '08:00';
+    } else if (diaSemana.includes('dom')) {
+      horaObjetivo = barberia.horaAnuncioDomingo || '09:00';
+    }
+
+    if (horaMinutoActual === horaObjetivo) {
+      // Disparar anuncio matutino a la barbería
+      const res = await fetch(`${API_BASE_URL}/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
+      if (res.ok) {
+        const data = await res.json();
+        const telefonoBarbero = data.telefonoWhatsApp;
+        const jidBarbero = formatearJidWhatsApp(telefonoBarbero);
+
+        if (jidBarbero) {
+          let briefing = `🌅 *¡Buenos días, equipo de ${data.nombre}!* ☕💈\n`;
+          briefing += `Aquí tienes tu programación y agenda para hoy *(${data.fecha})*:\n\n`;
+
+          if (!data.citas || data.citas.length === 0) {
+            briefing += `📅 *Sin citas agendadas por ahora.* ¡Un excelente día para recibir clientes directos y promocionar tu link de reservas! ✂️\n`;
+          } else {
+            briefing += `📌 *Total de citas programadas:* ${data.totalCitas}\n`;
+            briefing += `💰 *Proyección estimada del día:* $${Number(data.totalIngresosEstimados).toLocaleString('es-CO')}\n\n`;
+            briefing += `⏰ *Horarios reservados:*\n`;
+
+            data.citas.forEach((c, idx) => {
+              briefing += `${idx + 1}. 🕒 *${c.hora}* · ${c.nombreCliente} (${c.servicio})\n`;
+            });
+
+            briefing += `\n_Para ver o editar tu agenda en vivo:_\n👉 ${BASE_WEB_URL}/admin.html`;
+          }
+
+          await enviarMensajeHumano(socketActivo, jidBarbero, briefing);
+          ultimoDiaAnuncioEnviado = fechaIso;
+          console.log(`[Anuncio Matutino Enviado] Fecha: ${fechaIso} | Hora: ${horaMinutoActual}`);
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Error en Cron de Anuncio Matutino:', err.message);
+  }
+}, 30000); // Revisar cada 30 segundos
 
 iniciarBot();

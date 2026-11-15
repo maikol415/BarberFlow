@@ -74,6 +74,10 @@ public class AdminController : ControllerBase
                 barberia.MensajeDerivacionHumana,
                 barberia.PlantillaConfirmacion,
                 barberia.PlantillaRecordatorio,
+                barberia.AnuncioMatutinoActivo,
+                barberia.HoraAnuncioSemana,
+                barberia.HoraAnuncioSabado,
+                barberia.HoraAnuncioDomingo,
                 Servicios = barberia.Servicios,
                 Miembros = barberia.Miembros,
                 Bloqueos = barberia.Bloqueos,
@@ -119,6 +123,10 @@ public class AdminController : ControllerBase
         if (dto.MensajeDerivacionHumana != null) barberia.MensajeDerivacionHumana = dto.MensajeDerivacionHumana.Trim();
         if (dto.PlantillaConfirmacion != null) barberia.PlantillaConfirmacion = dto.PlantillaConfirmacion.Trim();
         if (dto.PlantillaRecordatorio != null) barberia.PlantillaRecordatorio = dto.PlantillaRecordatorio.Trim();
+        if (dto.AnuncioMatutinoActivo.HasValue) barberia.AnuncioMatutinoActivo = dto.AnuncioMatutinoActivo.Value;
+        if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSemana)) barberia.HoraAnuncioSemana = dto.HoraAnuncioSemana.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSabado)) barberia.HoraAnuncioSabado = dto.HoraAnuncioSabado.Trim();
+        if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioDomingo)) barberia.HoraAnuncioDomingo = dto.HoraAnuncioDomingo.Trim();
 
         await _context.SaveChangesAsync();
         return Ok(new { message = "Configuración actualizada con éxito.", barberia });

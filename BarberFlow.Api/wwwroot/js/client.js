@@ -58,6 +58,7 @@ async function initClient() {
     configurarSelectorBarbero();
     renderCalendario();
     renderOpiniones();
+    verificarParametrosUrl();
     lucide.createIcons();
   } catch (err) {
     console.error('Error cargando datos de la barbería:', err);
@@ -838,7 +839,26 @@ function cerrarModal() {
 }
 
 // 6. Sistema de Valoración por Estrellas (Clientes)
-let estrellasSeleccionadas = 5;
+let citaIdCalificar = null;
+
+async function verificarParametrosUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const calificarId = params.get('calificar');
+  if (calificarId) {
+    try {
+      const res = await fetch(`/api/public/cita-resena/${calificarId}`);
+      if (res.ok) {
+        const info = await res.json();
+        citaIdCalificar = info.id;
+        document.getElementById('val-nombre').value = info.nombreCliente || '';
+        document.getElementById('modal-valoracion-titulo').innerText = `Califica tu servicio en ${info.barberiaNombre}`;
+        abrirModalValoracion();
+      }
+    } catch (e) {
+      console.log('Error cargando cita para calificar:', e);
+    }
+  }
+}
 
 function abrirModalValoracion() {
   document.getElementById('modal-valoracion').classList.remove('hidden');
@@ -918,16 +938,29 @@ async function enviarValoracionCliente(e) {
   btn.innerText = 'Enviando...';
 
   try {
-    const res = await fetch('/api/public/valoraciones', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        barberiaSlug: barberia.slug,
-        nombreCliente: nombre,
-        estrellas: estrellas,
-        comentario: comentario
-      })
-    });
+    let res;
+    if (citaIdCalificar) {
+      res = await fetch('/api/public/calificar-cita', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          citaId: citaIdCalificar,
+          estrellas: estrellas,
+          comentario: comentario
+        })
+      });
+    } else {
+      res = await fetch('/api/public/valoraciones', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          barberiaSlug: barberia.slug,
+          nombreCliente: nombre,
+          estrellas: estrellas,
+          comentario: comentario
+        })
+      });
+    }
 
     if (res.ok) {
       alert('¡Muchas gracias por calificar a ' + barberia.nombre + '! ⭐');

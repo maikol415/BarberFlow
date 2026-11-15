@@ -99,6 +99,10 @@ public class PublicController : ControllerBase
                 barberia.BotActivo,
                 barberia.MensajeBienvenidaBot,
                 barberia.MensajeDerivacionHumana,
+                barberia.AnuncioMatutinoActivo,
+                barberia.HoraAnuncioSemana,
+                barberia.HoraAnuncioSabado,
+                barberia.HoraAnuncioDomingo,
                 BotReglas = botReglas,
                 Servicios = barberia.Servicios.Select(s => new
                 {
@@ -201,6 +205,41 @@ public class PublicController : ControllerBase
         _context.Citas.Add(cita);
         await _context.SaveChangesAsync();
 
+        // 🚀 DISPARAR NOTIFICACIÓN AUTOMÁTICA AL BOT DE WHATSAPP (SEGUNDO PLANO)
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
+                var notifPayload = new
+                {
+                    citaId = cita.Id,
+                    codigoReserva = cita.CodigoReserva,
+                    barberiaSlug = barberia.Slug,
+                    barberiaNombre = barberia.Nombre,
+                    barberiaDireccion = barberia.Direccion,
+                    barberiaTelefono = barberia.TelefonoWhatsApp,
+                    nombreCliente = cita.NombreCliente,
+                    telefonoCliente = cita.TelefonoCliente,
+                    servicio = servicio.Nombre,
+                    fecha = cita.Fecha,
+                    hora = cita.Hora,
+                    total = cita.Total
+                };
+                var jsonContent = new StringContent(
+                    System.Text.Json.JsonSerializer.Serialize(notifPayload),
+                    System.Text.Encoding.UTF8,
+                    "application/json"
+                );
+                await http.PostAsync($"{botUrl}/api/notificar-cita", jsonContent);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Bot Notificar Cita Error]: {ex.Message}");
+            }
+        });
+
         return Ok(new
         {
             cita.Id,
@@ -237,6 +276,157 @@ public class PublicController : ControllerBase
         await _context.SaveChangesAsync();
 
         return Ok(new { message = "¡Gracias por tu valoración!" });
+    }
+
+    // 🌟 RESEÑA POST-CITA VERIFICADA (DESDE WHATSAPP BOT LINK)
+    [HttpGet("cita-resena/{citaId}")]
+    public async Task<IActionResult> ObtenerDatosResena(int citaId)
+    {
+        var cita = await _context.Citas
+            .Include(c => c.Servicio)
+            .FirstOrDefaultAsync(c => c.Id == citaId);
+
+        if (cita == null) return NotFound(new { message = "Cita no encontrada." });
+
+        var barberia = await _context.Barberias.FindAsync(cita.BarberiaId);
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
+        return Ok(new
+        {
+            cita.Id,
+            cita.NombreCliente,
+            cita.Fecha,
+            cita.Hora,
+            Servicio = cita.Servicio?.Nombre ?? "Servicio",
+            BarberiaNombre = barberia.Nombre,
+            BarberiaSlug = barberia.Slug
+        });
+    }
+
+    [HttpPost("calificar-cita")]
+    public async Task<IActionResult> CalificarCita([FromBody] ReseñaCitaDto dto)
+    {
+        var cita = await _context.Citas.FindAsync(dto.CitaId);
+        if (cita == null) return NotFound(new { message = "Cita no encontrada." });
+
+        if (dto.Estrellas < 1 || dto.Estrellas > 5)
+        {
+            return BadRequest(new { message = "La calificación debe ser de 1 a 5 estrellas." });
+        }
+
+        var val = new Valoracion
+        {
+            BarberiaId = cita.BarberiaId,
+            NombreCliente = cita.NombreCliente,
+            Estrellas = dto.Estrellas,
+            Comentario = dto.Comentario?.Trim() ?? string.Empty,
+            FechaUtc = DateTime.UtcNow
+        };
+
+        _context.Valoraciones.Add(val);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "¡Gracias por calificar tu servicio!" });
+    }
+
+    // 📱 CONSULTA Y GESTIÓN DE CITAS PARA EL BOT (CANCELAR / CITAS DEL DÍA)
+    [HttpGet("bot/citas-cliente/{telefono}")]
+    public async Task<IActionResult> ObtenerCitaClientePorTelefono(string telefono)
+    {
+        var cleanTel = new string(telefono.Where(char.IsDigit).ToArray());
+        var cita = await _context.Citas
+            .Include(c => c.Servicio)
+            .Include(c => c.MiembroEquipo)
+            .Where(c => c.Estado != "Cancelada" && c.TelefonoCliente.Contains(cleanTel))
+            .OrderByDescending(c => c.Fecha)
+            .ThenByDescending(c => c.Hora)
+            .FirstOrDefaultAsync();
+
+        if (cita == null) return NotFound(new { message = "No tienes citas activas para cancelar." });
+
+        return Ok(new
+        {
+            cita.Id,
+            cita.CodigoReserva,
+            cita.NombreCliente,
+            cita.TelefonoCliente,
+            cita.Fecha,
+            cita.Hora,
+            cita.Total,
+            Servicio = cita.Servicio?.Nombre ?? "Servicio",
+            Barbero = cita.MiembroEquipo?.Nombre ?? "Master Barber"
+        });
+    }
+
+    [HttpPost("bot/cancelar-cita/{id}")]
+    public async Task<IActionResult> CancelarCitaBot(int id)
+    {
+        var cita = await _context.Citas
+            .Include(c => c.Servicio)
+            .FirstOrDefaultAsync(c => c.Id == id);
+
+        if (cita == null) return NotFound(new { message = "Cita no encontrada." });
+
+        cita.Estado = "Cancelada";
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            message = "Cita cancelada con éxito.",
+            cita = new
+            {
+                cita.Id,
+                cita.CodigoReserva,
+                cita.NombreCliente,
+                cita.Fecha,
+                cita.Hora,
+                Servicio = cita.Servicio?.Nombre ?? "Servicio"
+            }
+        });
+    }
+
+    [HttpGet("bot/resumen-diario/{slug}")]
+    public async Task<IActionResult> ObtenerResumenDiario(string slug, [FromQuery] string? fecha)
+    {
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
+        var fechaFiltro = string.IsNullOrWhiteSpace(fecha) 
+            ? DateTime.UtcNow.ToString("yyyy-MM-dd") 
+            : fecha;
+
+        var citas = await _context.Citas
+            .Include(c => c.Servicio)
+            .Include(c => c.MiembroEquipo)
+            .Where(c => c.BarberiaId == barberia.Id && c.Fecha == fechaFiltro && c.Estado != "Cancelada")
+            .OrderBy(c => c.Hora)
+            .Select(c => new
+            {
+                c.Id,
+                c.CodigoReserva,
+                c.NombreCliente,
+                c.TelefonoCliente,
+                c.Hora,
+                c.Total,
+                c.Estado,
+                Servicio = c.Servicio != null ? c.Servicio.Nombre : "Servicio",
+                Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "Master Barber"
+            })
+            .ToListAsync();
+
+        return Ok(new
+        {
+            barberia.Nombre,
+            barberia.TelefonoWhatsApp,
+            barberia.AnuncioMatutinoActivo,
+            barberia.HoraAnuncioSemana,
+            barberia.HoraAnuncioSabado,
+            barberia.HoraAnuncioDomingo,
+            Fecha = fechaFiltro,
+            TotalCitas = citas.Count,
+            TotalIngresosEstimados = citas.Sum(c => c.Total),
+            Citas = citas
+        });
     }
 }
 

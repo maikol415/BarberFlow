@@ -53,6 +53,12 @@ public class Barberia
     public string MensajeDerivacionHumana { get; set; } = "He recibido tu mensaje. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno, te responderá personalmente por este chat. ¡Muchas gracias por tu paciencia!";
     public string PlantillaConfirmacion { get; set; } = "";
     public string PlantillaRecordatorio { get; set; } = "";
+
+    // Anuncio Matutino Inteligente
+    public bool AnuncioMatutinoActivo { get; set; } = true;
+    public string HoraAnuncioSemana { get; set; } = "08:00"; // Lunes a Viernes (HH:mm)
+    public string HoraAnuncioSabado { get; set; } = "08:00"; // Sábados (HH:mm)
+    public string HoraAnuncioDomingo { get; set; } = "09:00"; // Domingos (HH:mm)
 }
 
 public class BotReglaRespuesta

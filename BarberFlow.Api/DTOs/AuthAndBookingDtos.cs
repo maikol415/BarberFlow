@@ -43,7 +43,11 @@ public record UpdateBarberiaDto(
     string? MensajeBienvenidaBot = null,
     string? MensajeDerivacionHumana = null,
     string? PlantillaConfirmacion = null,
-    string? PlantillaRecordatorio = null
+    string? PlantillaRecordatorio = null,
+    bool? AnuncioMatutinoActivo = null,
+    string? HoraAnuncioSemana = null,
+    string? HoraAnuncioSabado = null,
+    string? HoraAnuncioDomingo = null
 );
 
 public record CrearBotReglaDto(
@@ -93,4 +97,10 @@ public record BloqueoDto(
 
 public record UploadImageDto(
     [Required] string ImageData
+);
+
+public record ReseñaCitaDto(
+    [Required] int CitaId,
+    [Required] int Estrellas,
+    string? Comentario
 );

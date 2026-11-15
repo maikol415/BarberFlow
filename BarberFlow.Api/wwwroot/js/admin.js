@@ -124,6 +124,16 @@ async function cargarPerfil() {
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `¡Nos vemos pronto! 💈✂️`;
 
+    // Horarios de Anuncio Matutino
+    const chkAnuncio = document.getElementById('conf-anuncio-activo');
+    if (chkAnuncio) chkAnuncio.checked = barberiaActual.anuncioMatutinoActivo !== false;
+    const inpSemana = document.getElementById('conf-anuncio-semana');
+    if (inpSemana) inpSemana.value = barberiaActual.horaAnuncioSemana || '08:00';
+    const inpSabado = document.getElementById('conf-anuncio-sabado');
+    if (inpSabado) inpSabado.value = barberiaActual.horaAnuncioSabado || '08:00';
+    const inpDomingo = document.getElementById('conf-anuncio-domingo');
+    if (inpDomingo) inpDomingo.value = barberiaActual.horaAnuncioDomingo || '09:00';
+
     // Campos de Métodos de Pago
     const inputNequi = document.getElementById('conf-bot-nequi');
     if (inputNequi) inputNequi.value = barberiaActual.numeroNequi || '';
@@ -1122,7 +1132,11 @@ async function guardarConfiguracionBot() {
     mensajeBienvenidaBot: document.getElementById('conf-bot-bienvenida').value,
     mensajeDerivacionHumana: document.getElementById('conf-bot-derivacion').value,
     plantillaConfirmacion: document.getElementById('conf-bot-confirmacion').value,
-    plantillaRecordatorio: document.getElementById('conf-bot-recordatorio').value
+    plantillaRecordatorio: document.getElementById('conf-bot-recordatorio').value,
+    anuncioMatutinoActivo: document.getElementById('conf-anuncio-activo')?.checked !== false,
+    horaAnuncioSemana: document.getElementById('conf-anuncio-semana')?.value || '08:00',
+    horaAnuncioSabado: document.getElementById('conf-anuncio-sabado')?.value || '08:00',
+    horaAnuncioDomingo: document.getElementById('conf-anuncio-domingo')?.value || '09:00'
   };
 
   try {

@@ -128,6 +128,10 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MensajeDerivacionHumana"" text DEFAULT 'En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine, te responderá personalmente por este chat.';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PlantillaConfirmacion"" text DEFAULT '';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PlantillaRecordatorio"" text DEFAULT '';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""AnuncioMatutinoActivo"" boolean DEFAULT true;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HoraAnuncioSemana"" text DEFAULT '08:00';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HoraAnuncioSabado"" text DEFAULT '08:00';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HoraAnuncioDomingo"" text DEFAULT '09:00';
             ");
         }
         catch (Exception ex)
