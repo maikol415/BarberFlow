@@ -511,6 +511,34 @@
             </div>
           </div>
 
+          <!-- MÉTODOS DE PAGO Y TRANSFERENCIAS -->
+          <div class="pt-3 border-t border-gray-800">
+            <h5 class="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-2">
+              <i data-lucide="wallet" class="w-4 h-4"></i> Datos de Métodos de Pago y Transferencias
+            </h5>
+            <p class="text-[11px] text-gray-400 mb-3 leading-relaxed">
+              Configura los números independientes de pago de la barbería (Nequi / Daviplata / Bancolombia). El bot responderá automáticamente cuando pregunten por formas de pago o transferencias.
+            </p>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-[11px] text-gray-400 mb-1">Número de Nequi</label>
+                <input type="text" id="conf-bot-nequi" placeholder="Ej: 3001234567" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+              </div>
+              <div>
+                <label class="block text-[11px] text-gray-400 mb-1">Número de Daviplata / Llave</label>
+                <input type="text" id="conf-bot-daviplata" placeholder="Ej: 3001234567" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+              </div>
+              <div>
+                <label class="block text-[11px] text-gray-400 mb-1">Titular de la Cuenta</label>
+                <input type="text" id="conf-bot-titular" placeholder="Ej: Barbería JR S.A.S" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+              </div>
+            </div>
+            <div class="mt-2">
+              <label class="block text-[11px] text-gray-400 mb-1">Información Adicional de Pago (Efectivo / Tarjeta)</label>
+              <input type="text" id="conf-bot-datospago" placeholder="Ej: Aceptamos Efectivo en caja, transferencias Nequi/Daviplata y tarjeta Débito." class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+            </div>
+          </div>
+
           <div class="flex justify-end pt-3 border-t border-gray-800">
             <button onclick="guardarConfiguracionBot()" class="py-2.5 px-6 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-xs shadow-lg shadow-blue-500/20 transition flex items-center gap-1.5">
               <i data-lucide="save" class="w-4 h-4"></i> Guardar Mensajes del Bot

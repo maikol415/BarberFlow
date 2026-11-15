@@ -41,6 +41,12 @@ public class Barberia
     public List<HorarioBloqueo> Bloqueos { get; set; } = new();
     public List<Valoracion> Valoraciones { get; set; } = new();
 
+    // Métodos de pago y transferencias (Nequi, Daviplata, Efectivo)
+    public string DatosPago { get; set; } = "Aceptamos Efectivo en el local, transferencias por Nequi y Daviplata.";
+    public string NumeroNequi { get; set; } = "";
+    public string NumeroDaviplata { get; set; } = "";
+    public string TitularCuenta { get; set; } = "";
+
     // Configuración y plantillas del Bot (ya presentes en la base de datos)
     public bool BotActivo { get; set; } = true;
     public string MensajeBienvenidaBot { get; set; } = "¡Hola! 💈 Bienvenido a {barberia}. ¿En qué podemos ayudarte hoy?\n\n1️⃣ Agendar una cita\n2️⃣ Ver precios y servicios\n3️⃣ Horarios y ubicación";

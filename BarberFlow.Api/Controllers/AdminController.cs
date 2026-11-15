@@ -65,6 +65,10 @@ public class AdminController : ControllerBase
                 barberia.IntervaloMinutos,
                 barberia.DiasLaborales,
                 barberia.MostrarSelectorBarbero,
+                barberia.DatosPago,
+                barberia.NumeroNequi,
+                barberia.NumeroDaviplata,
+                barberia.TitularCuenta,
                 barberia.BotActivo,
                 barberia.MensajeBienvenidaBot,
                 barberia.MensajeDerivacionHumana,
@@ -104,6 +108,11 @@ public class AdminController : ControllerBase
         if (dto.IntervaloMinutos >= 15) barberia.IntervaloMinutos = dto.IntervaloMinutos;
         if (!string.IsNullOrWhiteSpace(dto.DiasLaborales)) barberia.DiasLaborales = dto.DiasLaborales;
         barberia.MostrarSelectorBarbero = dto.MostrarSelectorBarbero;
+
+        if (dto.DatosPago != null) barberia.DatosPago = dto.DatosPago.Trim();
+        if (dto.NumeroNequi != null) barberia.NumeroNequi = dto.NumeroNequi.Trim();
+        if (dto.NumeroDaviplata != null) barberia.NumeroDaviplata = dto.NumeroDaviplata.Trim();
+        if (dto.TitularCuenta != null) barberia.TitularCuenta = dto.TitularCuenta.Trim();
 
         if (dto.BotActivo.HasValue) barberia.BotActivo = dto.BotActivo.Value;
         if (dto.MensajeBienvenidaBot != null) barberia.MensajeBienvenidaBot = dto.MensajeBienvenidaBot.Trim();

@@ -283,6 +283,46 @@ async function iniciarBot() {
         return;
       }
 
+      // 5. Métodos de Pago y Transferencias (Nequi / Daviplata / Efectivo)
+      if (
+        texto.includes('pago') || 
+        texto.includes('pagar') || 
+        texto.includes('nequi') || 
+        texto.includes('daviplata') || 
+        texto.includes('transferencia') || 
+        texto.includes('tarjeta') || 
+        texto.includes('efectivo') || 
+        texto.includes('cuenta')
+      ) {
+        let msgPago = `💳 *Métodos de Pago — ${barberia.nombre || 'Barberia JR'}*\n`;
+        msgPago += `─────────────────────────\n\n`;
+        msgPago += `💵 *Efectivo:* Recibimos en el local al finalizar tu servicio.\n\n`;
+        
+        if (barberia.numeroNequi) {
+          msgPago += `📱 *Nequi:* ${barberia.numeroNequi}\n`;
+        } else {
+          msgPago += `📱 *Nequi:* Disponible en caja para transferencia directa.\n`;
+        }
+
+        if (barberia.numeroDaviplata) {
+          msgPago += `📲 *Daviplata:* ${barberia.numeroDaviplata}\n`;
+        }
+
+        if (barberia.titularCuenta) {
+          msgPago += `👤 *Titular:* ${barberia.titularCuenta}\n`;
+        }
+
+        if (barberia.datosPago) {
+          msgPago += `\nℹ️ _${barberia.datosPago}_\n`;
+        }
+
+        msgPago += `\n─────────────────────────\n`;
+        msgPago += `📅 *Reserva tu cita aquí:* \n👉 https://barberflow-aos9.onrender.com/index.html?b=${BARBERIA_SLUG}`;
+
+        await sock.sendMessage(remitente, { text: msgPago });
+        return;
+      }
+
       // 🛡️ REGLA 4: Derivación humana máx 1 vez cada 2 horas por persona
       const ultimaVezDerivado = ultimaRespuestaHumana.get(remitente) || 0;
       const dosHorasMs = 2 * 60 * 60 * 1000;

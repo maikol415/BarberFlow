@@ -115,6 +115,26 @@ using (var scope = app.Services.CreateScope())
             // Las tablas principales ya existían
         }
 
+        // Asegurar que las columnas de pagos y bot existan en Barberias
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""DatosPago"" text DEFAULT 'Aceptamos Efectivo en el local, transferencias por Nequi y Daviplata.';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""NumeroNequi"" text DEFAULT '';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""NumeroDaviplata"" text DEFAULT '';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""TitularCuenta"" text DEFAULT '';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""BotActivo"" boolean DEFAULT true;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MensajeBienvenidaBot"" text DEFAULT '¡Hola! 💈 Bienvenido. ¿En qué podemos ayudarte?';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MensajeDerivacionHumana"" text DEFAULT 'En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine, te responderá personalmente por este chat.';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PlantillaConfirmacion"" text DEFAULT '';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PlantillaRecordatorio"" text DEFAULT '';
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Nota en migración de columnas: {ex.Message}");
+        }
+
         // Asegurar que la tabla Valoraciones exista aunque las otras tablas ya estuviesen creadas
         try
         {
@@ -202,10 +222,6 @@ app.UseAuthorization();
 
 // Endpoint de salud ligero para mantener despierto Render 24/7 sin tocar la base de datos
 app.MapGet("/ping", () => Results.Ok(new { status = "active", time = DateTime.UtcNow }));
-
-app.MapControllers();
-
-app.Run();
 
 app.MapControllers();
 

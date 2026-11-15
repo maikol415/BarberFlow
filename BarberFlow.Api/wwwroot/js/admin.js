@@ -124,6 +124,16 @@ async function cargarPerfil() {
       `━━━━━━━━━━━━━━━━━━━━\n` +
       `¡Nos vemos pronto! 💈✂️`;
 
+    // Campos de Métodos de Pago
+    const inputNequi = document.getElementById('conf-bot-nequi');
+    if (inputNequi) inputNequi.value = barberiaActual.numeroNequi || '';
+    const inputDaviplata = document.getElementById('conf-bot-daviplata');
+    if (inputDaviplata) inputDaviplata.value = barberiaActual.numeroDaviplata || '';
+    const inputTitular = document.getElementById('conf-bot-titular');
+    if (inputTitular) inputTitular.value = barberiaActual.titularCuenta || '';
+    const inputDatosPago = document.getElementById('conf-bot-datospago');
+    if (inputDatosPago) inputDatosPago.value = barberiaActual.datosPago || 'Aceptamos Efectivo en caja, transferencias Nequi/Daviplata y tarjeta Débito.';
+
     renderListaReglasBot(barberiaActual.botReglas || []);
   } catch (err) {
     console.error('Error cargando perfil:', err);
@@ -1104,6 +1114,10 @@ async function guardarConfiguracionBot() {
     intervaloMinutos: barberiaActual.intervaloMinutos,
     diasLaborales: barberiaActual.diasLaborales,
     mostrarSelectorBarbero: barberiaActual.mostrarSelectorBarbero,
+    datosPago: document.getElementById('conf-bot-datospago')?.value || '',
+    numeroNequi: document.getElementById('conf-bot-nequi')?.value || '',
+    numeroDaviplata: document.getElementById('conf-bot-daviplata')?.value || '',
+    titularCuenta: document.getElementById('conf-bot-titular')?.value || '',
     botActivo: document.getElementById('conf-bot-activo').checked,
     mensajeBienvenidaBot: document.getElementById('conf-bot-bienvenida').value,
     mensajeDerivacionHumana: document.getElementById('conf-bot-derivacion').value,
