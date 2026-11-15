@@ -283,11 +283,14 @@ async function iniciarBot() {
         return;
       }
 
-      // 5. Métodos de Pago y Transferencias (Nequi / Daviplata / Efectivo)
+      // 5. Métodos de Pago y Transferencias (Nequi / Bancolombia / A la Mano / Efectivo)
       if (
         texto.includes('pago') || 
         texto.includes('pagar') || 
         texto.includes('nequi') || 
+        texto.includes('bancolombia') || 
+        texto.includes('a la mano') || 
+        texto.includes('ahorro a la mano') || 
         texto.includes('daviplata') || 
         texto.includes('transferencia') || 
         texto.includes('tarjeta') || 
@@ -301,11 +304,11 @@ async function iniciarBot() {
         if (barberia.numeroNequi) {
           msgPago += `📱 *Nequi:* ${barberia.numeroNequi}\n`;
         } else {
-          msgPago += `📱 *Nequi:* Disponible en caja para transferencia directa.\n`;
+          msgPago += `📱 *Nequi:* Disponible en el local para transferencia directa.\n`;
         }
 
         if (barberia.numeroDaviplata) {
-          msgPago += `📲 *Daviplata:* ${barberia.numeroDaviplata}\n`;
+          msgPago += `🏦 *Bancolombia / A la Mano:* ${barberia.numeroDaviplata}\n`;
         }
 
         if (barberia.titularCuenta) {
