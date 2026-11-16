@@ -10,6 +10,7 @@ const BARBERIA_SLUG = process.env.BARBERIA_SLUG || 'barberia-jr';
 const BASE_WEB_URL = process.env.BARBERFLOW_WEB_URL || 'https://barberflow-aos9.onrender.com';
 
 const ultimaInteraccionCliente = new Map(); // Para saber cuándo habló por última vez
+const ultimaDerivacionMap = new Map(); // Para registrar el tiempo exacto de derivación por remitente
 const estadoCliente = new Map(); // Menús o confirmaciones de cancelación
 let cacheBarberia = null;
 let ultimaCargaCache = 0;
@@ -644,16 +645,16 @@ async function iniciarBot() {
       }
 
       // 9. DERIVACIÓN HUMANA INTELIGENTE (Preguntas libres o dudas no mapeadas)
-      const ultimaVezDerivado = estado.ultimaDerivacion || 0;
-      const diezMinutosMs = 10 * 60 * 1000;
+      // Solo responder 1 vez cada 2 horas por cliente para no repetir en frases cortas seguidas
+      const ultimaVezDerivado = ultimaDerivacionMap.get(remitente) || 0;
+      const dosHorasMs = 2 * 60 * 60 * 1000;
 
-      if (ahora - ultimaVezDerivado > diezMinutosMs) {
+      if (ahora - ultimaVezDerivado > dosHorasMs) {
+        ultimaDerivacionMap.set(remitente, ahora);
         const derivacion = barberia.mensajeDerivacionHumana || 
           'He tomado nota de tu consulta. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno te responderá personalmente por este chat.';
         
         await enviarMensajeHumano(sock, remitente, derivacion);
-        estado.ultimaDerivacion = ahora;
-        estadoCliente.set(remitente, estado);
       }
 
     } catch (e) {

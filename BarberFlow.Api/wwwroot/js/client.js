@@ -871,6 +871,21 @@ async function verificarParametrosUrl() {
     citaIdReagendar = reagendarId;
     const banner = document.getElementById('banner-reagendar-aviso');
     if (banner) banner.classList.remove('hidden');
+
+    try {
+      const res = await fetch(`/api/public/cita-resena/${reagendarId}`);
+      if (res.ok) {
+        const info = await res.json();
+        // Pre-seleccionar automáticamente el servicio anterior para que solo elija el nuevo horario
+        const servExistente = todosLosServicios.find(s => s.nombre.toLowerCase() === info.servicio.toLowerCase());
+        if (servExistente) {
+          seleccionarServicio(servExistente);
+        }
+        // Pre-llenar datos del cliente
+        const inNom = document.getElementById('cliente-nombre');
+        if (inNom && info.nombreCliente) inNom.value = info.nombreCliente;
+      }
+    } catch (e) {}
   }
 }
 
