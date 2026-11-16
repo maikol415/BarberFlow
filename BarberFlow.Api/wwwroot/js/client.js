@@ -876,14 +876,34 @@ async function verificarParametrosUrl() {
       const res = await fetch(`/api/public/cita-resena/${reagendarId}`);
       if (res.ok) {
         const info = await res.json();
+        
+        // Mostrar el nombre del servicio en el aviso
+        const lblServicio = document.getElementById('reagendar-nombre-servicio');
+        if (lblServicio) lblServicio.innerText = info.servicio;
+
         // Pre-seleccionar automáticamente el servicio anterior para que solo elija el nuevo horario
         const servExistente = todosLosServicios.find(s => s.nombre.toLowerCase() === info.servicio.toLowerCase());
         if (servExistente) {
           seleccionarServicio(servExistente);
         }
+
+        // Ocultar la sección del catálogo de servicios para que NO tenga que volver a elegirlo
+        const seccionServicios = document.getElementById('seccion-paso-servicios');
+        if (seccionServicios) {
+          seccionServicios.classList.add('hidden');
+        }
+
         // Pre-llenar datos del cliente
         const inNom = document.getElementById('cliente-nombre');
         if (inNom && info.nombreCliente) inNom.value = info.nombreCliente;
+
+        // Desplazar suavemente la pantalla hacia el calendario
+        const seccionCal = document.getElementById('seccion-paso-calendario');
+        if (seccionCal) {
+          setTimeout(() => {
+            seccionCal.scrollIntoView({ behavior: 'smooth' });
+          }, 300);
+        }
       }
     } catch (e) {}
   }
