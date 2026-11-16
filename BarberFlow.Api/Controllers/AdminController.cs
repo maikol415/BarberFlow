@@ -146,8 +146,12 @@ public class AdminController : ControllerBase
         var bloqueos = await _context.Bloqueos.Where(b => b.BarberiaId == barberiaId).ToListAsync();
         _context.Bloqueos.RemoveRange(bloqueos);
 
+        // 3. Eliminar valoraciones y reseñas de prueba
+        var valoraciones = await _context.Valoraciones.Where(v => v.BarberiaId == barberiaId).ToListAsync();
+        _context.Valoraciones.RemoveRange(valoraciones);
+
         await _context.SaveChangesAsync();
-        return Ok(new { message = "Todos los datos de prueba han sido limpiados con éxito. ¡Listo para iniciar operaciones!" });
+        return Ok(new { message = "Todos los datos de prueba (citas, bloqueos y valoraciones) han sido limpiados con éxito. ¡Listo para iniciar operaciones!" });
     }
 
     // ELIMINAR BARBERÍA Y CUENTA POR COMPLETO
