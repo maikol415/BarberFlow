@@ -627,7 +627,8 @@ async function iniciarBot() {
         const ubi = `📍 *Ubicación y Horario de Atención:*\n\n` +
           `🏠 *Dirección:* ${barberia.direccion || 'Calle 45 # 12-34'}\n` +
           `⏰ *Horario:* ${barberia.horarioTexto || 'Lunes a Sábado 9:00 AM - 8:00 PM'}\n\n` +
-          `📅 *Reserva tu cita aquí para no hacer fila:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
+          `📅 *Reserva tu cita aquí para no hacer fila:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
+          `_Responde *0* para volver al menú principal._ 🔙`;
         await enviarMensajeHumano(sock, remitente, ubi);
         return;
       }
@@ -664,7 +665,8 @@ async function iniciarBot() {
         }
 
         msgPago += `\n─────────────────────────\n`;
-        msgPago += `📅 *Reserva tu cita aquí:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
+        msgPago += `📅 *Reserva tu cita aquí:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n`;
+        msgPago += `_Responde *0* para volver al menú principal._ 🔙`;
 
         await enviarMensajeHumano(sock, remitente, msgPago);
         return;

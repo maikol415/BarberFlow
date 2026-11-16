@@ -376,10 +376,13 @@ public class PublicController : ControllerBase
     public async Task<IActionResult> ObtenerCitaClientePorTelefono(string telefono)
     {
         var cleanTel = new string(telefono.Where(char.IsDigit).ToArray());
+        var ultimos10 = cleanTel.Length >= 10 ? cleanTel.Substring(cleanTel.Length - 10) : cleanTel;
+
         var cita = await _context.Citas
             .Include(c => c.Servicio)
             .Include(c => c.MiembroEquipo)
-            .Where(c => c.Estado != "Cancelada" && c.TelefonoCliente.Contains(cleanTel))
+            .Where(c => c.Estado != "Cancelada" && 
+                       (c.TelefonoCliente.Contains(cleanTel) || c.TelefonoCliente.Contains(ultimos10)))
             .OrderByDescending(c => c.Fecha)
             .ThenByDescending(c => c.Hora)
             .FirstOrDefaultAsync();
@@ -486,7 +489,10 @@ public class PublicController : ControllerBase
             return BadRequest(new { message = "Número de teléfono no válido." });
         }
 
-        var existe = await _context.Clientes.AnyAsync(c => c.BarberiaId == barberia.Id && c.Telefono == telLimpio);
+        var ultimos10 = telLimpio.Length >= 10 ? telLimpio.Substring(telLimpio.Length - 10) : telLimpio;
+
+        var existe = await _context.Clientes.AnyAsync(c => 
+            c.BarberiaId == barberia.Id && (c.Telefono == telLimpio || c.Telefono.EndsWith(ultimos10)));
         if (existe)
         {
             return BadRequest(new { message = "Ya existe una cuenta con este número en esta barbería. Inicia sesión directamente." });
@@ -522,7 +528,10 @@ public class PublicController : ControllerBase
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
         var telLimpio = new string(dto.Telefono.Where(char.IsDigit).ToArray());
-        var cliente = await _context.Clientes.FirstOrDefaultAsync(c => c.BarberiaId == barberia.Id && c.Telefono == telLimpio);
+        var ultimos10 = telLimpio.Length >= 10 ? telLimpio.Substring(telLimpio.Length - 10) : telLimpio;
+
+        var cliente = await _context.Clientes.FirstOrDefaultAsync(c => 
+            c.BarberiaId == barberia.Id && (c.Telefono == telLimpio || c.Telefono.EndsWith(ultimos10)));
 
         if (cliente == null || !BCrypt.Net.BCrypt.Verify(dto.Password, cliente.PasswordHash))
         {
@@ -545,10 +554,14 @@ public class PublicController : ControllerBase
         var cliente = await _context.Clientes.FindAsync(id);
         if (cliente == null) return NotFound(new { message = "Cliente no encontrado." });
 
+        var clienteTelDigits = new string(cliente.Telefono.Where(char.IsDigit).ToArray());
+        var clienteUltimos10 = clienteTelDigits.Length >= 10 ? clienteTelDigits.Substring(clienteTelDigits.Length - 10) : clienteTelDigits;
+
         var citas = await _context.Citas
             .Include(c => c.Servicio)
             .Include(c => c.MiembroEquipo)
-            .Where(c => c.BarberiaId == cliente.BarberiaId && c.TelefonoCliente.Contains(cliente.Telefono))
+            .Where(c => c.BarberiaId == cliente.BarberiaId && 
+                       (c.TelefonoCliente.Contains(clienteTelDigits) || c.TelefonoCliente.Contains(clienteUltimos10)))
             .OrderByDescending(c => c.Fecha)
             .ThenByDescending(c => c.Hora)
             .Select(c => new

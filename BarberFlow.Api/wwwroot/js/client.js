@@ -1086,7 +1086,10 @@ function cambiarTabCliente(tab) {
 
 async function loginCliente(e) {
   e.preventDefault();
-  const tel = document.getElementById('cli-login-tel').value.trim();
+  const rawTel = document.getElementById('cli-login-tel').value.trim();
+  const pais = document.getElementById('cli-login-pais') ? document.getElementById('cli-login-pais').value : '+57';
+  const telLimpio = rawTel.replace(/[^0-9]/g, '');
+  const telCompleto = `${pais}${telLimpio}`;
   const pass = document.getElementById('cli-login-pass').value.trim();
 
   try {
@@ -1095,7 +1098,7 @@ async function loginCliente(e) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         barberiaSlug: barberia.slug,
-        telefono: tel,
+        telefono: telCompleto,
         password: pass
       })
     });
@@ -1117,7 +1120,10 @@ async function loginCliente(e) {
 async function registrarCliente(e) {
   e.preventDefault();
   const nom = document.getElementById('cli-reg-nom').value.trim();
-  const tel = document.getElementById('cli-reg-tel').value.trim();
+  const rawTel = document.getElementById('cli-reg-tel').value.trim();
+  const pais = document.getElementById('cli-reg-pais') ? document.getElementById('cli-reg-pais').value : '+57';
+  const telLimpio = rawTel.replace(/[^0-9]/g, '');
+  const telCompleto = `${pais}${telLimpio}`;
   const gen = document.getElementById('cli-reg-genero').value;
   const pass = document.getElementById('cli-reg-pass').value.trim();
 
@@ -1133,7 +1139,7 @@ async function registrarCliente(e) {
       body: JSON.stringify({
         barberiaSlug: barberia.slug,
         nombre: nom,
-        telefono: tel,
+        telefono: telCompleto,
         genero: gen,
         password: pass
       })
