@@ -322,9 +322,9 @@ async function iniciarBot() {
       const barberia = await obtenerDatosBarberia();
       if (barberia.botActivo === false) return;
 
-      // Extraer número de teléfono del remitente (ej: 573001234567@s.whatsapp.net -> 3001234567)
+      // Extraer número de teléfono del remitente (ej: 573001234567@s.whatsapp.net -> 3001234567 o últimos 10 dígitos)
       const telSoloDigitos = remitente.replace(/[^0-9]/g, '');
-      const telBusqueda = telSoloDigitos.startsWith('57') ? telSoloDigitos.substring(2) : telSoloDigitos;
+      const telBusqueda = telSoloDigitos.length >= 10 ? telSoloDigitos.slice(-10) : telSoloDigitos;
 
       const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
 
@@ -428,12 +428,12 @@ async function iniciarBot() {
           if (res.ok) {
             const cita = await res.json();
             urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${cita.id}`;
-            detalle = ` de tu cita actual (${cita.servicio} - ${cita.fecha} ${cita.hora})`;
+            detalle = ` de tu cita activa (*${cita.servicio}* para el *${cita.fecha} a las ${cita.hora}*)`;
           }
 
           const msjReagendar = 
             `🔄 *Reagendar Turno — ${barberia.nombre || 'Barbería JR'}*\n\n` +
-            `Para elegir tu nuevo día y hora disponible en segundos sin demoras ni textos largos, ingresa a nuestro calendario visual aquí:\n\n` +
+            `Para cambiar el día y hora${detalle}, ingresa a nuestro calendario visual aquí:\n\n` +
             `👉 ${urlReagendar}\n\n` +
             `_Al seleccionar tu nuevo horario, tu turno anterior se actualizará automáticamente._ ✨`;
 
