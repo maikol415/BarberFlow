@@ -998,4 +998,200 @@ async function enviarValoracionCliente(e) {
   }
 }
 
-window.addEventListener('DOMContentLoaded', initClient);
+// ----------------- PORTAL Y REGISTRO DE CLIENTES -----------------
+let clienteSesion = null;
+
+function verificarSesionClienteLocal() {
+  try {
+    const raw = localStorage.getItem('bf_cliente_session');
+    if (raw) {
+      clienteSesion = JSON.parse(raw);
+      actualizarUiClienteLogueado();
+    }
+  } catch (e) {}
+}
+
+function actualizarUiClienteLogueado() {
+  if (clienteSesion) {
+    const txtBtn = document.getElementById('txt-btn-cliente');
+    if (txtBtn) txtBtn.innerText = `Hola, ${clienteSesion.nombre.split(' ')[0]} 👤`;
+
+    // Autocompletar inputs de reserva para mayor comodidad
+    const inNom = document.getElementById('cliente-nombre');
+    if (inNom) inNom.value = clienteSesion.nombre;
+    const inTel = document.getElementById('cliente-telefono');
+    if (inTel) inTel.value = clienteSesion.telefono;
+  } else {
+    const txtBtn = document.getElementById('txt-btn-cliente');
+    if (txtBtn) txtBtn.innerText = 'Mis Citas / Ingresar';
+  }
+}
+
+function abrirModalAuthCliente() {
+  const modal = document.getElementById('modal-cliente');
+  if (!modal) return;
+  modal.classList.remove('hidden');
+
+  if (clienteSesion) {
+    document.getElementById('cliente-box-auth').classList.add('hidden');
+    document.getElementById('cliente-box-perfil').classList.remove('hidden');
+    document.getElementById('perfil-cli-nombre').innerText = `Hola, ${clienteSesion.nombre}`;
+    document.getElementById('perfil-cli-tel').innerText = `📱 +57 ${clienteSesion.telefono}`;
+    cargarCitasClientePerfil();
+  } else {
+    document.getElementById('cliente-box-auth').classList.remove('hidden');
+    document.getElementById('cliente-box-perfil').classList.add('hidden');
+    cambiarTabCliente('login');
+  }
+  lucide.createIcons();
+}
+
+function cerrarModalAuthCliente() {
+  const modal = document.getElementById('modal-cliente');
+  if (modal) modal.classList.add('hidden');
+}
+
+function cambiarTabCliente(tab) {
+  const formLog = document.getElementById('form-cli-login');
+  const formReg = document.getElementById('form-cli-registro');
+  const tabLog = document.getElementById('tab-cli-login');
+  const tabReg = document.getElementById('tab-cli-registro');
+
+  if (tab === 'login') {
+    formLog.classList.remove('hidden');
+    formReg.classList.add('hidden');
+    tabLog.className = 'flex-1 py-2 font-bold text-xs text-blue-400 border-b-2 border-blue-500';
+    tabReg.className = 'flex-1 py-2 font-medium text-xs text-gray-400';
+  } else {
+    formLog.classList.add('hidden');
+    formReg.classList.remove('hidden');
+    tabLog.className = 'flex-1 py-2 font-medium text-xs text-gray-400';
+    tabReg.className = 'flex-1 py-2 font-bold text-xs text-emerald-400 border-b-2 border-emerald-500';
+  }
+}
+
+async function loginCliente(e) {
+  e.preventDefault();
+  const tel = document.getElementById('cli-login-tel').value.trim();
+  const pass = document.getElementById('cli-login-pass').value.trim();
+
+  try {
+    const res = await fetch('/api/public/clientes/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        barberiaSlug: barberia.slug,
+        telefono: tel,
+        password: pass
+      })
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      clienteSesion = data;
+      localStorage.setItem('bf_cliente_session', JSON.stringify(data));
+      actualizarUiClienteLogueado();
+      abrirModalAuthCliente();
+    } else {
+      alert(data.message || 'Credenciales incorrectas');
+    }
+  } catch (err) {
+    alert('Error al conectar con el servidor.');
+  }
+}
+
+async function registrarCliente(e) {
+  e.preventDefault();
+  const nom = document.getElementById('cli-reg-nom').value.trim();
+  const tel = document.getElementById('cli-reg-tel').value.trim();
+  const gen = document.getElementById('cli-reg-genero').value;
+  const pass = document.getElementById('cli-reg-pass').value.trim();
+
+  try {
+    const res = await fetch('/api/public/clientes/registro', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        barberiaSlug: barberia.slug,
+        nombre: nom,
+        telefono: tel,
+        genero: gen,
+        password: pass
+      })
+    });
+
+    const data = await res.json();
+    if (res.ok) {
+      clienteSesion = data;
+      localStorage.setItem('bf_cliente_session', JSON.stringify(data));
+      actualizarUiClienteLogueado();
+      abrirModalAuthCliente();
+    } else {
+      alert(data.message || 'Error al crear la cuenta');
+    }
+  } catch (err) {
+    alert('Error de conexión.');
+  }
+}
+
+async function cargarCitasClientePerfil() {
+  const container = document.getElementById('lista-citas-cliente');
+  container.innerHTML = '<p class="text-xs text-gray-500 py-3 text-center">Cargando tus citas...</p>';
+
+  try {
+    const res = await fetch(`/api/public/clientes/${clienteSesion.id}/citas`);
+    if (!res.ok) {
+      container.innerHTML = '<p class="text-xs text-gray-500 py-3 text-center">No se pudieron cargar tus citas.</p>';
+      return;
+    }
+
+    const citas = await res.json();
+    if (citas.length === 0) {
+      container.innerHTML = '<p class="text-xs text-gray-500 py-4 text-center">Aún no tienes citas registradas con este número.</p>';
+      return;
+    }
+
+    container.innerHTML = '';
+    citas.forEach(c => {
+      const card = document.createElement('div');
+      card.className = 'p-3 rounded-xl bg-gray-950 border border-gray-800 text-xs flex items-center justify-between gap-2';
+      const esCancelada = c.estado === 'Cancelada';
+
+      card.innerHTML = `
+        <div>
+          <div class="flex items-center gap-1.5">
+            <span class="font-bold text-white">${c.servicio}</span>
+            <span class="text-[10px] px-1.5 py-0.2 rounded font-semibold ${esCancelada ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}">${c.estado}</span>
+          </div>
+          <p class="text-gray-400 text-[11px] mt-0.5">${c.fecha} • ${c.hora} (Barbero: ${c.barbero})</p>
+          <span class="text-blue-400 font-mono text-[10px]">${c.codigoReserva}</span>
+        </div>
+        ${!esCancelada ? `
+          <button onclick="reagendarDesdePerfil(${c.id})" class="text-[10px] px-2.5 py-1 rounded bg-blue-600/20 text-blue-300 border border-blue-500/30 hover:bg-blue-600/30 font-bold transition">
+            Reagendar
+          </button>
+        ` : ''}
+      `;
+      container.appendChild(card);
+    });
+  } catch (err) {
+    container.innerHTML = '<p class="text-xs text-red-400 py-2 text-center">Error al consultar citas.</p>';
+  }
+}
+
+function reagendarDesdePerfil(citaId) {
+  cerrarModalAuthCliente();
+  window.location.href = `/index.html?b=${barberia.slug}&reagendar=${citaId}`;
+}
+
+function cerrarSesionCliente() {
+  localStorage.removeItem('bf_cliente_session');
+  clienteSesion = null;
+  actualizarUiClienteLogueado();
+  cerrarModalAuthCliente();
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+  initClient();
+  verificarSesionClienteLocal();
+});

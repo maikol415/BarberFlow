@@ -105,3 +105,17 @@ public record ReseñaCitaDto(
     [Required] int Estrellas,
     string? Comentario
 );
+
+public record ClienteRegisterDto(
+    [Required] string BarberiaSlug,
+    [Required] string Nombre,
+    [Required] string Telefono,
+    [Required] string Password,
+    string? Genero = "Hombre"
+);
+
+public record ClienteLoginDto(
+    [Required] string BarberiaSlug,
+    [Required] string Telefono,
+    [Required] string Password
+);

@@ -470,6 +470,102 @@ public class PublicController : ControllerBase
             Citas = citas
         });
     }
+
+    // ==============================================================
+    // 👤 PORTAL Y REGISTRO DE CLIENTES INDEPENDIENTES POR BARBERÍA
+    // ==============================================================
+    [HttpPost("clientes/registro")]
+    public async Task<IActionResult> RegistrarCliente([FromBody] ClienteRegisterDto dto)
+    {
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
+        var telLimpio = new string(dto.Telefono.Where(char.IsDigit).ToArray());
+        if (string.IsNullOrWhiteSpace(telLimpio) || telLimpio.Length < 7)
+        {
+            return BadRequest(new { message = "Número de teléfono no válido." });
+        }
+
+        var existe = await _context.Clientes.AnyAsync(c => c.BarberiaId == barberia.Id && c.Telefono == telLimpio);
+        if (existe)
+        {
+            return BadRequest(new { message = "Ya existe una cuenta con este número en esta barbería. Inicia sesión directamente." });
+        }
+
+        var cliente = new ClienteUsuario
+        {
+            BarberiaId = barberia.Id,
+            Nombre = dto.Nombre.Trim(),
+            Telefono = telLimpio,
+            Genero = string.IsNullOrWhiteSpace(dto.Genero) ? "Hombre" : dto.Genero,
+            PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
+            FechaRegistro = DateTime.UtcNow
+        };
+
+        _context.Clientes.Add(cliente);
+        await _context.SaveChangesAsync();
+
+        return Ok(new
+        {
+            cliente.Id,
+            cliente.Nombre,
+            cliente.Telefono,
+            cliente.Genero,
+            message = "Cuenta creada con éxito."
+        });
+    }
+
+    [HttpPost("clientes/login")]
+    public async Task<IActionResult> LoginCliente([FromBody] ClienteLoginDto dto)
+    {
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
+        var telLimpio = new string(dto.Telefono.Where(char.IsDigit).ToArray());
+        var cliente = await _context.Clientes.FirstOrDefaultAsync(c => c.BarberiaId == barberia.Id && c.Telefono == telLimpio);
+
+        if (cliente == null || !BCrypt.Net.BCrypt.Verify(dto.Password, cliente.PasswordHash))
+        {
+            return BadRequest(new { message = "Teléfono o contraseña incorrecta." });
+        }
+
+        return Ok(new
+        {
+            cliente.Id,
+            cliente.Nombre,
+            cliente.Telefono,
+            cliente.Genero,
+            message = "Bienvenido de nuevo."
+        });
+    }
+
+    [HttpGet("clientes/{id}/citas")]
+    public async Task<IActionResult> ObtenerCitasCliente(int id)
+    {
+        var cliente = await _context.Clientes.FindAsync(id);
+        if (cliente == null) return NotFound(new { message = "Cliente no encontrado." });
+
+        var citas = await _context.Citas
+            .Include(c => c.Servicio)
+            .Include(c => c.MiembroEquipo)
+            .Where(c => c.BarberiaId == cliente.BarberiaId && c.TelefonoCliente.Contains(cliente.Telefono))
+            .OrderByDescending(c => c.Fecha)
+            .ThenByDescending(c => c.Hora)
+            .Select(c => new
+            {
+                c.Id,
+                c.CodigoReserva,
+                c.Fecha,
+                c.Hora,
+                c.Total,
+                c.Estado,
+                Servicio = c.Servicio != null ? c.Servicio.Nombre : "Servicio",
+                Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "Master Barber"
+            })
+            .ToListAsync();
+
+        return Ok(citas);
+    }
 }
 
 public record ValoracionDto(string BarberiaSlug, string NombreCliente, int Estrellas, string? Comentario);

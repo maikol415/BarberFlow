@@ -130,3 +130,14 @@ public class HorarioBloqueo
     public string? Hora { get; set; }
     public string Motivo { get; set; } = "Descanso / No disponible";
 }
+
+public class ClienteUsuario
+{
+    public int Id { get; set; }
+    public int BarberiaId { get; set; }
+    public string Nombre { get; set; } = string.Empty;
+    public string Telefono { get; set; } = string.Empty; // WhatsApp
+    public string Genero { get; set; } = "Hombre"; // Hombre, Mujer, Otro
+    public string PasswordHash { get; set; } = string.Empty;
+    public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
+}
