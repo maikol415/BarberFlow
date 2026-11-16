@@ -1025,6 +1025,29 @@ function verificarSesionClienteLocal() {
   } catch (e) {}
 }
 
+// Función para descomponer número y separar indicativo internacional
+function separarIndicativoYNumero(telefonoRaw) {
+  if (!telefonoRaw) return { indicativo: '+57', numero: '' };
+  let limpio = telefonoRaw.toString().trim();
+  if (!limpio.startsWith('+')) {
+    limpio = `+${limpio}`;
+  }
+
+  // Lista de códigos de país soportados ordenados de mayor longitud a menor
+  const codigos = ['+593', '+507', '+57', '+34', '+52', '+54', '+56', '+51', '+58', '+1'];
+  for (const cod of codigos) {
+    if (limpio.startsWith(cod)) {
+      return {
+        indicativo: cod,
+        numero: limpio.substring(cod.length).trim()
+      };
+    }
+  }
+
+  // Fallback si no coincide con ninguno
+  return { indicativo: '+57', numero: limpio.replace(/^\+/, '') };
+}
+
 function actualizarUiClienteLogueado() {
   if (clienteSesion) {
     const txtBtn = document.getElementById('txt-btn-cliente');
@@ -1033,8 +1056,14 @@ function actualizarUiClienteLogueado() {
     // Autocompletar inputs de reserva para mayor comodidad
     const inNom = document.getElementById('cliente-nombre');
     if (inNom) inNom.value = clienteSesion.nombre;
+
     const inTel = document.getElementById('cliente-telefono');
-    if (inTel) inTel.value = clienteSesion.telefono;
+    const selPais = document.getElementById('cliente-pais');
+    if (clienteSesion.telefono) {
+      const parsed = separarIndicativoYNumero(clienteSesion.telefono);
+      if (selPais) selPais.value = parsed.indicativo;
+      if (inTel) inTel.value = parsed.numero;
+    }
   } else {
     const txtBtn = document.getElementById('txt-btn-cliente');
     if (txtBtn) txtBtn.innerText = 'Mis Citas / Ingresar';
@@ -1050,7 +1079,10 @@ function abrirModalAuthCliente() {
     document.getElementById('cliente-box-auth').classList.add('hidden');
     document.getElementById('cliente-box-perfil').classList.remove('hidden');
     document.getElementById('perfil-cli-nombre').innerText = `Hola, ${clienteSesion.nombre}`;
-    document.getElementById('perfil-cli-tel').innerText = `📱 +57 ${clienteSesion.telefono}`;
+    
+    // Formatear visualmente el teléfono con su indicativo real (ej: +1 7747126594)
+    const parsed = separarIndicativoYNumero(clienteSesion.telefono);
+    document.getElementById('perfil-cli-tel').innerText = `📱 ${parsed.indicativo} ${parsed.numero}`;
     cargarCitasClientePerfil();
   } else {
     document.getElementById('cliente-box-auth').classList.remove('hidden');
