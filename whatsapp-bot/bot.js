@@ -46,12 +46,20 @@ function formatearJidWhatsApp(telefono) {
   return `${limpio}@s.whatsapp.net`;
 }
 
-// Función auxiliar para responder de forma natural (escribiendo... ~1.8s)
+// Función auxiliar para responder de forma natural (escribiendo... entre 2.5s y 4s según longitud)
 const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
   try {
     if (!sock || !estaConectado) return false;
+    
+    // Simular tiempo de lectura/escritura más creíble y humano:
+    // Mínimo 2.5 segundos, y un poquito más si el texto es largo, con variación aleatoria humana (jitter)
+    const delayBase = 2500;
+    const delayExtraPorLongitud = Math.min(Math.floor((textoRespuesta || '').length * 15), 2000);
+    const delayAleatorio = Math.floor(Math.random() * 800); // 0 a 800ms de variación natural
+    const tiempoTotal = delayBase + delayExtraPorLongitud + delayAleatorio; // aprox 3 a 4.5 segundos
+
     await sock.sendPresenceUpdate('composing', remitente);
-    await new Promise(r => setTimeout(r, 1800));
+    await new Promise(r => setTimeout(r, tiempoTotal));
     await sock.sendMessage(remitente, { text: textoRespuesta });
     await sock.sendPresenceUpdate('paused', remitente);
     return true;
