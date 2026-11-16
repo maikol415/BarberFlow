@@ -699,7 +699,6 @@ function renderHorariosDisponibles() {
       horasLibres.push(slot.texto);
     }
   });
-  });
 
   if (horasLibres.length === 0) {
     container.innerHTML = `
