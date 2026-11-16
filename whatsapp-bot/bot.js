@@ -355,10 +355,11 @@ async function iniciarBot() {
       if (barberia.botActivo === false) return;
 
       // Extraer número de teléfono del remitente (ej: 17747126594@s.whatsapp.net o 573024084425@s.whatsapp.net)
-      const telSoloDigitos = remitente.replace(/[^0-9]/g, '');
-      // Búsqueda en dos variantes: número completo con código de país Y últimos 10 dígitos locales
+      const telSoloDigitos = remitente.split('@')[0].replace(/[^0-9]/g, '');
       const ultimos10 = telSoloDigitos.length >= 10 ? telSoloDigitos.slice(-10) : telSoloDigitos;
-      const telBusqueda = telSoloDigitos; // Enviar número internacional completo primero o fallback a 10 dígitos
+      const telBusqueda = telSoloDigitos;
+
+      console.log(`[Mensaje Recibido] De: ${remitente} | Tel: ${telSoloDigitos} | Texto: ${texto}`);
 
       const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
 
@@ -413,13 +414,24 @@ async function iniciarBot() {
       // Función auxiliar para buscar cita por teléfono (prueba número completo y últimos 10 dígitos)
       const buscarCitaClienteAsync = async () => {
         try {
+          console.log(`[Buscando Cita] Probando con tel: ${telSoloDigitos} y ultimos10: ${ultimos10}`);
           let res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telSoloDigitos}`);
-          if (res.ok) return await res.json();
+          if (res.ok) {
+            const data = await res.json();
+            console.log(`[Cita Encontrada] id: ${data.id}`);
+            return data;
+          }
           if (ultimos10 && ultimos10 !== telSoloDigitos) {
             res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${ultimos10}`);
-            if (res.ok) return await res.json();
+            if (res.ok) {
+              const data = await res.json();
+              console.log(`[Cita Encontrada con ultimos10] id: ${data.id}`);
+              return data;
+            }
           }
-        } catch (e) {}
+        } catch (e) {
+          console.error('[Error en buscarCitaClienteAsync]:', e.message);
+        }
         return null;
       };
 
