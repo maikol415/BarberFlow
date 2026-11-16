@@ -318,6 +318,11 @@ function seleccionarServicio(s) {
       badge.innerText = '✓ Elegido';
     }
   }
+
+  // Recalcular horarios disponibles al instante con la nueva duración del servicio
+  if (reservaActual.fechaSeleccionada) {
+    renderHorariosDisponibles();
+  }
 }
 
 // 3. Selector de Barbero (Solo si son múltiples barberos y está activado)
@@ -594,31 +599,58 @@ function renderHorariosDisponibles() {
 
   const horaApertura = barberia.horaApertura || "09:00";
   const horaCierre = barberia.horaCierre || "20:00";
-  const intervalo = barberia.intervaloMinutos || 40;
+  const intervaloBase = barberia.intervaloMinutos || 40;
 
   const [hIni, mIni] = horaApertura.split(':').map(Number);
   const [hFin, mFin] = horaCierre.split(':').map(Number);
 
-  let inicioMin = hIni * 60 + mIni;
-  const finMin = hFin * 60 + mFin;
+  let inicioJornadaMin = hIni * 60 + mIni;
+  const finJornadaMin = hFin * 60 + mFin;
 
+  const bloqueos = barberia.bloqueos || [];
+  const citasOcupadas = barberia.citasOcupadas || [];
+
+  // Duración del servicio seleccionado por el cliente (ej: 30, 40, 50, 60 min)
+  const servActual = todosLosServicios.find(s => s.id === reservaActual.servicioId);
+  const duracionServicioMin = servActual ? (servActual.duracionMinutos || 40) : 40;
+
+  // Citas ocupadas del día ordenadas por hora
+  const citasDelDia = citasOcupadas
+    .filter(c => c.fecha === reservaActual.fechaSeleccionada && (reservaActual.barberoId == null || c.miembroEquipoId == null || c.miembroEquipoId === reservaActual.barberoId))
+    .map(c => {
+      const ini = convertirHoraAMinutos(c.hora);
+      const dur = c.duracionMinutos || intervaloBase;
+      return { inicio: ini, fin: ini + dur, hora: c.hora };
+    })
+    .sort((a, b) => a.inicio - b.inicio);
+
+  // Generador de Franjas Inteligentes Continuas:
+  // Si un turno anterior terminó (por ejemplo un servicio largo a las 02:50pm),
+  // se programa el próximo slot disponible a las 03:00pm (10 min de margen de alistamiento),
+  // y a partir de allí continúa el ritmo de atención sin dejar al barbero 20 o 30 minutos esperando sin hacer nada.
   const horariosGenerados = [];
-  while (inicioMin + intervalo <= finMin) {
-    const hh = Math.floor(inicioMin / 60);
-    const mm = inicioMin % 60;
+  let cursorMin = inicioJornadaMin;
+
+  while (cursorMin + duracionServicioMin <= finJornadaMin + 15) { // Permite hasta 15m de holgura de cierre
+    const hh = Math.floor(cursorMin / 60);
+    const mm = cursorMin % 60;
     
     const ampm = hh >= 12 ? 'pm' : 'am';
     let hh12 = hh % 12;
     if (hh12 === 0) hh12 = 12;
     const hhStr = hh12 < 10 ? `0${hh12}` : `${hh12}`;
     const mmStr = mm < 10 ? `0${mm}` : `${mm}`;
-    horariosGenerados.push(`${hhStr}:${mmStr}${ampm}`);
+    horariosGenerados.push({ texto: `${hhStr}:${mmStr}${ampm}`, minutos: cursorMin });
 
-    inicioMin += intervalo;
+    // Verificar si en este punto choca o coincide con una cita existente
+    const citaCoincidente = citasDelDia.find(c => c.inicio <= cursorMin && cursorMin < c.fin);
+    if (citaCoincidente) {
+      // Salta al final de la cita + 10 minutos de margen de limpieza/alistamiento
+      cursorMin = Math.ceil((citaCoincidente.fin + 10) / 10) * 10;
+    } else {
+      cursorMin += intervaloBase;
+    }
   }
-
-  const bloqueos = barberia.bloqueos || [];
-  const citasOcupadas = barberia.citasOcupadas || [];
 
   let horasLibres = [];
 
@@ -628,12 +660,8 @@ function renderHorariosDisponibles() {
   // Margen de reacción para el mismo día: mínimo 2 horas hacia adelante (120 min)
   const ahoraEnMinutos = ahora.getHours() * 60 + ahora.getMinutes() + 120;
 
-  // Duración del servicio seleccionado en minutos (por defecto 40)
-  const servActual = todosLosServicios.find(s => s.id === reservaActual.servicioId);
-  const duracionServicioMin = servActual ? (servActual.duracionMinutos || 40) : 40;
-
-  horariosGenerados.forEach(h => {
-    const turnoInicioMin = convertirHoraAMinutos(h);
+  horariosGenerados.forEach(slot => {
+    const turnoInicioMin = slot.minutos;
     const turnoFinMin = turnoInicioMin + duracionServicioMin;
 
     // Si la reserva es para hoy, no permitir horas antes del margen de 2 horas
@@ -641,7 +669,7 @@ function renderHorariosDisponibles() {
       return;
     }
 
-    // Validación Matemática de Bloqueos (Cero traslapes con descansos, horas fijas o rangos libres)
+    // Validación Matemática de Bloqueos (Descansos o pausas)
     const estaBloqueada = bloqueos.some(b => {
       if (b.fecha !== reservaActual.fechaSeleccionada) return false;
       if (!b.hora || b.hora === 'TODO_EL_DIA') return true;
@@ -649,35 +677,28 @@ function renderHorariosDisponibles() {
       let bloqueoInicioMin = 0;
       let bloqueoFinMin = 0;
 
-      // Soporte para rango libre: "12:00-14:30"
       if (b.hora.includes('-')) {
         const [dPart, hPart] = b.hora.split('-');
         bloqueoInicioMin = convertirHoraAMinutos(dPart);
         bloqueoFinMin = convertirHoraAMinutos(hPart);
       } else {
         bloqueoInicioMin = convertirHoraAMinutos(b.hora);
-        bloqueoFinMin = bloqueoInicioMin + (barberia.intervaloMinutos || 40);
+        bloqueoFinMin = bloqueoInicioMin + intervaloBase;
       }
 
       // Hay traslape si el turno empieza antes de que termine el bloqueo Y termina después de que empieza el bloqueo
-      const hayTraslape = turnoInicioMin < bloqueoFinMin && turnoFinMin > bloqueoInicioMin;
-      return hayTraslape;
+      return turnoInicioMin < bloqueoFinMin && turnoFinMin > bloqueoInicioMin;
     });
 
-    // Validación de Citas ya ocupadas
-    const estaOcupada = citasOcupadas.some(c => {
-      if (c.fecha !== reservaActual.fechaSeleccionada) return false;
-      const citaInicioMin = convertirHoraAMinutos(c.hora);
-      const citaFinMin = citaInicioMin + (barberia.intervaloMinutos || 40);
-
-      const mismoBarbero = (reservaActual.barberoId == null || c.miembroEquipoId == null || c.miembroEquipoId === reservaActual.barberoId);
-      const hayTraslape = turnoInicioMin < citaFinMin && turnoFinMin > citaInicioMin;
-      return mismoBarbero && hayTraslape;
+    // Validación Matemática de Citas ya ocupadas (Cero traslapes con la duración real del servicio)
+    const estaOcupada = citasDelDia.some(c => {
+      return turnoInicioMin < c.fin && turnoFinMin > c.inicio;
     });
 
     if (!estaBloqueada && !estaOcupada) {
-      horasLibres.push(h);
+      horasLibres.push(slot.texto);
     }
+  });
   });
 
   if (horasLibres.length === 0) {

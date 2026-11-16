@@ -38,10 +38,17 @@ public class PublicController : ControllerBase
                 .Select(r => new { r.Id, r.PalabrasClave, r.Respuesta })
                 .ToListAsync();
 
-            // Citas reservadas actualmente para no permitir sobreposiciones
+            // Citas reservadas actualmente para no permitir sobreposiciones (incluyendo duración real del servicio)
             var citasOcupadas = await _context.Citas
+                .Include(c => c.Servicio)
                 .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
-                .Select(c => new { c.Fecha, c.Hora, c.MiembroEquipoId })
+                .Select(c => new 
+                { 
+                    c.Fecha, 
+                    c.Hora, 
+                    c.MiembroEquipoId,
+                    DuracionMinutos = c.Servicio != null ? c.Servicio.DuracionMinutos : 40
+                })
                 .ToListAsync();
 
             // Conteo real de agendamientos históricos en el sistema
@@ -166,24 +173,49 @@ public class PublicController : ControllerBase
             return BadRequest(new { message = "Este horario ha sido bloqueado por la barbería." });
         }
 
-        var citaExistente = await _context.Citas.AnyAsync(c =>
-            c.BarberiaId == barberia.Id &&
-            c.Fecha == dto.Fecha &&
-            c.Hora == dto.Hora &&
-            c.Estado != "Cancelada" &&
-            c.Estado != "No Confirmada" &&
-            (dto.MiembroEquipoId == null || c.MiembroEquipoId == null || c.MiembroEquipoId == dto.MiembroEquipoId)
-        );
-
-        if (citaExistente)
-        {
-            return BadRequest(new { message = "Ese horario ya fue reservado. Por favor elige otro horario." });
-        }
-
         var servicio = barberia.Servicios.FirstOrDefault(s => s.Id == dto.ServicioId);
         if (servicio == null)
         {
             return BadRequest(new { message = "Servicio no válido." });
+        }
+
+        // Validación matemática de traslape con citas existentes según duración del servicio
+        static int ConvertirHoraAMinutos(string hStr)
+        {
+            if (string.IsNullOrWhiteSpace(hStr)) return 0;
+            var str = hStr.ToLower().Trim();
+            var esPm = str.Contains("pm");
+            var esAm = str.Contains("am");
+            var clean = System.Text.RegularExpressions.Regex.Replace(str, @"[apm\s]", "");
+            var parts = clean.Split(':');
+            var hh = int.TryParse(parts[0], out var h) ? h : 0;
+            var mm = parts.Length > 1 && int.TryParse(parts[1], out var m) ? m : 0;
+            if (esPm && hh < 12) hh += 12;
+            if (esAm && hh == 12) hh = 0;
+            return hh * 60 + mm;
+        }
+
+        var nuevoTurnoInicio = ConvertirHoraAMinutos(dto.Hora);
+        var nuevoTurnoFin = nuevoTurnoInicio + servicio.DuracionMinutos;
+
+        var citasDia = await _context.Citas
+            .Include(c => c.Servicio)
+            .Where(c => c.BarberiaId == barberia.Id && c.Fecha == dto.Fecha && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
+            .Where(c => dto.MiembroEquipoId == null || c.MiembroEquipoId == null || c.MiembroEquipoId == dto.MiembroEquipoId)
+            .ToListAsync();
+
+        var hayTraslapeCita = citasDia.Any(c =>
+        {
+            if (dto.ReagendarCitaId.HasValue && c.Id == dto.ReagendarCitaId.Value) return false;
+            var existIni = ConvertirHoraAMinutos(c.Hora);
+            var existDur = c.Servicio?.DuracionMinutos ?? barberia.IntervaloMinutos;
+            var existFin = existIni + existDur;
+            return nuevoTurnoInicio < existFin && nuevoTurnoFin > existIni;
+        });
+
+        if (hayTraslapeCita)
+        {
+            return BadRequest(new { message = "Ese horario o parte de su duración ya fue reservado. Por favor elige otro horario." });
         }
 
         var codigoReserva = $"#BF-{Random.Shared.Next(1000, 9999)}";
