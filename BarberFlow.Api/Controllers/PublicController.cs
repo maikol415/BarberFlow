@@ -579,6 +579,18 @@ public class PublicController : ControllerBase
 
         return Ok(citas);
     }
+
+    [HttpDelete("clientes/{id}")]
+    public async Task<IActionResult> EliminarCuentaCliente(int id)
+    {
+        var cliente = await _context.Clientes.FindAsync(id);
+        if (cliente == null) return NotFound(new { message = "Cliente no encontrado." });
+
+        _context.Clientes.Remove(cliente);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Tu cuenta ha sido eliminada con éxito." });
+    }
 }
 
 public record ValoracionDto(string BarberiaSlug, string NombreCliente, int Estrellas, string? Comentario);

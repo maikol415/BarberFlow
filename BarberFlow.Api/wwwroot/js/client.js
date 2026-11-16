@@ -1268,6 +1268,29 @@ function cerrarSesionCliente() {
   cerrarModalAuthCliente();
 }
 
+async function confirmarEliminarCuentaCliente() {
+  if (!clienteSesion || !clienteSesion.id) return;
+
+  const confirma = confirm('¿Estás seguro de que deseas eliminar tu cuenta de usuario? Tus citas registradas en la barbería no se perderán, pero ya no tendrás acceso con esta cuenta.');
+  if (!confirma) return;
+
+  try {
+    const res = await fetch(`/api/public/clientes/${clienteSesion.id}`, {
+      method: 'DELETE'
+    });
+
+    if (res.ok) {
+      alert('Tu cuenta de usuario ha sido eliminada con éxito.');
+      cerrarSesionCliente();
+    } else {
+      const data = await res.json();
+      alert(data.message || 'Error al eliminar la cuenta.');
+    }
+  } catch (err) {
+    alert('Error al conectar con el servidor.');
+  }
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   initClient();
   verificarSesionClienteLocal();
