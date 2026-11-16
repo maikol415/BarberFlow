@@ -43,7 +43,25 @@ function formatearJidWhatsApp(telefono) {
   else if (limpio.length === 10 && !limpio.startsWith('1') && !limpio.startsWith('57')) {
     limpio = `1${limpio}`;
   }
+  // Si tiene 11 dígitos y empieza por 1 (ej: 17747126594), se deja limpio tal cual
   return `${limpio}@s.whatsapp.net`;
+}
+
+// Resolver el JID real de WhatsApp verificando en los servidores de Baileys
+async function resolverJidDestinatario(sock, telefono) {
+  const jidDirecto = formatearJidWhatsApp(telefono);
+  if (!sock || !jidDirecto) return jidDirecto;
+
+  try {
+    const limpio = telefono.replace(/[^0-9]/g, '');
+    const res = await sock.onWhatsApp(limpio);
+    if (res && res.length > 0 && res[0].exists && res[0].jid) {
+      return res[0].jid;
+    }
+  } catch (e) {
+    console.log('Nota: fallback a JID directo:', e.message);
+  }
+  return jidDirecto;
 }
 
 // Función auxiliar para responder de forma natural (escribiendo... entre 2.5s y 4s según longitud)
@@ -169,7 +187,7 @@ http.createServer(async (req, res) => {
           return;
         }
 
-        const jid = formatearJidWhatsApp(telefonoCliente);
+        const jid = await resolverJidDestinatario(socketActivo, telefonoCliente);
         const primerNombre = obtenerPrimerNombre(nombreCliente);
         const ultimaVez = ultimaInteraccionCliente.get(jid) || 0;
         const ahora = Date.now();
