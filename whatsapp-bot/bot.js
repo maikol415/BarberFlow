@@ -31,12 +31,17 @@ function obtenerPrimerNombre(nombreCompleto) {
   return primer.charAt(0).toUpperCase() + primer.slice(1).toLowerCase();
 }
 
-// Formatear teléfono a JID de Baileys (ej: 573001234567@s.whatsapp.net)
+// Formatear teléfono a JID de Baileys (ej: 573001234567@s.whatsapp.net o 17747126594@s.whatsapp.net)
 function formatearJidWhatsApp(telefono) {
   if (!telefono) return null;
   let limpio = telefono.replace(/[^0-9]/g, '');
+  // Si tiene 10 dígitos y empieza por 3 (Colombia local)
   if (limpio.length === 10 && limpio.startsWith('3')) {
-    limpio = `57${limpio}`; // Código país Colombia por defecto
+    limpio = `57${limpio}`;
+  }
+  // Si tiene 10 dígitos en USA (ej: 7747126594), anteponer prefijo 1
+  else if (limpio.length === 10 && !limpio.startsWith('1') && !limpio.startsWith('57')) {
+    limpio = `1${limpio}`;
   }
   return `${limpio}@s.whatsapp.net`;
 }
@@ -323,9 +328,11 @@ async function iniciarBot() {
       const barberia = await obtenerDatosBarberia();
       if (barberia.botActivo === false) return;
 
-      // Extraer número de teléfono del remitente (ej: 573001234567@s.whatsapp.net -> 3001234567 o últimos 10 dígitos)
+      // Extraer número de teléfono del remitente (ej: 17747126594@s.whatsapp.net o 573024084425@s.whatsapp.net)
       const telSoloDigitos = remitente.replace(/[^0-9]/g, '');
-      const telBusqueda = telSoloDigitos.length >= 10 ? telSoloDigitos.slice(-10) : telSoloDigitos;
+      // Búsqueda en dos variantes: número completo con código de país Y últimos 10 dígitos locales
+      const ultimos10 = telSoloDigitos.length >= 10 ? telSoloDigitos.slice(-10) : telSoloDigitos;
+      const telBusqueda = telSoloDigitos; // Enviar número internacional completo primero o fallback a 10 dígitos
 
       const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
 
@@ -377,12 +384,24 @@ async function iniciarBot() {
         }
       }
 
+      // Función auxiliar para buscar cita por teléfono (prueba número completo y últimos 10 dígitos)
+      const buscarCitaClienteAsync = async () => {
+        try {
+          let res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telSoloDigitos}`);
+          if (res.ok) return await res.json();
+          if (ultimos10 && ultimos10 !== telSoloDigitos) {
+            res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${ultimos10}`);
+            if (res.ok) return await res.json();
+          }
+        } catch (e) {}
+        return null;
+      };
+
       // 1. SOLICITUD DE CANCELACIÓN ("cancelar", "cancelar cita", etc.)
       if (texto.includes('cancelar') || texto.includes('cancelo') || texto === 'cancelar cita') {
         try {
-          const res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telBusqueda}`);
-          if (res.ok) {
-            const cita = await res.json();
+          const cita = await buscarCitaClienteAsync();
+          if (cita) {
             const primerNombre = obtenerPrimerNombre(cita.nombreCliente);
 
             estadoCliente.set(remitente, {
@@ -422,12 +441,11 @@ async function iniciarBot() {
       // 2. SOLICITUD DE REAGENDAR ("reagendar", "cambiar cita", "mover turno")
       if (texto.includes('reagendar') || texto.includes('cambiar fecha') || texto.includes('cambiar hora') || texto.includes('mover cita')) {
         try {
-          const res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telBusqueda}`);
+          const cita = await buscarCitaClienteAsync();
           let urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
           let detalle = '';
 
-          if (res.ok) {
-            const cita = await res.json();
+          if (cita) {
             urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${cita.id}`;
             detalle = ` de tu cita activa (*${cita.servicio}* para el *${cita.fecha} a las ${cita.hora}*)`;
           }
