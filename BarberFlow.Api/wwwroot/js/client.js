@@ -1106,6 +1106,11 @@ async function registrarCliente(e) {
   const gen = document.getElementById('cli-reg-genero').value;
   const pass = document.getElementById('cli-reg-pass').value.trim();
 
+  if (!gen) {
+    alert('Por favor selecciona una opción en Sexo / Género.');
+    return;
+  }
+
   try {
     const res = await fetch('/api/public/clientes/registro', {
       method: 'POST',
