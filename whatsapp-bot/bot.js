@@ -670,12 +670,25 @@ async function iniciarBot() {
         return;
       }
 
-      // 9. DERIVACIÓN HUMANA INTELIGENTE (Preguntas libres o dudas no mapeadas)
-      // Solo responder 1 vez cada 2 horas por cliente para no repetir en frases cortas seguidas
-      const ultimaVezDerivado = ultimaDerivacionMap.get(remitente) || 0;
-      const dosHorasMs = 2 * 60 * 60 * 1000;
+      // 9. FILTRO INTELIGENTE DE MENSAJES CASUALES / DESPEDIDAS / RISAS
+      // Si el mensaje es una reacción informal, despedida o risa, el bot guarda silencio como un humano
+      const frasesCasual = [
+        'jaja', 'jeje', 'jojo', 'gracias', 'muchas gracias', 'vale', 'dale', 'ok', 'okay', 
+        'listo', 'lista', 'esta bien', 'está bien', 'asi es', 'así es', 'de una', 'perfecto', 
+        'bueno', 'bien', 'chimba', 'genial', 'excelente', 'uy', 'ah bueno', 'entendido'
+      ];
+      const esMensajeCasual = frasesCasual.some(frase => texto === frase || texto.startsWith(frase + ' ') || texto.endsWith(' ' + frase));
+      if (esMensajeCasual || texto.length <= 3) {
+        // Guardar silencio ante charlas casuales para no incomodar
+        return;
+      }
 
-      if (ahora - ultimaVezDerivado > dosHorasMs) {
+      // 10. DERIVACIÓN HUMANA INTELIGENTE (Preguntas libres o dudas no mapeadas)
+      // Espera mínimo media hora (30 minutos) antes de volver a enviar este aviso al mismo cliente
+      const ultimaVezDerivado = ultimaDerivacionMap.get(remitente) || 0;
+      const mediaHoraMs = 30 * 60 * 1000;
+
+      if (ahora - ultimaVezDerivado > mediaHoraMs) {
         ultimaDerivacionMap.set(remitente, ahora);
         const derivacion = barberia.mensajeDerivacionHumana || 
           'He tomado nota de tu consulta. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno te responderá personalmente por este chat.';
