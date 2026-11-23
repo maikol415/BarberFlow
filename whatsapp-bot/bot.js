@@ -287,7 +287,7 @@ async function citaSigueActiva(citaId) {
 
 export async function manejarNotificarCita(payload) {
   const {
-    citaId, codigoReserva, barberiaSlug, barberiaNombre, barberiaDireccion,
+    citaId, tokenPublico, codigoReserva, barberiaSlug, barberiaNombre, barberiaDireccion,
     nombreCliente, telefonoCliente, servicio, fecha, hora, total, duracionMinutos, esReagendamiento
   } = payload;
 
@@ -330,7 +330,7 @@ export async function manejarNotificarCita(payload) {
   await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
   ultimaInteraccionCliente.set(jid, ahora);
 
-  const encuesta = agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora, duracionMinutos);
+  const encuesta = agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barberiaNombre, fecha, hora, duracionMinutos);
   return { enviado: true, jid, encuestaEnMinutos: encuesta };
 }
 
@@ -358,9 +358,14 @@ export async function manejarNotificarCancelacion(payload) {
 // Devuelve en cuántos minutos se enviará, o null si no se programó.
 // Nota: se guarda en memoria; si el servicio se reinicia antes, esa reseña no se envía.
 const MAX_ESPERA_MS = 20 * 24 * 60 * 60 * 1000; // setTimeout no admite esperas mayores a ~24 días
-function agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora, duracionMinutos) {
+// El enlace usa el token público de la cita (no el Id secuencial, que permitiría ver/calificar citas ajenas).
+export function urlCalificarCita(tokenPublico) {
+  return `${BASE_WEB_URL}/index.html?b=${encodeURIComponent(BARBERIA_SLUG)}&calificar=${encodeURIComponent(tokenPublico)}`;
+}
+
+function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barberiaNombre, fecha, hora, duracionMinutos) {
   const inicio = instanteCita(fecha, hora);
-  if (!inicio || !citaId) return null;
+  if (!inicio || !citaId || !tokenPublico) return null;
   const envio = inicio + ((Number(duracionMinutos) || 40) + 60) * 60 * 1000;
   const espera = envio - Date.now();
   if (espera < 0 || espera > MAX_ESPERA_MS) return null;
@@ -369,7 +374,7 @@ function agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fech
     try {
       if (!socketActivo || !estaConectado) return;
       if (!await citaSigueActiva(citaId)) return; // cancelada o reagendada: no pedir reseña
-      const urlCalificar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&calificar=${citaId}`;
+      const urlCalificar = urlCalificarCita(tokenPublico);
       const msgResena =
         `¡Hola ${primerNombre}! 👋 Esperamos que hayas quedado 10/10 con tu servicio de hoy en *${barberiaNombre || 'la barbería'}* 💈✂️\n\n` +
         `Tu opinión es muy importante para nosotros. ¿Podrías dejarnos tu calificación y comentario aquí en menos de 10 segundos? ⭐\n\n` +
@@ -672,8 +677,8 @@ export async function procesarMensajeEntrante(sock, m) {
           let urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
           let detalle = '';
 
-          if (cita) {
-            urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${cita.id}`;
+          if (cita && cita.tokenPublico) {
+            urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${encodeURIComponent(cita.tokenPublico)}`;
             detalle = ` de tu cita activa (*${cita.servicio}* para el *${cita.fecha} a las ${cita.hora}*)`;
           }
 

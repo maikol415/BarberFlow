@@ -55,6 +55,10 @@ public class AppDbContext : DbContext
             .HasForeignKey(c => c.BarberiaId)
             .OnDelete(DeleteBehavior.Cascade);
 
+        modelBuilder.Entity<Cita>()
+            .HasIndex(c => c.TokenPublico)
+            .IsUnique();
+
         modelBuilder.Entity<HorarioBloqueo>()
             .HasOne<Barberia>()
             .WithMany(b => b.Bloqueos)

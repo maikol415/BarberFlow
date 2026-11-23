@@ -822,7 +822,7 @@ async function confirmarReservaFinal(e) {
     telefonoCliente: telefonoCompleto,
     fecha: reservaActual.fechaSeleccionada,
     hora: reservaActual.horaSeleccionada,
-    reagendarCitaId: citaIdReagendar ? parseInt(citaIdReagendar) : null
+    reagendarToken: citaTokenReagendar
   };
 
   const btn = document.getElementById('btn-confirmar-final');
@@ -872,65 +872,77 @@ function cerrarModal() {
 }
 
 // 6. Sistema de Valoración por Estrellas (Clientes) y Reagendamiento
-let citaIdCalificar = null;
-let citaIdReagendar = null;
+// Los enlaces (?calificar= / ?reagendar=) traen el token público de la cita, nunca su id
+let citaTokenCalificar = null;
+let citaTokenReagendar = null;
 
 async function verificarParametrosUrl() {
   const params = new URLSearchParams(window.location.search);
-  const calificarId = params.get('calificar');
-  if (calificarId) {
+  const calificarToken = params.get('calificar');
+  if (calificarToken) {
     try {
-      const res = await fetch(`/api/public/cita-resena/${calificarId}`);
+      const res = await fetch(`/api/public/cita-resena/${encodeURIComponent(calificarToken)}`);
       if (res.ok) {
         const info = await res.json();
-        citaIdCalificar = info.id;
-        document.getElementById('val-nombre').value = info.nombreCliente || '';
-        document.getElementById('modal-valoracion-titulo').innerText = `Califica tu servicio en ${info.barberiaNombre}`;
-        abrirModalValoracion();
+        if (info.puedeCalificar) {
+          citaTokenCalificar = calificarToken;
+          document.getElementById('val-nombre').value = info.nombreCliente || '';
+          document.getElementById('modal-valoracion-titulo').innerText = `Califica tu servicio en ${info.barberiaNombre}`;
+          abrirModalValoracion();
+        } else {
+          alert(info.motivoNoCalificable || 'Esta cita no se puede calificar.');
+        }
+      } else {
+        alert('El enlace para calificar no es válido o ya expiró.');
       }
     } catch (e) {
       console.log('Error cargando cita para calificar:', e);
     }
   }
 
-  const reagendarId = params.get('reagendar');
-  if (reagendarId) {
-    citaIdReagendar = reagendarId;
-    const banner = document.getElementById('banner-reagendar-aviso');
-    if (banner) banner.classList.remove('hidden');
-
+  const reagendarToken = params.get('reagendar');
+  if (reagendarToken) {
     try {
-      const res = await fetch(`/api/public/cita-resena/${reagendarId}`);
-      if (res.ok) {
-        const info = await res.json();
-        
-        // Mostrar el nombre del servicio en el aviso
-        const lblServicio = document.getElementById('reagendar-nombre-servicio');
-        if (lblServicio) lblServicio.innerText = info.servicio;
+      const res = await fetch(`/api/public/cita-resena/${encodeURIComponent(reagendarToken)}`);
+      if (!res.ok) {
+        alert('El enlace para reagendar no es válido. Puedes reservar un turno nuevo abajo.');
+        return;
+      }
+      const info = await res.json();
+      if (info.estado === 'Cancelada') {
+        alert('Esta cita ya fue cancelada o reagendada. Puedes reservar un turno nuevo abajo.');
+        return;
+      }
+      citaTokenReagendar = reagendarToken;
+      const banner = document.getElementById('banner-reagendar-aviso');
+      if (banner) banner.classList.remove('hidden');
 
-        // Pre-seleccionar automáticamente el servicio anterior para que solo elija el nuevo horario
-        const servExistente = todosLosServicios.find(s => s.nombre.toLowerCase() === info.servicio.toLowerCase());
-        if (servExistente) {
-          seleccionarServicio(servExistente);
-        }
+      // Mostrar el nombre del servicio en el aviso
+      const lblServicio = document.getElementById('reagendar-nombre-servicio');
+      if (lblServicio) lblServicio.innerText = info.servicio;
 
-        // Ocultar la sección del catálogo de servicios para que NO tenga que volver a elegirlo
-        const seccionServicios = document.getElementById('seccion-paso-servicios');
-        if (seccionServicios) {
-          seccionServicios.classList.add('hidden');
-        }
+      // Pre-seleccionar automáticamente el servicio anterior para que solo elija el nuevo horario
+      const servExistente = todosLosServicios.find(s => s.nombre.toLowerCase() === info.servicio.toLowerCase());
+      if (servExistente) {
+        seleccionarServicio(servExistente);
+      }
 
-        // Pre-llenar datos del cliente
-        const inNom = document.getElementById('cliente-nombre');
-        if (inNom && info.nombreCliente) inNom.value = info.nombreCliente;
+      // Ocultar la sección del catálogo de servicios para que NO tenga que volver a elegirlo
+      const seccionServicios = document.getElementById('seccion-paso-servicios');
+      if (seccionServicios) {
+        seccionServicios.classList.add('hidden');
+      }
 
-        // Desplazar suavemente la pantalla hacia el calendario
-        const seccionCal = document.getElementById('seccion-paso-calendario');
-        if (seccionCal) {
-          setTimeout(() => {
-            seccionCal.scrollIntoView({ behavior: 'smooth' });
-          }, 300);
-        }
+      // Pre-llenar datos del cliente
+      const inNom = document.getElementById('cliente-nombre');
+      if (inNom && info.nombreCliente) inNom.value = info.nombreCliente;
+
+      // Desplazar suavemente la pantalla hacia el calendario
+      const seccionCal = document.getElementById('seccion-paso-calendario');
+      if (seccionCal) {
+        setTimeout(() => {
+          seccionCal.scrollIntoView({ behavior: 'smooth' });
+        }, 300);
       }
     } catch (e) {}
   }
@@ -1015,12 +1027,12 @@ async function enviarValoracionCliente(e) {
 
   try {
     let res;
-    if (citaIdCalificar) {
+    if (citaTokenCalificar) {
       res = await fetch('/api/public/calificar-cita', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          citaId: citaIdCalificar,
+          token: citaTokenCalificar,
           estrellas: estrellas,
           comentario: comentario
         })
@@ -1040,6 +1052,7 @@ async function enviarValoracionCliente(e) {
 
     if (res.ok) {
       alert('¡Muchas gracias por calificar a ' + barberia.nombre + '! ⭐');
+      citaTokenCalificar = null; // una sola reseña por cita
       cerrarModalValoracion();
       // Recargar datos para refrescar promedio y contador
       const ref = await fetch(`/api/public/barberia/${barberia.slug}`);
@@ -1048,7 +1061,9 @@ async function enviarValoracionCliente(e) {
         renderEncabezado();
       }
     } else {
-      alert('No se pudo enviar la calificación.');
+      const err = await res.json().catch(() => null);
+      alert((err && err.message) || 'No se pudo enviar la calificación.');
+      if (res.status === 409) { citaTokenCalificar = null; cerrarModalValoracion(); }
     }
   } catch (err) {
     alert('Error al conectar con el servidor.');

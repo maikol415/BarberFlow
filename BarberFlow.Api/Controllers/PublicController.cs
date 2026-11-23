@@ -256,15 +256,19 @@ public class PublicController : ControllerBase
         }
 
         // Validación matemática de traslape con citas existentes según duración del servicio
-        // Si es un reagendamiento, la cita original debe ser de esta barbería y del mismo teléfono
+        // Si es un reagendamiento (enlace con token), la cita original debe ser de esta barbería, del mismo teléfono y seguir vigente
         Cita? citaAnterior = null;
-        if (dto.ReagendarCitaId.HasValue)
+        if (!string.IsNullOrWhiteSpace(dto.ReagendarToken))
         {
-            citaAnterior = await _context.Citas.FindAsync(dto.ReagendarCitaId.Value);
+            citaAnterior = await BuscarCitaPorToken(dto.ReagendarToken);
             if (citaAnterior == null || citaAnterior.BarberiaId != barberia.Id ||
                 !TelefonoHelper.MismoTelefono(citaAnterior.TelefonoCliente, dto.TelefonoCliente))
             {
                 return BadRequest(new { message = "No pudimos verificar la cita que quieres reagendar. Usa el mismo número de WhatsApp con el que reservaste." });
+            }
+            if (citaAnterior.Estado == "Cancelada")
+            {
+                return BadRequest(new { message = "Esta cita ya fue cancelada o reagendada. Si quieres otro turno, reserva uno nuevo." });
             }
         }
 
@@ -308,7 +312,8 @@ public class PublicController : ControllerBase
             Fecha = dto.Fecha,
             Hora = dto.Hora,
             Total = servicio.Precio,
-            Estado = "Confirmada"
+            Estado = "Confirmada",
+            TokenPublico = Cita.NuevoTokenPublico()
         };
 
         // Si es un reagendamiento, cancelar automáticamente la cita anterior (ya verificada arriba)
@@ -324,6 +329,7 @@ public class PublicController : ControllerBase
         NotificarBot("/api/notificar-cita", barberia, new
         {
             citaId = cita.Id,
+            tokenPublico = cita.TokenPublico,
             codigoReserva = cita.CodigoReserva,
             barberiaSlug = barberia.Slug,
             barberiaNombre = barberia.Nombre,
@@ -381,35 +387,62 @@ public class PublicController : ControllerBase
         return Ok(new { message = "¡Gracias por tu valoración!" });
     }
 
-    // 🌟 RESEÑA POST-CITA VERIFICADA (DESDE WHATSAPP BOT LINK)
-    [HttpGet("cita-resena/{citaId}")]
-    public async Task<IActionResult> ObtenerDatosResena(int citaId)
+    // Busca una cita por su token público (los enlaces de reseña/reagendar nunca usan el Id secuencial)
+    private async Task<Cita?> BuscarCitaPorToken(string? token)
     {
-        var cita = await _context.Citas
+        token = token?.Trim().ToLowerInvariant();
+        if (token == null || token.Length != Cita.LargoTokenPublico || !token.All(Uri.IsHexDigit)) return null;
+        return await _context.Citas
             .Include(c => c.Servicio)
-            .FirstOrDefaultAsync(c => c.Id == citaId);
+            .FirstOrDefaultAsync(c => c.TokenPublico == token);
+    }
 
+    // La cita ya empezó (hora Colombia): solo entonces se puede reseñar
+    private static bool CitaYaComenzo(Cita c)
+    {
+        var cmp = string.CompareOrdinal(c.Fecha, FechaHoyColombia());
+        if (cmp != 0) return cmp < 0;
+        return ConvertirHoraAMinutos(c.Hora) <= MinutosAhoraColombia();
+    }
+
+    private static string? MotivoNoCalificable(Cita c)
+    {
+        if (c.CalificadaUtc != null) return "Ya calificaste esta cita. ¡Gracias por tu opinión!";
+        if (c.Estado == "Cancelada") return "Esta cita fue cancelada, por eso no se puede calificar.";
+        if (!CitaYaComenzo(c)) return "Podrás calificar tu servicio después de tu cita.";
+        return null;
+    }
+
+    // 🌟 RESEÑA POST-CITA VERIFICADA / REAGENDAR (ENLACE CON TOKEN ENVIADO POR WHATSAPP)
+    [HttpGet("cita-resena/{token}")]
+    public async Task<IActionResult> ObtenerDatosResena(string token)
+    {
+        var cita = await BuscarCitaPorToken(token);
         if (cita == null) return NotFound(new { message = "Cita no encontrada." });
 
         var barberia = await _context.Barberias.FindAsync(cita.BarberiaId);
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
+        var motivo = MotivoNoCalificable(cita);
         return Ok(new
         {
-            cita.Id,
             cita.NombreCliente,
             cita.Fecha,
             cita.Hora,
+            cita.Estado,
             Servicio = cita.Servicio?.Nombre ?? "Servicio",
             BarberiaNombre = barberia.Nombre,
-            BarberiaSlug = barberia.Slug
+            BarberiaSlug = barberia.Slug,
+            YaCalificada = cita.CalificadaUtc != null,
+            PuedeCalificar = motivo == null,
+            MotivoNoCalificable = motivo
         });
     }
 
     [HttpPost("calificar-cita")]
     public async Task<IActionResult> CalificarCita([FromBody] ReseñaCitaDto dto)
     {
-        var cita = await _context.Citas.FindAsync(dto.CitaId);
+        var cita = await BuscarCitaPorToken(dto.Token);
         if (cita == null) return NotFound(new { message = "Cita no encontrada." });
 
         if (dto.Estrellas < 1 || dto.Estrellas > 5)
@@ -421,17 +454,34 @@ public class PublicController : ControllerBase
             return BadRequest(new { message = "El comentario es demasiado largo (máximo 500 caracteres)." });
         }
 
-        var val = new Valoracion
+        var motivo = MotivoNoCalificable(cita);
+        if (motivo != null)
+        {
+            return cita.CalificadaUtc != null ? Conflict(new { message = motivo }) : BadRequest(new { message = motivo });
+        }
+
+        await using var tx = await _context.Database.BeginTransactionAsync();
+
+        // Marcar la cita como calificada de forma atómica: si llegan dos envíos a la vez, solo uno gana
+        var ahora = DateTime.UtcNow;
+        var marcadas = await _context.Citas
+            .Where(c => c.Id == cita.Id && c.CalificadaUtc == null)
+            .ExecuteUpdateAsync(s => s.SetProperty(c => c.CalificadaUtc, ahora));
+        if (marcadas == 0)
+        {
+            return Conflict(new { message = "Ya calificaste esta cita. ¡Gracias por tu opinión!" });
+        }
+
+        _context.Valoraciones.Add(new Valoracion
         {
             BarberiaId = cita.BarberiaId,
             NombreCliente = cita.NombreCliente,
             Estrellas = dto.Estrellas,
             Comentario = dto.Comentario?.Trim() ?? string.Empty,
-            FechaUtc = DateTime.UtcNow
-        };
-
-        _context.Valoraciones.Add(val);
+            FechaUtc = ahora
+        });
         await _context.SaveChangesAsync();
+        await tx.CommitAsync();
 
         return Ok(new { message = "¡Gracias por calificar tu servicio!" });
     }
@@ -465,6 +515,7 @@ public class PublicController : ControllerBase
         return Ok(new
         {
             cita.Id,
+            cita.TokenPublico,
             cita.CodigoReserva,
             cita.NombreCliente,
             cita.TelefonoCliente,
@@ -701,6 +752,7 @@ public class PublicController : ControllerBase
                 c.Hora,
                 c.Total,
                 c.Estado,
+                c.TokenPublico, // solo para el dueño autenticado: arma el enlace de reagendar
                 Proxima = EsCitaProxima(c),
                 Servicio = c.Servicio?.Nombre ?? "Servicio",
                 DuracionMinutos = c.Servicio?.DuracionMinutos ?? 0,

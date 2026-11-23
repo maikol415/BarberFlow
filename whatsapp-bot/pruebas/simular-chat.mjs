@@ -20,6 +20,7 @@ const {
   manejarNotificarCita,
   manejarNotificarCancelacion,
   revisarRecordatorios,
+  urlCalificarCita,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -152,7 +153,22 @@ r = await cliente(ana, 'cancelar', 'append');
 comprobar('Ignora mensajes de historial (append)', r === '' ? 'ignorado' : r, ['ignorado']);
 
 r = await cliente(ana, 'reagendar');
-comprobar('Reagendar: link con la cita', r, ['reagendar=']);
+const tokenReagendar = (r.match(/reagendar=([0-9a-f]{32})\b/) || [])[1];
+comprobar('Reagendar: link con el token de la cita (no el id)', tokenReagendar ? 'ok' : r, ['ok']);
+
+// ---------- Enlaces públicos por token (reseña / reagendar) ----------
+const getJson = async (url, opciones) => { const res = await fetch(url, opciones); return { status: res.status, data: await res.json().catch(() => null) }; };
+const postJson = (url, body) => getJson(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+
+let g = await getJson(`${API}/cita-resena/${citaAnaPasado.id}`);
+comprobar('El id secuencial ya no abre datos de la cita', String(g.status), ['404']);
+g = await getJson(`${API}/cita-resena/${tokenReagendar}`);
+comprobar('El token abre la cita correcta', g.status === 200 && !('id' in (g.data || {})) ? JSON.stringify(g.data) : `${g.status} ${JSON.stringify(g.data)}`, ['Ana Prueba', pasado]);
+comprobar('Cita futura: todavía no se puede calificar', g.data?.puedeCalificar === false ? 'ok' : JSON.stringify(g.data), ['ok']);
+g = await postJson(`${API}/calificar-cita`, { token: tokenReagendar, estrellas: 5, comentario: 'antes de tiempo' });
+comprobar('Rechaza reseña antes de la cita', String(g.status), ['400']);
+g = await postJson(`${API}/calificar-cita`, { citaId: citaAnaPasado.id, estrellas: 5 });
+comprobar('Rechaza reseña por id (sin token)', g.status === 400 || g.status === 404 ? 'ok' : String(g.status), ['ok']);
 
 // ---------- Webhooks de la API y tareas automáticas ----------
 __usarSocketDePrueba(sockFalso);
@@ -160,8 +176,12 @@ const todo = () => enviados.map(e => `[${e.jid}] ${e.texto}`).join('\n---\n');
 const telCarla = `+57315${base}`;
 const citaCarla = await crearCita(telCarla, 'Carla Prueba', manana, '02:20 PM');
 const minCarla = (() => { const [hh, mmm] = citaCarla.hora.split(/[: ]/); let h = +hh % 12; if (/PM/.test(citaCarla.hora)) h += 12; return h * 60 + +mmm; })();
+// El token solo viaja en el aviso API ➔ bot; aquí se consulta con la clave del bot
+const citaCarlaBot = (await getJson(`${API}/bot/${SLUG}/citas-cliente/${dig(telCarla)}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY || '' } })).data || {};
+comprobar('La API del bot entrega el token de la cita', /^[0-9a-f]{32}$/.test(citaCarlaBot.tokenPublico || '') ? 'ok' : JSON.stringify(citaCarlaBot), ['ok']);
+comprobar('Link de reseña con slug y token', urlCalificarCita(citaCarlaBot.tokenPublico), [`b=${SLUG}`, `calificar=${citaCarlaBot.tokenPublico}`]);
 const payloadBase = {
-  citaId: citaCarla.id, codigoReserva: citaCarla.codigoReserva, barberiaSlug: SLUG, barberiaNombre: 'Barbería de prueba',
+  citaId: citaCarla.id, tokenPublico: citaCarlaBot.tokenPublico, codigoReserva: citaCarla.codigoReserva, barberiaSlug: SLUG, barberiaNombre: 'Barbería de prueba',
   barberiaDireccion: 'Calle 1', nombreCliente: 'Carla Prueba', telefonoCliente: telCarla, servicio: 'Corte',
   fecha: manana, hora: citaCarla.hora, total: 20000, duracionMinutos: 40
 };
