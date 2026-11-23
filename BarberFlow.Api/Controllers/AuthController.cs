@@ -78,15 +78,15 @@ public class AuthController : ControllerBase
         };
 
         // Servicios iniciales
-        barberia.Servicios.Add(new Servicio { Nombre = "Corte Clásico & Fade", Precio = 25000, DuracionMinutos = 40, Descripcion = "Degradado perfecto, lavado y peinado", Icono = "scissors" });
-        barberia.Servicios.Add(new Servicio { Nombre = "Perfilado de Barba", Precio = 20000, DuracionMinutos = 30, Descripcion = "Toalla caliente, navaja tradicional y aceites", Icono = "smile" });
-        barberia.Servicios.Add(new Servicio { Nombre = "Combo Corte + Barba", Precio = 40000, DuracionMinutos = 60, Descripcion = "Tratamiento completo", Icono = "crown" });
+        barberia.Servicios.Add(new Servicio { Categoria = "Cortes", Nombre = "Corte Clásico & Fade", Precio = 25000, DuracionMinutos = 40, Descripcion = "Degradado perfecto, lavado y peinado", Icono = "scissors" });
+        barberia.Servicios.Add(new Servicio { Categoria = "Barba", Nombre = "Perfilado de Barba", Precio = 20000, DuracionMinutos = 30, Descripcion = "Toalla caliente, navaja tradicional y aceites", Icono = "smile" });
+        barberia.Servicios.Add(new Servicio { Categoria = "Combos", Nombre = "Combo Corte + Barba", Precio = 40000, DuracionMinutos = 60, Descripcion = "Tratamiento completo", Icono = "crown" });
 
         // Miembro inicial
         barberia.Miembros.Add(new MiembroEquipo { 
             Nombre = dto.NombreCompleto.Trim(), 
             Rol = "Master Barber / Dueño",
-            FotoUrl = "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=80&h=80&q=80"
+            FotoUrl = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><circle cx='12' cy='8' r='4'/><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/></svg>"
         });
 
         _context.Barberos.Add(barbero);
@@ -117,7 +117,10 @@ public class AuthController : ControllerBase
 
     private static string GenerarSlug(string phrase)
     {
-        string str = phrase.ToLowerInvariant();
+        string str = new string(phrase.ToLowerInvariant()
+            .Normalize(System.Text.NormalizationForm.FormD)
+            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark)
+            .ToArray());
         str = Regex.Replace(str, @"[^a-z0-9\s-]", "");
         str = Regex.Replace(str, @"\s+", " ").Trim();
         str = str.Substring(0, str.Length <= 45 ? str.Length : 45).Trim();

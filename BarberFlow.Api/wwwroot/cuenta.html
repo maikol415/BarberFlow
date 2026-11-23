@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mi cuenta - BarberFlow Pro</title>
+  <link rel="manifest" href="/manifest.json">
+  <meta name="theme-color" content="#0B0F19">
+  <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="stylesheet" href="/css/tailwind.min.css">
+  <script src="/js/tailwind.cdn.js"></script>
+  <script src="/js/lucide.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; }
+    .campo { width: 100%; background: #030712; border: 1px solid #374151; border-radius: 0.75rem; padding: 0.7rem 0.9rem; font-size: 0.9rem; color: #fff; outline: none; transition: border-color .15s; }
+    .campo:focus { border-color: #3B82F6; }
+    .etiqueta { display: block; font-size: 0.75rem; font-weight: 600; color: #9CA3AF; margin-bottom: 0.35rem; }
+    .tab-activa { background: #1F2937; color: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+    .tab-inactiva { color: #9CA3AF; }
+    .oculto { display: none !important; }
+    @keyframes aparecer { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .aparecer { animation: aparecer .25s ease both; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col">
+
+  <header class="border-b border-gray-800 bg-[#0F172A]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+      <a id="link-volver" href="/index.html" class="flex items-center gap-2 text-sm font-semibold text-gray-300 hover:text-white transition">
+        <i data-lucide="arrow-left" class="w-4 h-4"></i> <span>Reservar</span>
+      </a>
+      <div class="flex items-center gap-2 min-w-0">
+        <div class="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white text-sm flex-shrink-0">✂️</div>
+        <span id="header-barberia" class="font-extrabold text-sm text-white truncate">BarberFlow</span>
+      </div>
+    </div>
+  </header>
+
+  <main class="flex-1 max-w-xl mx-auto w-full px-4 py-8">
+
+    <!-- Cargando -->
+    <div id="vista-cargando" class="py-20 text-center text-sm text-gray-500">Cargando...</div>
+
+    <!-- ================= SIN SESIÓN: INGRESAR / CREAR CUENTA ================= -->
+    <section id="vista-auth" class="oculto aparecer">
+      <div class="text-center mb-6">
+        <div class="w-14 h-14 rounded-2xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center mx-auto mb-3">
+          <i data-lucide="calendar-check" class="w-7 h-7 text-blue-400"></i>
+        </div>
+        <h1 class="text-2xl font-extrabold text-white">Tu cuenta</h1>
+        <p class="text-sm text-gray-400 mt-1">Consulta, reagenda o cancela tus citas en <span id="auth-barberia" class="text-gray-200 font-semibold">la barbería</span>.</p>
+      </div>
+
+      <div class="bg-gray-900/80 border border-gray-800 rounded-3xl p-5 sm:p-6 shadow-xl">
+        <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-gray-950 border border-gray-800 mb-5" role="tablist">
+          <button id="tab-login" type="button" onclick="mostrarFormulario('login')" class="py-2 rounded-lg text-sm font-bold transition tab-activa">Ingresar</button>
+          <button id="tab-registro" type="button" onclick="mostrarFormulario('registro')" class="py-2 rounded-lg text-sm font-bold transition tab-inactiva">Crear cuenta</button>
+        </div>
+
+        <p id="auth-error" class="oculto mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-medium"></p>
+
+        <!-- Ingresar -->
+        <form id="form-login" onsubmit="ingresar(event)" class="space-y-4">
+          <div>
+            <label class="etiqueta" for="login-tel">Tu número de WhatsApp</label>
+            <div class="flex gap-2">
+              <select id="login-pais" class="campo !w-auto flex-shrink-0 cursor-pointer" aria-label="Indicativo del país"></select>
+              <input id="login-tel" type="tel" inputmode="tel" autocomplete="tel-national" required placeholder="300 123 4567" class="campo">
+            </div>
+          </div>
+          <div>
+            <label class="etiqueta" for="login-pass">Contraseña o PIN</label>
+            <div class="relative">
+              <input id="login-pass" type="password" autocomplete="current-password" required placeholder="Tu clave" class="campo pr-11">
+              <button type="button" onclick="alternarClave('login-pass', this)" class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-500 hover:text-gray-300" aria-label="Mostrar contraseña">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+          <button id="btn-login" type="submit" class="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-sm shadow-lg shadow-blue-600/20 transition">Ingresar</button>
+        </form>
+
+        <!-- Crear cuenta -->
+        <form id="form-registro" onsubmit="crearCuenta(event)" class="space-y-4 oculto">
+          <div>
+            <label class="etiqueta" for="reg-nombre">Nombre completo</label>
+            <input id="reg-nombre" type="text" autocomplete="name" required maxlength="60" placeholder="Ej: Juan Camilo Pérez" class="campo">
+          </div>
+          <div>
+            <label class="etiqueta" for="reg-tel">Número de WhatsApp</label>
+            <div class="flex gap-2">
+              <select id="reg-pais" class="campo !w-auto flex-shrink-0 cursor-pointer" aria-label="Indicativo del país"></select>
+              <input id="reg-tel" type="tel" inputmode="tel" autocomplete="tel-national" required placeholder="300 123 4567" class="campo">
+            </div>
+            <p class="text-[11px] text-gray-500 mt-1.5">Usa el mismo número con el que reservas: así verás todas tus citas.</p>
+          </div>
+          <div>
+            <label class="etiqueta" for="reg-genero">Género</label>
+            <select id="reg-genero" required class="campo cursor-pointer">
+              <option value="" disabled selected>Selecciona una opción</option>
+              <option value="Hombre">Hombre</option>
+              <option value="Mujer">Mujer</option>
+              <option value="Prefiero no decirlo">Prefiero no decirlo / Otro</option>
+            </select>
+          </div>
+          <div>
+            <label class="etiqueta" for="reg-pass">Crea una contraseña o PIN</label>
+            <div class="relative">
+              <input id="reg-pass" type="password" autocomplete="new-password" required minlength="4" placeholder="Mínimo 4 caracteres" class="campo pr-11">
+              <button type="button" onclick="alternarClave('reg-pass', this)" class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-500 hover:text-gray-300" aria-label="Mostrar contraseña">
+                <i data-lucide="eye" class="w-4 h-4"></i>
+              </button>
+            </div>
+          </div>
+          <button id="btn-registro" type="submit" class="w-full py-3 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white text-sm shadow-lg shadow-emerald-600/20 transition">Crear mi cuenta</button>
+        </form>
+      </div>
+
+      <p class="text-center text-xs text-gray-500 mt-5">
+        ¿Solo quieres reservar? <a id="link-reservar-sin-cuenta" href="/index.html" class="text-blue-400 hover:text-blue-300 font-semibold">No necesitas cuenta →</a>
+      </p>
+    </section>
+
+    <!-- ================= CON SESIÓN: MIS CITAS ================= -->
+    <section id="vista-cuenta" class="oculto aparecer">
+      <!-- Perfil -->
+      <div class="flex items-center gap-3 mb-5">
+        <div id="perfil-inicial" class="w-12 h-12 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white font-extrabold text-lg flex-shrink-0">?</div>
+        <div class="min-w-0 flex-1">
+          <h1 id="perfil-nombre" class="font-extrabold text-white text-lg leading-tight truncate">Hola</h1>
+          <p id="perfil-tel" class="text-xs text-gray-400"></p>
+        </div>
+        <button onclick="cerrarSesion()" class="text-xs px-3 py-2 rounded-xl bg-gray-900 border border-gray-800 text-gray-300 hover:text-white hover:border-gray-700 font-semibold transition flex items-center gap-1.5">
+          <i data-lucide="log-out" class="w-3.5 h-3.5"></i> Salir
+        </button>
+      </div>
+
+      <a id="btn-nueva-cita" href="/index.html" class="w-full mb-6 py-3.5 rounded-2xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-sm shadow-lg shadow-blue-600/25 transition flex items-center justify-center gap-2">
+        <i data-lucide="plus" class="w-4 h-4"></i> Reservar nueva cita
+      </a>
+
+      <!-- Pestañas -->
+      <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-gray-900 border border-gray-800 mb-4" role="tablist">
+        <button id="tab-proximas" type="button" onclick="mostrarPestana('proximas')" class="py-2.5 rounded-lg text-sm font-bold transition tab-activa">
+          Próximas <span id="cont-proximas" class="ml-1 text-xs px-1.5 py-0.5 rounded-md bg-blue-600/30 text-blue-200">0</span>
+        </button>
+        <button id="tab-historial" type="button" onclick="mostrarPestana('historial')" class="py-2.5 rounded-lg text-sm font-bold transition tab-inactiva">
+          Historial <span id="cont-historial" class="ml-1 text-xs px-1.5 py-0.5 rounded-md bg-gray-700/60 text-gray-300">0</span>
+        </button>
+      </div>
+
+      <div id="lista-proximas" class="space-y-3"></div>
+      <div id="lista-historial" class="space-y-3 oculto"></div>
+
+      <!-- Zona de cuenta -->
+      <div class="mt-12 pt-5 border-t border-gray-800/80 text-center">
+        <button onclick="pedirEliminarCuenta()" class="text-xs text-gray-500 hover:text-red-400 font-semibold transition">Eliminar mi cuenta</button>
+        <p class="text-[11px] text-gray-600 mt-1">Tus citas no se borran; solo pierdes el acceso con esta cuenta.</p>
+      </div>
+    </section>
+  </main>
+
+  <!-- Diálogo de confirmación -->
+  <div id="dialogo" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 oculto" role="dialog" aria-modal="true">
+    <div class="bg-gray-900 border border-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl aparecer">
+      <h3 id="dialogo-titulo" class="text-lg font-extrabold text-white">¿Seguro?</h3>
+      <p id="dialogo-texto" class="text-sm text-gray-400 mt-1.5"></p>
+      <div class="grid grid-cols-2 gap-2 mt-5">
+        <button id="dialogo-cancelar" type="button" class="py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700 transition">Volver</button>
+        <button id="dialogo-aceptar" type="button" class="py-2.5 rounded-xl text-sm font-bold bg-red-600 text-white hover:bg-red-500 transition">Sí, cancelar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aviso flotante -->
+  <div id="aviso" class="fixed left-1/2 transform -translate-x-1/2 bottom-6 z-50 px-4 py-3 rounded-xl text-sm font-semibold shadow-2xl oculto"></div>
+
+  <footer class="py-6 text-center text-xs text-gray-600">© 2026 BarberFlow Pro</footer>
+
+  <script src="/js/cuenta.js?v=20261123"></script>
+</body>
+</html>

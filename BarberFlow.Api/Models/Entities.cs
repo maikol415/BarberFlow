@@ -20,8 +20,8 @@ public class Barberia
     public string Nombre { get; set; } = "Mi Barbería Pro";
     public string Slug { get; set; } = "mi-barberia";
     public string Descripcion { get; set; } = "Cortes clásicos, degradados y perfilado de barba.";
-    public string Direccion { get; set; } = "Calle 45 # 12-34";
-    public string TelefonoWhatsApp { get; set; } = "573001234567";
+    public string Direccion { get; set; } = "";
+    public string TelefonoWhatsApp { get; set; } = "";
     public string LogoUrl { get; set; } = "";
     public string HorarioTexto { get; set; } = "Lunes a Sábado 9:00 AM - 8:00 PM";
 
@@ -42,7 +42,7 @@ public class Barberia
     public List<Valoracion> Valoraciones { get; set; } = new();
 
     // Métodos de pago y transferencias (Nequi, Bancolombia, Efectivo)
-    public string DatosPago { get; set; } = "Aceptamos efectivo en el local, transferencias por Nequi y Bancolombia.";
+    public string DatosPago { get; set; } = "Aceptamos efectivo en el local.";
     public string NumeroNequi { get; set; } = "";
     public string NumeroDaviplata { get; set; } = "";
     public string TitularCuenta { get; set; } = "";

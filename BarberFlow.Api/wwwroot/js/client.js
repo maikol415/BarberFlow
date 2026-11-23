@@ -53,6 +53,9 @@ async function initClient() {
     barberia = await res.json();
     todosLosServicios = barberia.servicios || [];
 
+    const linkCuenta = `/cuenta.html?b=${encodeURIComponent(barberia.slug)}`;
+    ['btn-portal-cliente', 'link-exito-mis-citas'].forEach(id => { const el = document.getElementById(id); if (el) el.href = linkCuenta; });
+
     renderEncabezado();
     renderCategoriasYServicios();
     configurarSelectorBarbero();
@@ -66,9 +69,32 @@ async function initClient() {
 }
 
 // 1. Encabezado e Imagen Ampliable (Estilo Instagram)
+function actualizarBadgeAbierto() {
+  const badge = document.getElementById('badge-abierto');
+  if (!badge) return;
+  const ahora = new Date(new Date().toLocaleString('en-US', { timeZone: 'America/Bogota' }));
+  const dias = String(barberia.diasLaborales || '1,2,3,4,5,6').split(',').map(d => d.trim());
+  const minutosAhora = ahora.getHours() * 60 + ahora.getMinutes();
+  const abierto = dias.includes(String(ahora.getDay())) &&
+    minutosAhora >= convertirHoraAMinutos(barberia.horaApertura || '09:00') &&
+    minutosAhora < convertirHoraAMinutos(barberia.horaCierre || '20:00');
+  badge.className = `inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold border ${abierto
+    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+    : 'bg-gray-700/30 text-gray-400 border-gray-600/40'}`;
+  badge.innerHTML = `<span class="w-1.5 h-1.5 rounded-full ${abierto ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}"></span> ${abierto ? 'Abierto' : 'Cerrado'}`;
+}
+
+// Fecha legible: "jueves 3 de diciembre"
+function fechaLegible(fechaIso) {
+  const [a, m, d] = String(fechaIso || '').split('-').map(Number);
+  if (!a) return fechaIso || '';
+  return new Date(Date.UTC(a, m - 1, d, 12)).toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+}
+
 function renderEncabezado() {
+  actualizarBadgeAbierto();
   document.getElementById('barber-name').innerText = barberia.nombre;
-  document.getElementById('barber-address').innerText = barberia.direccion || 'Calle 45 # 12-34';
+  document.getElementById('barber-address').innerText = barberia.direccion || '';
   document.getElementById('barber-desc').innerText = barberia.descripcion || 'Barbería & Cuidado personal';
   
   // Agendamientos y estrellas reales calculados desde la base de datos
@@ -704,7 +730,7 @@ function renderHorariosDisponibles() {
     container.innerHTML = `
       <div class="col-span-full text-center py-8">
         <p class="text-xs sm:text-sm text-gray-400 mb-3">
-          El profesional o la barbería no tiene horarios disponibles para este día. Intenta otro día.
+          ${esHoy ? 'Ya no quedan horarios para hoy (se reserva con mínimo 2 horas de anticipación). Elige otro día.' : 'No hay horarios disponibles para este día. Intenta otro día.'}
         </p>
         <div class="w-12 h-12 rounded-full border border-gray-700 flex items-center justify-center mx-auto text-gray-500">
           <i data-lucide="clock-3" class="w-6 h-6"></i>
@@ -758,7 +784,7 @@ function seleccionarHora(h) {
 
 function actualizarResumenHorario() {
   if (reservaActual.fechaSeleccionada && reservaActual.horaSeleccionada) {
-    document.getElementById('resumen-fecha-hora').innerText = `${reservaActual.fechaSeleccionada} • ${reservaActual.horaSeleccionada}`;
+    document.getElementById('resumen-fecha-hora').innerText = `${fechaLegible(reservaActual.fechaSeleccionada)} • ${reservaActual.horaSeleccionada}`;
   } else {
     document.getElementById('resumen-fecha-hora').innerText = 'Elige día y hora';
   }
@@ -821,7 +847,7 @@ async function confirmarReservaFinal(e) {
     // Modal de confirmación exitosa
     document.getElementById('modal-codigo').innerText = data.codigoReserva || '#BF-CITA';
     document.getElementById('modal-servicio').innerText = data.servicioNombre || 'Servicio';
-    document.getElementById('modal-horario').innerText = `${data.fecha} - ${data.hora}`;
+    document.getElementById('modal-horario').innerText = `${fechaLegible(data.fecha)} - ${data.hora}`;
 
     const modalSuccess = document.getElementById('success-modal');
     if (modalSuccess) modalSuccess.classList.remove('hidden');
@@ -841,7 +867,8 @@ async function confirmarReservaFinal(e) {
 
 function cerrarModal() {
   document.getElementById('success-modal').classList.add('hidden');
-  window.location.reload();
+  // Volver a la página limpia (sin ?reagendar= ni ?calificar=) para no repetir el flujo anterior
+  window.location.href = `/index.html?b=${encodeURIComponent(barberia.slug)}`;
 }
 
 // 6. Sistema de Valoración por Estrellas (Clientes) y Reagendamiento
@@ -932,17 +959,17 @@ function renderOpiniones() {
     const card = document.createElement('div');
     card.className = 'p-3.5 rounded-2xl bg-gray-950/80 border border-gray-800 text-xs flex flex-col justify-between';
     
-    let estrellasStr = '★'.repeat(op.estrellas || 5);
+    let estrellasStr = '★'.repeat(Math.min(5, Math.max(1, Number(op.estrellas) || 5)));
 
     card.innerHTML = `
       <div>
         <div class="flex items-center justify-between mb-1">
-          <span class="font-bold text-white">${op.nombreCliente || 'Cliente'}</span>
+          <span class="font-bold text-white">${escapeHtml(op.nombreCliente || 'Cliente')}</span>
           <span class="text-amber-400 font-extrabold tracking-wider">${estrellasStr}</span>
         </div>
-        <p class="text-gray-300 italic my-1">${op.comentario ? `"${op.comentario}"` : 'Excelente servicio y atención recomendada.'}</p>
+        <p class="text-gray-300 italic my-1">${op.comentario ? `"${escapeHtml(op.comentario)}"` : 'Excelente servicio y atención recomendada.'}</p>
       </div>
-      <span class="text-[10px] text-gray-500 mt-2 block">${op.fecha || 'Reciente'}</span>
+      <span class="text-[10px] text-gray-500 mt-2 block">${escapeHtml(op.fecha || 'Reciente')}</span>
     `;
     container.appendChild(card);
   });
@@ -1035,31 +1062,21 @@ async function enviarValoracionCliente(e) {
 // ----------------- PORTAL Y REGISTRO DE CLIENTES -----------------
 let clienteSesion = null;
 
+// Escapa texto antes de insertarlo como HTML (nombres, comentarios, etc. escritos por clientes)
+function escapeHtml(valor) {
+  return String(valor ?? "").replace(/[&<>"'`]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;", "`": "&#96;" }[ch]));
+}
+
 function verificarSesionClienteLocal() {
   try {
-    const raw = localStorage.getItem('bf_cliente_session');
-    if (raw) {
-      const datos = JSON.parse(raw);
-      // Sesiones guardadas antes de usar token ya no sirven: pedir login de nuevo
-      if (!datos || !datos.token) {
-        localStorage.removeItem('bf_cliente_session');
-        return;
-      }
+    localStorage.removeItem('bf_cliente_session'); // formato anterior (compartido entre barberías)
+    const slugActual = (new URLSearchParams(window.location.search).get('b') || 'barberia-jr').toLowerCase();
+    const datos = JSON.parse(localStorage.getItem(`bf_cliente_session_${slugActual}`) || 'null');
+    if (datos && datos.token) {
       clienteSesion = datos;
       actualizarUiClienteLogueado();
     }
   } catch (e) {}
-}
-
-function headersAuthCliente() {
-  return clienteSesion && clienteSesion.token
-    ? { Authorization: `Bearer ${clienteSesion.token}` }
-    : {};
-}
-
-function manejarSesionClienteExpirada() {
-  alert('Tu sesión expiró. Por favor inicia sesión de nuevo.');
-  cerrarSesionCliente();
 }
 
 // Función para descomponer número y separar indicativo internacional
@@ -1103,218 +1120,7 @@ function actualizarUiClienteLogueado() {
     }
   } else {
     const txtBtn = document.getElementById('txt-btn-cliente');
-    if (txtBtn) txtBtn.innerText = 'Mis Citas / Ingresar';
-  }
-}
-
-function abrirModalAuthCliente() {
-  const modal = document.getElementById('modal-cliente');
-  if (!modal) return;
-  modal.classList.remove('hidden');
-
-  if (clienteSesion) {
-    document.getElementById('cliente-box-auth').classList.add('hidden');
-    document.getElementById('cliente-box-perfil').classList.remove('hidden');
-    document.getElementById('perfil-cli-nombre').innerText = `Hola, ${clienteSesion.nombre}`;
-    
-    // Formatear visualmente el teléfono con su indicativo real (ej: +1 7747126594)
-    const parsed = separarIndicativoYNumero(clienteSesion.telefono);
-    document.getElementById('perfil-cli-tel').innerText = `📱 ${parsed.indicativo} ${parsed.numero}`;
-    cargarCitasClientePerfil();
-  } else {
-    document.getElementById('cliente-box-auth').classList.remove('hidden');
-    document.getElementById('cliente-box-perfil').classList.add('hidden');
-    cambiarTabCliente('login');
-  }
-  lucide.createIcons();
-}
-
-function cerrarModalAuthCliente() {
-  const modal = document.getElementById('modal-cliente');
-  if (modal) modal.classList.add('hidden');
-}
-
-function cambiarTabCliente(tab) {
-  const formLog = document.getElementById('form-cli-login');
-  const formReg = document.getElementById('form-cli-registro');
-  const tabLog = document.getElementById('tab-cli-login');
-  const tabReg = document.getElementById('tab-cli-registro');
-
-  if (tab === 'login') {
-    formLog.classList.remove('hidden');
-    formReg.classList.add('hidden');
-    tabLog.className = 'flex-1 py-2 font-bold text-xs text-blue-400 border-b-2 border-blue-500';
-    tabReg.className = 'flex-1 py-2 font-medium text-xs text-gray-400';
-  } else {
-    formLog.classList.add('hidden');
-    formReg.classList.remove('hidden');
-    tabLog.className = 'flex-1 py-2 font-medium text-xs text-gray-400';
-    tabReg.className = 'flex-1 py-2 font-bold text-xs text-emerald-400 border-b-2 border-emerald-500';
-  }
-}
-
-async function loginCliente(e) {
-  e.preventDefault();
-  const rawTel = document.getElementById('cli-login-tel').value.trim();
-  const pais = document.getElementById('cli-login-pais') ? document.getElementById('cli-login-pais').value : '+57';
-  const telLimpio = rawTel.replace(/[^0-9]/g, '');
-  const telCompleto = `${pais}${telLimpio}`;
-  const pass = document.getElementById('cli-login-pass').value.trim();
-
-  try {
-    const res = await fetch('/api/public/clientes/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        barberiaSlug: barberia.slug,
-        telefono: telCompleto,
-        password: pass
-      })
-    });
-
-    const data = await res.json();
-    if (res.ok) {
-      clienteSesion = data;
-      localStorage.setItem('bf_cliente_session', JSON.stringify(data));
-      actualizarUiClienteLogueado();
-      abrirModalAuthCliente();
-    } else {
-      alert(data.message || 'Credenciales incorrectas');
-    }
-  } catch (err) {
-    alert('Error al conectar con el servidor.');
-  }
-}
-
-async function registrarCliente(e) {
-  e.preventDefault();
-  const nom = document.getElementById('cli-reg-nom').value.trim();
-  const rawTel = document.getElementById('cli-reg-tel').value.trim();
-  const pais = document.getElementById('cli-reg-pais') ? document.getElementById('cli-reg-pais').value : '+57';
-  const telLimpio = rawTel.replace(/[^0-9]/g, '');
-  const telCompleto = `${pais}${telLimpio}`;
-  const gen = document.getElementById('cli-reg-genero').value;
-  const pass = document.getElementById('cli-reg-pass').value.trim();
-
-  if (!gen) {
-    alert('Por favor selecciona una opción en Sexo / Género.');
-    return;
-  }
-
-  try {
-    const res = await fetch('/api/public/clientes/registro', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        barberiaSlug: barberia.slug,
-        nombre: nom,
-        telefono: telCompleto,
-        genero: gen,
-        password: pass
-      })
-    });
-
-    const data = await res.json();
-    if (res.ok) {
-      clienteSesion = data;
-      localStorage.setItem('bf_cliente_session', JSON.stringify(data));
-      actualizarUiClienteLogueado();
-      abrirModalAuthCliente();
-    } else {
-      alert(data.message || 'Error al crear la cuenta');
-    }
-  } catch (err) {
-    alert('Error de conexión.');
-  }
-}
-
-async function cargarCitasClientePerfil() {
-  const container = document.getElementById('lista-citas-cliente');
-  container.innerHTML = '<p class="text-xs text-gray-500 py-3 text-center">Cargando tus citas...</p>';
-
-  try {
-    const res = await fetch('/api/public/clientes/me/citas', { headers: headersAuthCliente() });
-    if (res.status === 401) {
-      manejarSesionClienteExpirada();
-      return;
-    }
-    if (!res.ok) {
-      container.innerHTML = '<p class="text-xs text-gray-500 py-3 text-center">No se pudieron cargar tus citas.</p>';
-      return;
-    }
-
-    const citas = await res.json();
-    if (citas.length === 0) {
-      container.innerHTML = '<p class="text-xs text-gray-500 py-4 text-center">Aún no tienes citas registradas con este número.</p>';
-      return;
-    }
-
-    container.innerHTML = '';
-    citas.forEach(c => {
-      const card = document.createElement('div');
-      card.className = 'p-3 rounded-xl bg-gray-950 border border-gray-800 text-xs flex items-center justify-between gap-2';
-      const esCancelada = c.estado === 'Cancelada';
-
-      card.innerHTML = `
-        <div>
-          <div class="flex items-center gap-1.5">
-            <span class="font-bold text-white">${c.servicio}</span>
-            <span class="text-[10px] px-1.5 py-0.2 rounded font-semibold ${esCancelada ? 'bg-red-500/10 text-red-400' : 'bg-emerald-500/10 text-emerald-400'}">${c.estado}</span>
-          </div>
-          <p class="text-gray-400 text-[11px] mt-0.5">${c.fecha} • ${c.hora} (Barbero: ${c.barbero})</p>
-          <span class="text-blue-400 font-mono text-[10px]">${c.codigoReserva}</span>
-        </div>
-        ${!esCancelada ? `
-          <button onclick="reagendarDesdePerfil(${c.id})" class="text-[10px] px-2.5 py-1 rounded bg-blue-600/20 text-blue-300 border border-blue-500/30 hover:bg-blue-600/30 font-bold transition">
-            Reagendar
-          </button>
-        ` : ''}
-      `;
-      container.appendChild(card);
-    });
-  } catch (err) {
-    container.innerHTML = '<p class="text-xs text-red-400 py-2 text-center">Error al consultar citas.</p>';
-  }
-}
-
-function reagendarDesdePerfil(citaId) {
-  cerrarModalAuthCliente();
-  window.location.href = `/index.html?b=${barberia.slug}&reagendar=${citaId}`;
-}
-
-function cerrarSesionCliente() {
-  localStorage.removeItem('bf_cliente_session');
-  clienteSesion = null;
-  actualizarUiClienteLogueado();
-  cerrarModalAuthCliente();
-}
-
-async function confirmarEliminarCuentaCliente() {
-  if (!clienteSesion || !clienteSesion.token) return;
-
-  const confirma = confirm('¿Estás seguro de que deseas eliminar tu cuenta de usuario? Tus citas registradas en la barbería no se perderán, pero ya no tendrás acceso con esta cuenta.');
-  if (!confirma) return;
-
-  try {
-    const res = await fetch('/api/public/clientes/me', {
-      method: 'DELETE',
-      headers: headersAuthCliente()
-    });
-
-    if (res.status === 401) {
-      manejarSesionClienteExpirada();
-      return;
-    }
-
-    if (res.ok) {
-      alert('Tu cuenta de usuario ha sido eliminada con éxito.');
-      cerrarSesionCliente();
-    } else {
-      const data = await res.json();
-      alert(data.message || 'Error al eliminar la cuenta.');
-    }
-  } catch (err) {
-    alert('Error al conectar con el servidor.');
+    if (txtBtn) txtBtn.innerText = 'Mis citas';
   }
 }
 

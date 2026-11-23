@@ -36,6 +36,31 @@ function responderNoAutorizado(res) {
   res.end(JSON.stringify({ error: 'No autorizado' }));
 }
 
+// Modo prueba: no conecta WhatsApp ni abre el servidor; permite simular chats (ver pruebas/simular-chat.mjs)
+const MODO_PRUEBA = process.env.BOT_MODO_PRUEBA === '1';
+
+// WhatsApp puede identificar al remitente con un ID anónimo (…@lid) en lugar de su número.
+// En ese caso el número real llega en msg.key.senderPn. Guardamos la relación LID ➔ teléfono.
+const telefonoPorLid = new Map();
+
+function digitosDeJid(jid) {
+  return (jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+}
+
+function telefonoDelRemitente(key) {
+  const remoteJid = key?.remoteJid || '';
+  if (remoteJid.endsWith('@s.whatsapp.net')) return digitosDeJid(remoteJid);
+
+  const senderPn = key?.senderPn || '';
+  if (senderPn.endsWith('@s.whatsapp.net')) {
+    const tel = digitosDeJid(senderPn);
+    if (remoteJid.endsWith('@lid') && tel) telefonoPorLid.set(remoteJid, tel);
+    return tel;
+  }
+
+  return telefonoPorLid.get(remoteJid) || '';
+}
+
 const ultimaInteraccionCliente = new Map(); // Para saber cuándo habló por última vez
 const ultimaDerivacionMap = new Map(); // Para registrar el tiempo exacto de derivación por remitente
 const estadoCliente = new Map(); // Menús o confirmaciones de cancelación
@@ -94,14 +119,14 @@ async function resolverJidDestinatario(sock, telefono) {
 // Función auxiliar para responder de forma natural (escribiendo... entre 2.5s y 4s según longitud)
 const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
   try {
-    if (!sock || !estaConectado) return false;
+    if (!sock || (!estaConectado && !MODO_PRUEBA)) return false;
     
     // Simular tiempo de lectura/escritura más creíble y humano:
     // Mínimo 2.5 segundos, y un poquito más si el texto es largo, con variación aleatoria humana (jitter)
     const delayBase = 2500;
     const delayExtraPorLongitud = Math.min(Math.floor((textoRespuesta || '').length * 15), 2000);
     const delayAleatorio = Math.floor(Math.random() * 800); // 0 a 800ms de variación natural
-    const tiempoTotal = delayBase + delayExtraPorLongitud + delayAleatorio; // aprox 3 a 4.5 segundos
+    const tiempoTotal = MODO_PRUEBA ? 0 : delayBase + delayExtraPorLongitud + delayAleatorio; // aprox 3 a 4.5 segundos
 
     await sock.sendPresenceUpdate('composing', remitente);
     await new Promise(r => setTimeout(r, tiempoTotal));
@@ -131,27 +156,19 @@ async function obtenerDatosBarberia() {
   }
 
   return cacheBarberia || {
-    nombre: 'Barberia JR',
+    nombre: 'la barbería',
     botActivo: true,
-    direccion: 'Calle 45 # 12-34',
-    telefonoWhatsApp: '573001234567',
-    horarioTexto: 'Lunes a Sábado 9:00 AM - 8:00 PM',
-    anuncioMatutinoActivo: true,
-    horaAnuncioSemana: '08:00',
-    horaAnuncioSabado: '08:00',
-    horaAnuncioDomingo: '09:00',
-    servicios: [
-      { categoria: 'Cortes', nombre: 'Corte Moderno', precio: 30000, duracionMinutos: 30 },
-      { categoria: 'Cortes', nombre: 'Corte más Barba', precio: 30000, duracionMinutos: 60 },
-      { categoria: 'Cortes', nombre: 'Diseño de Barba', precio: 12000, duracionMinutos: 20 },
-      { categoria: 'Limpieza facial', nombre: 'Limpieza facial profunda', precio: 17000, duracionMinutos: 40 },
-      { categoria: 'Uñas', nombre: 'Arreglo de uñas', precio: 35000, duracionMinutos: 60 }
-    ]
+    direccion: '',
+    telefonoWhatsApp: '',
+    horarioTexto: '',
+    anuncioMatutinoActivo: false,
+    servicios: [],
+    botReglas: []
   };
 }
 
 // ----------------- SERVIDOR HTTP Y WEBHOOKS -----------------
-http.createServer(async (req, res) => {
+const servidorHttp = http.createServer(async (req, res) => {
   // Encabezados CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -195,69 +212,22 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. Webhook: Notificación Automática de Cita Agendada (Web ➔ WhatsApp)
-  if (req.method === 'POST' && req.url.startsWith('/api/notificar-cita')) {
+  // 3. Webhooks desde la API (Web ➔ WhatsApp)
+  const webhooks = {
+    '/api/notificar-cita': manejarNotificarCita,
+    '/api/notificar-cancelacion': manejarNotificarCancelacion
+  };
+  const ruta = req.url.split('?')[0];
+  if (req.method === 'POST' && webhooks[ruta]) {
     let body = '';
     req.on('data', chunk => { body += chunk; });
     req.on('end', async () => {
       try {
-        const payload = JSON.parse(body || '{}');
-        const {
-          citaId,
-          codigoReserva,
-          barberiaNombre,
-          barberiaDireccion,
-          nombreCliente,
-          telefonoCliente,
-          servicio,
-          fecha,
-          hora,
-          total
-        } = payload;
-
-        if (!telefonoCliente || !socketActivo || !estaConectado) {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ enviado: false, razon: 'Bot no conectado o sin teléfono' }));
-          return;
-        }
-
-        const jid = await resolverJidDestinatario(socketActivo, telefonoCliente);
-        const primerNombre = obtenerPrimerNombre(nombreCliente);
-        const ultimaVez = ultimaInteraccionCliente.get(jid) || 0;
-        const ahora = Date.now();
-        const yaHabloReciente = (ahora - ultimaVez) < (30 * 60 * 1000); // 30 minutos
-
-        let saludoInicial = yaHabloReciente
-          ? `¡Listo ${primerNombre}! ✅ Tu turno ha quedado agendado en el sistema 💈`
-          : `¡Hola ${primerNombre}! 👋 Gracias por reservar en *${barberiaNombre || 'Barbería JR'}* 💈✂️`;
-
-        const msgConfirmacion = 
-          `${saludoInicial}\n\n` +
-          `📋 *Detalles de tu Cita:*\n` +
-          `✂️ *Servicio:* ${servicio}\n` +
-          `📅 *Fecha:* ${fecha}\n` +
-          `⏰ *Hora:* ${hora}\n` +
-          `🔖 *Código:* ${codigoReserva || '#BF-CITA'}\n` +
-          `💵 *Valor:* $${Number(total || 0).toLocaleString('es-CO')}\n` +
-          `📍 *Dirección:* ${barberiaDireccion || 'En la barbería'}\n\n` +
-          `━━━━━━━━━━━━━━━━━━━━\n` +
-          `💡 *Gestión rápida de tu cita:*\n` +
-          `• Responde *SI* para reconfirmar que asistirás ✅\n` +
-          `• Responde *CANCELAR* si te surge un imprevisto ❌\n` +
-          `• Responde *REAGENDAR* si deseas cambiar de horario 🔄\n` +
-          `━━━━━━━━━━━━━━━━━━━━\n` +
-          `¡Te esperamos con la mejor atención! 💈✨`;
-
-        await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
-        ultimaInteraccionCliente.set(jid, ahora);
-
-        // Agendar recordatorio de reseña post-cita (ejemplo: 2 horas después de la cita)
-        agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora);
-
+        const resultado = await webhooks[ruta](JSON.parse(body || '{}'));
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify({ enviado: true, jid }));
+        res.end(JSON.stringify(resultado));
       } catch (err) {
-        console.error('Error enviando notificación automática de cita:', err);
+        console.error(`Error en webhook ${ruta}:`, err);
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: err.message }));
       }
@@ -268,29 +238,189 @@ http.createServer(async (req, res) => {
   // Página pública mínima (health check). El QR solo se entrega por /api/status con la clave.
   res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
   res.end(`BarberFlow bot activo. WhatsApp ${estaConectado ? 'conectado' : 'sin conectar'}.`);
-}).listen(PORT, () => {
-  console.log(`Servidor del Bot y Webhooks activo en el puerto ${PORT}`);
 });
 
-// Función para enviar solicitud de reseña post-cita (calificación 1 a 5 estrellas verificada)
-function agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora) {
-  // Simulador programado: 2 horas de retraso (o 10 minutos para demostración si es el mismo día)
-  // Calculamos la hora de envío prudente
+if (!MODO_PRUEBA) {
+  servidorHttp.listen(PORT, () => {
+    console.log(`Servidor del Bot y Webhooks activo en el puerto ${PORT}`);
+  });
+}
+
+// ----------------- SEGUIMIENTO DE CITAS (confirmación, reseña, recordatorio) -----------------
+
+// Minutos desde medianoche de una hora tipo "10:20am", "3:00 PM" o "15:00"
+function horaAMinutos(hora) {
+  const t = String(hora || '').toLowerCase().trim();
+  const m = t.match(/(\d{1,2}):(\d{2})\s*(am|pm)?/);
+  if (!m) return null;
+  let h = Number(m[1]);
+  if (m[3] === 'pm' && h < 12) h += 12;
+  if (m[3] === 'am' && h === 12) h = 0;
+  return h * 60 + Number(m[2]);
+}
+
+// Momento real (timestamp) de una cita en hora de Colombia (UTC-5, sin horario de verano)
+function instanteCita(fechaIso, hora) {
+  const [a, mes, d] = String(fechaIso || '').split('-').map(Number);
+  const min = horaAMinutos(hora);
+  if (!a || min === null) return null;
+  return Date.UTC(a, mes - 1, d, 0, 0) + (min + 5 * 60) * 60 * 1000;
+}
+
+function fechaLegible(fechaIso) {
+  const [a, m, d] = String(fechaIso || '').split('-').map(Number);
+  if (!a) return fechaIso || '';
+  return new Date(Date.UTC(a, m - 1, d, 12)).toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+// Consulta si la cita sigue vigente antes de escribirle al cliente
+async function citaSigueActiva(citaId) {
+  try {
+    const res = await apiBotFetch(`/bot/${BARBERIA_SLUG}/cita/${citaId}`);
+    if (!res.ok) return false;
+    const cita = await res.json();
+    return cita.estado !== 'Cancelada';
+  } catch (e) {
+    return false;
+  }
+}
+
+export async function manejarNotificarCita(payload) {
+  const {
+    citaId, codigoReserva, barberiaSlug, barberiaNombre, barberiaDireccion,
+    nombreCliente, telefonoCliente, servicio, fecha, hora, total, duracionMinutos, esReagendamiento
+  } = payload;
+
+  // El bot atiende una sola barbería: ignorar reservas de otras
+  if (barberiaSlug && barberiaSlug.toLowerCase() !== BARBERIA_SLUG.toLowerCase()) {
+    return { enviado: false, razon: 'Reserva de otra barbería' };
+  }
+  if (!telefonoCliente || !socketActivo || (!estaConectado && !MODO_PRUEBA)) {
+    return { enviado: false, razon: 'Bot no conectado o sin teléfono' };
+  }
+
+  const jid = await resolverJidDestinatario(socketActivo, telefonoCliente);
+  const primerNombre = obtenerPrimerNombre(nombreCliente);
+  const ahora = Date.now();
+  const yaHabloReciente = (ahora - (ultimaInteraccionCliente.get(jid) || 0)) < 30 * 60 * 1000;
+
+  const saludoInicial = esReagendamiento
+    ? `🔄 ¡Listo ${primerNombre}! Tu cita fue *reagendada* con éxito 💈`
+    : yaHabloReciente
+      ? `¡Listo ${primerNombre}! ✅ Tu turno ha quedado agendado en el sistema 💈`
+      : `¡Hola ${primerNombre}! 👋 Gracias por reservar en *${barberiaNombre || 'la barbería'}* 💈✂️`;
+
+  const msgConfirmacion =
+    `${saludoInicial}\n\n` +
+    `📋 *Detalles de tu Cita:*\n` +
+    `✂️ *Servicio:* ${servicio}\n` +
+    `📅 *Fecha:* ${fechaLegible(fecha)}\n` +
+    `⏰ *Hora:* ${hora}\n` +
+    `🔖 *Código:* ${codigoReserva || '#BF-CITA'}\n` +
+    `💵 *Valor:* $${Number(total || 0).toLocaleString('es-CO')}\n` +
+    (barberiaDireccion ? `📍 *Dirección:* ${barberiaDireccion}\n` : '') +
+    `\n━━━━━━━━━━━━━━━━━━━━\n` +
+    `💡 *Gestión rápida de tu cita:*\n` +
+    `• Responde *SI* para reconfirmar que asistirás ✅\n` +
+    `• Responde *CANCELAR* si te surge un imprevisto ❌\n` +
+    `• Responde *REAGENDAR* si deseas cambiar de horario 🔄\n` +
+    `━━━━━━━━━━━━━━━━━━━━\n` +
+    `¡Te esperamos con la mejor atención! 💈✨`;
+
+  await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
+  ultimaInteraccionCliente.set(jid, ahora);
+
+  const encuesta = agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora, duracionMinutos);
+  return { enviado: true, jid, encuestaEnMinutos: encuesta };
+}
+
+export async function manejarNotificarCancelacion(payload) {
+  const { barberiaSlug, nombreCliente, servicio, fecha, hora } = payload;
+  if (barberiaSlug && barberiaSlug.toLowerCase() !== BARBERIA_SLUG.toLowerCase()) {
+    return { enviado: false, razon: 'Cancelación de otra barbería' };
+  }
+  if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return { enviado: false, razon: 'Bot no conectado' };
+
+  const barberia = await obtenerDatosBarberia();
+  const jidBarbero = formatearJidWhatsApp(barberia.telefonoWhatsApp);
+  if (!jidBarbero) return { enviado: false, razon: 'La barbería no tiene WhatsApp configurado' };
+
+  await socketActivo.sendMessage(jidBarbero, {
+    text:
+      `🔔 *Notificación de Agenda:*\n` +
+      `El cliente *${nombreCliente}* canceló desde la web su turno de *${servicio}* del *${fechaLegible(fecha)}* a las *${hora}*.\n\n` +
+      `✅ Ese horario quedó libre automáticamente en tu calendario.`
+  });
+  return { enviado: true, jid: jidBarbero };
+}
+
+// Solicitud de reseña: 1 hora después de que TERMINE la cita (no después de reservar).
+// Devuelve en cuántos minutos se enviará, o null si no se programó.
+// Nota: se guarda en memoria; si el servicio se reinicia antes, esa reseña no se envía.
+const MAX_ESPERA_MS = 20 * 24 * 60 * 60 * 1000; // setTimeout no admite esperas mayores a ~24 días
+function agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora, duracionMinutos) {
+  const inicio = instanteCita(fecha, hora);
+  if (!inicio || !citaId) return null;
+  const envio = inicio + ((Number(duracionMinutos) || 40) + 60) * 60 * 1000;
+  const espera = envio - Date.now();
+  if (espera < 0 || espera > MAX_ESPERA_MS) return null;
+
   setTimeout(async () => {
     try {
       if (!socketActivo || !estaConectado) return;
-      const urlCalificar = `${BASE_WEB_URL}/index.html?calificar=${citaId}`;
-      const msgResena = 
-        `¡Hola ${primerNombre}! 👋 Esperamos que hayas quedado 10/10 con tu corte de hoy en *${barberiaNombre || 'Barbería JR'}* 💈✂️\n\n` +
+      if (!await citaSigueActiva(citaId)) return; // cancelada o reagendada: no pedir reseña
+      const urlCalificar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&calificar=${citaId}`;
+      const msgResena =
+        `¡Hola ${primerNombre}! 👋 Esperamos que hayas quedado 10/10 con tu servicio de hoy en *${barberiaNombre || 'la barbería'}* 💈✂️\n\n` +
         `Tu opinión es muy importante para nosotros. ¿Podrías dejarnos tu calificación y comentario aquí en menos de 10 segundos? ⭐\n\n` +
         `👉 ${urlCalificar}\n\n` +
         `¡Muchas gracias por preferirnos! 🔥`;
-
       await enviarMensajeHumano(socketActivo, jid, msgResena);
     } catch (e) {
       console.log('Error enviando encuesta post-cita:', e.message);
     }
-  }, 2 * 60 * 60 * 1000); // 2 horas
+  }, espera);
+  return Math.round(espera / 60000);
+}
+
+// Recordatorio automático ~2 horas antes de cada cita confirmada de hoy.
+// Se desactiva con RECORDATORIOS_ACTIVOS=0. Se recuerda en memoria qué citas ya se avisaron.
+const recordatoriosEnviados = new Set();
+export async function revisarRecordatorios(ahoraMs = Date.now()) {
+  if (process.env.RECORDATORIOS_ACTIVOS === '0') return [];
+  if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return [];
+
+  const fechaIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ahoraMs));
+  const res = await apiBotFetch(`/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
+  if (!res.ok) return [];
+  const data = await res.json();
+  const enviados = [];
+
+  for (const c of data.citas || []) {
+    if (c.estado !== 'Confirmada' || !c.telefonoCliente || recordatoriosEnviados.has(c.id)) continue;
+    const inicio = instanteCita(fechaIso, c.hora);
+    if (!inicio) continue;
+    const minutosFaltan = (inicio - ahoraMs) / 60000;
+    if (minutosFaltan < 90 || minutosFaltan > 150) continue;
+
+    recordatoriosEnviados.add(c.id);
+    const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
+    await enviarMensajeHumano(
+      socketActivo,
+      jid,
+      `⏰ ¡Hola ${obtenerPrimerNombre(c.nombreCliente)}! Te recordamos tu cita de hoy en *${data.nombre || 'la barbería'}*:\n\n` +
+      `✂️ *Servicio:* ${c.servicio}\n` +
+      `🕒 *Hora:* ${c.hora}\n\n` +
+      `Por favor llega 5 minutos antes. Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*. 💈`
+    );
+    enviados.push(c.id);
+  }
+  return enviados;
+}
+
+// Solo para el simulador de pruebas
+export function __usarSocketDePrueba(sock) {
+  if (MODO_PRUEBA) socketActivo = sock;
 }
 
 // ----------------- MOTOR DEL BOT BAILEYS -----------------
@@ -335,8 +465,14 @@ async function iniciarBot() {
     }
   });
 
-  sock.ev.on('messages.upsert', async (m) => {
+  sock.ev.on('messages.upsert', (m) => procesarMensajeEntrante(sock, m));
+}
+
+// ----------------- LÓGICA DE CONVERSACIÓN -----------------
+export async function procesarMensajeEntrante(sock, m) {
     try {
+      // Solo mensajes nuevos: al reconectar llegan mensajes de historial (type 'append') que no se deben contestar
+      if (m.type && m.type !== 'notify') return;
       if (!m.messages || m.messages.length === 0) return;
       const msg = m.messages[0];
       if (!msg.message) return;
@@ -366,57 +502,90 @@ async function iniciarBot() {
       if (barberia.botActivo === false) return;
 
       // Extraer número de teléfono del remitente (ej: 17747126594@s.whatsapp.net o 573024084425@s.whatsapp.net)
-      const telSoloDigitos = remitente.split('@')[0].replace(/[^0-9]/g, '');
+      const telSoloDigitos = telefonoDelRemitente(msg.key);
       const ultimos10 = telSoloDigitos.length >= 10 ? telSoloDigitos.slice(-10) : telSoloDigitos;
       const telBusqueda = telSoloDigitos;
 
-      console.log(`[Mensaje Recibido] De: ${remitente} | Tel: ${telSoloDigitos} | Texto: ${texto}`);
+      console.log(`[Mensaje Recibido] De: ${remitente} | Tel: ${telSoloDigitos || '(desconocido)'} | Texto: ${texto}`);
+      if (!telSoloDigitos) {
+        console.warn(`[Aviso] No se pudo obtener el número real de ${remitente} (sin senderPn).`);
+      }
 
       const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
 
       // ----------------- FLUJO DE CANCELACIÓN CON CONFIRMACIÓN SEGURA -----------------
       if (estado.nivel === 'CONFIRMAR_CANCELACION') {
-        if (soloNumeros === '1' || texto.includes('si') || texto.includes('sí') || texto.includes('cancelar')) {
-          // Confirmó cancelar la cita
-          try {
-            const resCanc = await apiBotFetch(`/bot/${BARBERIA_SLUG}/cancelar-cita/${estado.citaId}`, { method: 'POST' });
-            if (resCanc.ok) {
-              estadoCliente.set(remitente, { nivel: 'INICIO' });
-              const nombreCliente = estado.citaNombre || 'amigo';
-              const msjCancelado = 
-                `✅ ¡Listo ${nombreCliente}! Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* ha sido cancelada correctamente.\n\n` +
-                `Lamentamos que no nos puedas acompañar en esta ocasión, ¡esperamos verte muy pronto en la barbería! 💈✂️\n\n` +
-                `Cuando desees volver a agendar tu espacio, estaremos encantados de atenderte aquí:\n` +
-                `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
+        const palabras = texto.split(/[^a-z0-9áéíóúñü]+/).filter(Boolean);
+        const vencido = ahora - (estado.desde || 0) > 10 * 60 * 1000;
+        const quiereMenu = soloNumeros === '0' || ['menu', 'menú', 'inicio', 'volver'].includes(texto);
 
-              await enviarMensajeHumano(sock, remitente, msjCancelado);
+        if (vencido || quiereMenu) {
+          // La pregunta caducó (10 min) o pidió el menú: seguir con el flujo normal
+          estadoCliente.set(remitente, { nivel: 'INICIO' });
+        } else {
+          const dijoNo = palabras.includes('2') || palabras.includes('no') || texto.includes('mantener');
+          const dijoSi = !dijoNo && (palabras.includes('1') || palabras.includes('si') || palabras.includes('sí') || texto.includes('cancela'));
 
-              // 🔔 NOTIFICAR INMEDIATAMENTE AL BARBERO QUE SE CANCELÓ UN TURNO
-              try {
-                const jidBarbero = formatearJidWhatsApp(barberia.telefonoWhatsApp);
-                if (jidBarbero && jidBarbero !== remitente) {
-                  const msjAvisoBarbero = 
-                    `🔔 *Notificación de Agenda:*\n` +
-                    `El cliente *${nombreCliente}* canceló su turno del *${estado.citaFecha}* a las *${estado.citaHora}*.\n\n` +
-                    `✅ Ese horario quedó libre automáticamente en tu calendario web.`;
-                  await sock.sendMessage(jidBarbero, { text: msjAvisoBarbero });
-                }
-              } catch (errBarbero) {
-                console.error('Error notificando al barbero sobre cancelación:', errBarbero);
-              }
+          if (dijoSi) {
+            estadoCliente.set(remitente, { nivel: 'INICIO' });
+            let cancelada = false;
+            try {
+              const resCanc = await apiBotFetch(`/bot/${BARBERIA_SLUG}/cancelar-cita/${estado.citaId}`, { method: 'POST' });
+              cancelada = resCanc.ok;
+              if (!resCanc.ok) console.error(`[Cancelar] La API respondió ${resCanc.status} para la cita ${estado.citaId}`);
+            } catch (e) {
+              console.error('Error cancelando cita en API:', e);
+            }
 
+            if (!cancelada) {
+              await enviarMensajeHumano(
+                sock,
+                remitente,
+                `😕 No pudimos cancelar tu cita en este momento. Intenta de nuevo en unos minutos escribiendo *CANCELAR*, o el barbero te ayudará personalmente por este chat.`
+              );
               return;
             }
-          } catch (e) {
-            console.error('Error cancelando cita en API:', e);
+
+            const nombreCliente = estado.citaNombre || 'amigo';
+            const msjCancelado =
+              `✅ ¡Listo ${nombreCliente}! Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* ha sido cancelada correctamente.\n\n` +
+              `Lamentamos que no nos puedas acompañar en esta ocasión, ¡esperamos verte muy pronto en la barbería! 💈✂️\n\n` +
+              `Cuando desees volver a agendar tu espacio, estaremos encantados de atenderte aquí:\n` +
+              `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
+
+            await enviarMensajeHumano(sock, remitente, msjCancelado);
+
+            // 🔔 NOTIFICAR INMEDIATAMENTE AL BARBERO QUE SE CANCELÓ UN TURNO
+            try {
+              const jidBarbero = formatearJidWhatsApp(barberia.telefonoWhatsApp);
+              if (jidBarbero && jidBarbero !== remitente) {
+                const msjAvisoBarbero =
+                  `🔔 *Notificación de Agenda:*\n` +
+                  `El cliente *${nombreCliente}* canceló su turno del *${estado.citaFecha}* a las *${estado.citaHora}*.\n\n` +
+                  `✅ Ese horario quedó libre automáticamente en tu calendario web.`;
+                await sock.sendMessage(jidBarbero, { text: msjAvisoBarbero });
+              }
+            } catch (errBarbero) {
+              console.error('Error notificando al barbero sobre cancelación:', errBarbero);
+            }
+            return;
           }
-        } else if (soloNumeros === '2' || texto.includes('no') || texto.includes('mantener')) {
-          // Desea mantener la cita
-          estadoCliente.set(remitente, { nivel: 'INICIO' });
+
+          if (dijoNo) {
+            estadoCliente.set(remitente, { nivel: 'INICIO' });
+            await enviarMensajeHumano(
+              sock,
+              remitente,
+              `👍 ¡Perfecto! Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* sigue firme y reservada. ¡Te esperamos! 💈✂️`
+            );
+            return;
+          }
+
+          // Respuesta ambigua: volver a preguntar en lugar de seguir con otros flujos
           await enviarMensajeHumano(
             sock,
             remitente,
-            `👍 ¡Perfecto! Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* sigue firme y reservada. ¡Te esperamos! 💈✂️`
+            `Para confirmar, responde *1* si deseas *cancelar* tu cita del *${estado.citaFecha} a las ${estado.citaHora}*, o *2* si prefieres *mantenerla*. ✂️`
           );
           return;
         }
@@ -424,6 +593,7 @@ async function iniciarBot() {
 
       // Función auxiliar para buscar cita por teléfono (prueba número completo y últimos 10 dígitos)
       const buscarCitaClienteAsync = async () => {
+        if (!telSoloDigitos) return null;
         try {
           console.log(`[Buscando Cita] Probando con tel: ${telSoloDigitos} y ultimos10: ${ultimos10}`);
           let res = await apiBotFetch(`/bot/${BARBERIA_SLUG}/citas-cliente/${telSoloDigitos}`);
@@ -455,6 +625,7 @@ async function iniciarBot() {
 
             estadoCliente.set(remitente, {
               nivel: 'CONFIRMAR_CANCELACION',
+              desde: Date.now(),
               citaId: cita.id,
               citaFecha: cita.fecha,
               citaHora: cita.hora,
@@ -473,6 +644,13 @@ async function iniciarBot() {
               `_Responde con el número *1* o *2*._`;
 
             await enviarMensajeHumano(sock, remitente, msjConfirmacion);
+            return;
+          } else if (!telSoloDigitos) {
+            await enviarMensajeHumano(
+              sock,
+              remitente,
+              `😕 No pudimos identificar tu número de WhatsApp para buscar tu cita. El barbero te ayudará personalmente por este chat en cuanto pueda.`
+            );
             return;
           } else {
             await enviarMensajeHumano(
@@ -500,7 +678,7 @@ async function iniciarBot() {
           }
 
           const msjReagendar = 
-            `🔄 *Reagendar Turno — ${barberia.nombre || 'Barbería JR'}*\n\n` +
+            `🔄 *Reagendar Turno — ${barberia.nombre || 'la barbería'}*\n\n` +
             `Para cambiar el día y hora${detalle}, ingresa a nuestro calendario visual aquí:\n\n` +
             `👉 ${urlReagendar}\n\n` +
             `_Al seleccionar tu nuevo horario, tu turno anterior se actualizará automáticamente._ ✨`;
@@ -543,7 +721,7 @@ async function iniciarBot() {
       // Regresar al menú principal con 0 o inicio
       if (soloNumeros === '0' || texto === 'menu' || texto === 'menú' || texto === 'volver' || texto === 'inicio') {
         estadoCliente.set(remitente, { nivel: 'INICIO' });
-        const msj = `💈 *Bienvenido a ${barberia.nombre || 'Barberia JR'}*\n\n` +
+        const msj = `💈 *Bienvenido a ${barberia.nombre || 'la barbería'}*\n\n` +
           `¿En qué te podemos colaborar hoy?\n\n` +
           `1️⃣ 📅 *Agendar tu cita en línea:*\n` +
           `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
@@ -562,7 +740,7 @@ async function iniciarBot() {
           const catSeleccionada = categoriasNombres[opcionCatIndex];
           const serviciosCat = categoriasMap.get(catSeleccionada) || [];
 
-          let lista = `💈 *${catSeleccionada} — ${barberia.nombre || 'Barberia JR'}*\n`;
+          let lista = `💈 *${catSeleccionada} — ${barberia.nombre || 'la barbería'}*\n`;
           lista += `─────────────────────────\n\n`;
 
           serviciosCat.forEach(s => {
@@ -594,7 +772,7 @@ async function iniciarBot() {
       ) {
         estadoCliente.set(remitente, { nivel: 'SERVICIOS' });
 
-        let menuServicios = `💈 *Catálogo de Servicios — ${barberia.nombre || 'Barberia JR'}*\n`;
+        let menuServicios = `💈 *Catálogo de Servicios — ${barberia.nombre || 'la barbería'}*\n`;
         menuServicios += `Elige la categoría que deseas consultar:\n\n`;
 
         categoriasNombres.forEach((cat, index) => {
@@ -629,14 +807,14 @@ async function iniciarBot() {
         estadoCliente.set(remitente, { nivel: 'INICIO' });
 
         // Intentar consultar si ya es un cliente conocido en el sistema
-        let saludoPersonalizado = `💈 *Bienvenido a ${barberia.nombre || 'Barberia JR'}*`;
-        try {
+        let saludoPersonalizado = `💈 *Bienvenido a ${barberia.nombre || 'la barbería'}*`;
+        if (telBusqueda) try {
           const resCli = await apiBotFetch(`/bot/${BARBERIA_SLUG}/citas-cliente/${telBusqueda}`);
           if (resCli.ok) {
             const datosCita = await resCli.json();
             if (datosCita && datosCita.nombreCliente) {
               const primer = obtenerPrimerNombre(datosCita.nombreCliente);
-              saludoPersonalizado = `💈 *¡Hola ${primer}! Qué gusto tenerte de vuelta en ${barberia.nombre || 'Barberia JR'}*`;
+              saludoPersonalizado = `💈 *¡Hola ${primer}! Qué gusto tenerte de vuelta en ${barberia.nombre || 'la barbería'}*`;
             }
           }
         } catch (e) {}
@@ -666,7 +844,7 @@ async function iniciarBot() {
         texto.includes('ubicación')
       ) {
         const ubi = `📍 *Ubicación y Horario de Atención:*\n\n` +
-          `🏠 *Dirección:* ${barberia.direccion || 'Calle 45 # 12-34'}\n` +
+          `🏠 *Dirección:* ${barberia.direccion || 'Pregúntanos por este chat 📲'}\n` +
           `⏰ *Horario:* ${barberia.horarioTexto || 'Lunes a Sábado 9:00 AM - 8:00 PM'}\n\n` +
           `📅 *Reserva tu cita aquí para no hacer fila:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
           `_Responde *0* para volver al menú principal._ 🔙`;
@@ -685,7 +863,7 @@ async function iniciarBot() {
         texto.includes('transferencia') || 
         texto.includes('efectivo')
       ) {
-        let msgPago = `💳 *Métodos de Pago — ${barberia.nombre || 'Barberia JR'}*\n`;
+        let msgPago = `💳 *Métodos de Pago — ${barberia.nombre || 'la barbería'}*\n`;
         msgPago += `─────────────────────────\n\n`;
         msgPago += `💵 *Efectivo:* Recibimos en el local al finalizar tu servicio.\n\n`;
         
@@ -742,11 +920,10 @@ async function iniciarBot() {
     } catch (e) {
       console.error('Error procesando mensaje en bot:', e);
     }
-  });
 }
 
 // ----------------- CRON: ANUNCIO MATUTINO DIARIO CONFIGURABLE -----------------
-setInterval(async () => {
+const cronAnuncioMatutino = setInterval(async () => {
   try {
     if (!socketActivo || !estaConectado) return;
 
@@ -824,4 +1001,14 @@ setInterval(async () => {
   }
 }, 30000); // Revisar cada 30 segundos
 
-iniciarBot();
+// ----------------- CRON: RECORDATORIOS ANTES DE LA CITA -----------------
+const cronRecordatorios = setInterval(() => {
+  revisarRecordatorios().catch(err => console.error('Error en recordatorios:', err.message));
+}, 5 * 60 * 1000);
+
+if (MODO_PRUEBA) {
+  clearInterval(cronAnuncioMatutino);
+  clearInterval(cronRecordatorios);
+} else {
+  iniciarBot();
+}

@@ -88,13 +88,13 @@
         </div>
       </div>
       <div class="flex items-center gap-2">
-        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
+        <span id="badge-abierto" class="hidden inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
           <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Abierto
         </span>
         <!-- Botón Portal Clientes -->
-        <button id="btn-portal-cliente" onclick="abrirModalAuthCliente()" class="ml-1 py-1.5 px-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 text-xs font-bold transition flex items-center gap-1.5">
-          <i data-lucide="user" class="w-3.5 h-3.5"></i> <span id="txt-btn-cliente">Mis Citas / Ingresar</span>
-        </button>
+        <a id="btn-portal-cliente" href="/cuenta.html" class="ml-1 py-1.5 px-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap">
+          <i data-lucide="user" class="w-3.5 h-3.5"></i> <span id="txt-btn-cliente">Mis citas</span>
+        </a>
       </div>
     </div>
   </header>
@@ -398,128 +398,10 @@
         <button onclick="cerrarModal()" class="w-full py-2.5 px-4 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white transition text-xs sm:text-sm shadow-md">
           Aceptar y Finalizar
         </button>
+        <a id="link-exito-mis-citas" href="/cuenta.html" class="block w-full py-2.5 px-4 rounded-xl font-bold bg-gray-800 hover:bg-gray-700 text-gray-200 transition text-xs sm:text-sm">
+          Ver mis citas
+        </a>
       </div>
-    </div>
-  </div>
-
-  <!-- MODAL DE CLIENTES: INICIAR SESIÓN / REGISTRO / MIS CITAS -->
-  <div id="modal-cliente" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-gray-900 border border-gray-800 max-w-sm sm:max-w-md w-full rounded-3xl p-6 sm:p-7 shadow-2xl relative">
-      <button onclick="cerrarModalAuthCliente()" class="absolute top-4 right-4 text-gray-400 hover:text-white transition">
-        <i data-lucide="x" class="w-6 h-6"></i>
-      </button>
-
-      <!-- VISTA NO LOGUEADO (LOGIN / REGISTRO) -->
-      <div id="cliente-box-auth">
-        <!-- Selector de pestañas -->
-        <div class="flex border-b border-gray-800 mb-5">
-          <button id="tab-cli-login" onclick="cambiarTabCliente('login')" class="flex-1 py-2 font-bold text-xs text-blue-400 border-b-2 border-blue-500">
-            Ingresar
-          </button>
-          <button id="tab-cli-registro" onclick="cambiarTabCliente('registro')" class="flex-1 py-2 font-medium text-xs text-gray-400">
-            Registrarme
-          </button>
-        </div>
-
-        <!-- Formulario Iniciar Sesión -->
-        <form id="form-cli-login" onsubmit="loginCliente(event)" class="space-y-3.5">
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1">Tu Teléfono WhatsApp *</label>
-            <div class="flex items-center gap-1.5">
-              <select id="cli-login-pais" class="bg-gray-950 border border-gray-700 rounded-xl px-2 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer flex-shrink-0">
-                <option value="+57" selected>🇨🇴 +57</option>
-                <option value="+1">🇺🇸 +1</option>
-                <option value="+34">🇪🇸 +34</option>
-                <option value="+52">🇲🇽 +52</option>
-                <option value="+54">🇦🇷 +54</option>
-                <option value="+56">🇨🇱 +56</option>
-                <option value="+51">🇵🇪 +51</option>
-                <option value="+58">🇻🇪 +58</option>
-                <option value="+593">🇪🇨 +593</option>
-                <option value="+507">🇵🇦 +507</option>
-              </select>
-              <input type="tel" id="cli-login-tel" required placeholder="Ej: 3001234567" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
-            </div>
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1">Contraseña o PIN *</label>
-            <input type="password" id="cli-login-pass" required placeholder="Tu clave o PIN" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
-          </div>
-          <button type="submit" class="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-xs shadow-lg shadow-blue-500/20 transition">
-            Iniciar Sesión
-          </button>
-        </form>
-
-        <!-- Formulario Crear Cuenta -->
-        <form id="form-cli-registro" onsubmit="registrarCliente(event)" class="space-y-3 hidden">
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1">Nombre Completo *</label>
-            <input type="text" id="cli-reg-nom" required placeholder="Ej: Juan Camilo" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1">WhatsApp *</label>
-            <div class="flex items-center gap-1.5">
-              <select id="cli-reg-pais" class="bg-gray-950 border border-gray-700 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer flex-shrink-0">
-                <option value="+57" selected>🇨🇴 +57</option>
-                <option value="+1">🇺🇸 +1</option>
-                <option value="+34">🇪🇸 +34</option>
-                <option value="+52">🇲🇽 +52</option>
-                <option value="+54">🇦🇷 +54</option>
-                <option value="+56">🇨🇱 +56</option>
-                <option value="+51">🇵🇪 +51</option>
-                <option value="+58">🇻🇪 +58</option>
-                <option value="+593">🇪🇨 +593</option>
-                <option value="+507">🇵🇦 +507</option>
-              </select>
-              <input type="tel" id="cli-reg-tel" required placeholder="3001234567 o 7747126594" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
-            </div>
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1">Sexo / Género *</label>
-            <select id="cli-reg-genero" required class="w-full bg-gray-950 border border-gray-700 rounded-xl px-2 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
-              <option value="" disabled selected>Selecciona una opción</option>
-              <option value="Hombre">Hombre</option>
-              <option value="Mujer">Mujer</option>
-              <option value="Prefiero no decirlo">Prefiero no decirlo / Otro</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1">Contraseña o PIN *</label>
-            <input type="password" id="cli-reg-pass" required placeholder="Mínimo 4 caracteres" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-          </div>
-          <button type="submit" class="w-full py-3 rounded-xl font-bold bg-emerald-600 hover:bg-emerald-500 text-white text-xs shadow-lg shadow-emerald-500/20 transition">
-            Crear mi Cuenta
-          </button>
-        </form>
-      </div>
-
-      <!-- VISTA LOGUEADO (MIS CITAS) -->
-      <div id="cliente-box-perfil" class="hidden space-y-4">
-        <div class="flex items-center justify-between pb-3 border-b border-gray-800">
-          <div>
-            <h4 class="font-extrabold text-white text-base" id="perfil-cli-nombre">Hola, Cliente</h4>
-            <p class="text-xs text-gray-400" id="perfil-cli-tel">+57 3000000000</p>
-          </div>
-          <div class="flex items-center gap-1.5">
-            <button onclick="cerrarSesionCliente()" class="text-xs px-2.5 py-1 rounded-lg bg-gray-800 text-gray-300 border border-gray-700 hover:bg-gray-700 font-semibold transition">
-              Cerrar Sesión
-            </button>
-            <button onclick="confirmarEliminarCuentaCliente()" title="Eliminar mi cuenta" class="text-xs px-2 py-1 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 font-semibold transition">
-              Eliminar Cuenta
-            </button>
-          </div>
-        </div>
-
-        <div>
-          <h5 class="text-xs font-bold text-blue-400 mb-2 flex items-center gap-1.5">
-            <i data-lucide="calendar" class="w-4 h-4"></i> Tus Citas en esta Barbería
-          </h5>
-          <div id="lista-citas-cliente" class="space-y-2 max-h-60 overflow-y-auto pr-1">
-            <!-- Dinámico -->
-          </div>
-        </div>
-      </div>
-
     </div>
   </div>
 
@@ -528,7 +410,7 @@
     <a href="/login.html" class="text-gray-500 hover:text-blue-400 mt-1 inline-block">¿Eres barbero o dueño? Inicia sesión aquí</a>
   </footer>
 
-  <script src="/js/client.js?v=20261123"></script>
+  <script src="/js/client.js?v=20261123b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

@@ -37,8 +37,8 @@ public class AdminController : ControllerBase
         {
             var barberiaId = ObtenerBarberiaId();
             var barberia = await _context.Barberias
-                .Include(b => b.Servicios)
-                .Include(b => b.Miembros)
+                .Include(b => b.Servicios.Where(s => s.Activo))
+                .Include(b => b.Miembros.Where(m => m.Activo))
                 .Include(b => b.Bloqueos)
                 .FirstOrDefaultAsync(b => b.Id == barberiaId);
 
@@ -187,16 +187,30 @@ public class AdminController : ControllerBase
 
         try
         {
-            var match = System.Text.RegularExpressions.Regex.Match(dto.ImageData, @"data:image/(?<type>.+?);base64,(?<data>.+)");
+            var match = System.Text.RegularExpressions.Regex.Match(dto.ImageData, @"^data:image/(?<type>png|jpeg|jpg|webp|gif);base64,(?<data>[A-Za-z0-9+/=]+)$");
             if (!match.Success)
             {
-                return BadRequest(new { message = "Formato de imagen inválido." });
+                return BadRequest(new { message = "Formato de imagen inválido. Usa PNG, JPG, WEBP o GIF." });
             }
 
-            var extension = match.Groups["type"].Value;
-            if (extension == "jpeg") extension = "jpg";
             var base64Data = match.Groups["data"].Value;
+            if (base64Data.Length > 7_000_000)
+            {
+                return BadRequest(new { message = "La imagen es demasiado grande (máximo 5 MB)." });
+            }
             var bytes = Convert.FromBase64String(base64Data);
+
+            // La extensión se decide por el contenido real del archivo, no por lo que diga el navegador
+            string? extension =
+                bytes.Length > 8 && bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 ? "png" :
+                bytes.Length > 3 && bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF ? "jpg" :
+                bytes.Length > 6 && bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 ? "gif" :
+                bytes.Length > 12 && bytes[0] == 0x52 && bytes[1] == 0x49 && bytes[2] == 0x46 && bytes[3] == 0x46 &&
+                    bytes[8] == 0x57 && bytes[9] == 0x45 && bytes[10] == 0x42 && bytes[11] == 0x50 ? "webp" : null;
+            if (extension == null)
+            {
+                return BadRequest(new { message = "El archivo no es una imagen válida." });
+            }
 
             var uploadsDir = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "uploads");
             if (!Directory.Exists(uploadsDir))
@@ -380,7 +394,15 @@ public class AdminController : ControllerBase
         var servicio = await _context.Servicios.FirstOrDefaultAsync(s => s.Id == id && s.BarberiaId == barberiaId);
         if (servicio == null) return NotFound();
 
-        _context.Servicios.Remove(servicio);
+        if (await _context.Citas.AnyAsync(c => c.ServicioId == servicio.Id))
+        {
+            // Tiene citas en el historial: se oculta del catálogo para no romper esas citas
+            servicio.Activo = false;
+        }
+        else
+        {
+            _context.Servicios.Remove(servicio);
+        }
         await _context.SaveChangesAsync();
         return Ok(new { message = "Servicio eliminado." });
     }
@@ -429,7 +451,15 @@ public class AdminController : ControllerBase
         var miembro = await _context.Miembros.FirstOrDefaultAsync(m => m.Id == id && m.BarberiaId == barberiaId);
         if (miembro == null) return NotFound();
 
-        _context.Miembros.Remove(miembro);
+        if (await _context.Citas.AnyAsync(c => c.MiembroEquipoId == miembro.Id))
+        {
+            // Tiene citas en el historial: se oculta del equipo para no romper esas citas
+            miembro.Activo = false;
+        }
+        else
+        {
+            _context.Miembros.Remove(miembro);
+        }
         await _context.SaveChangesAsync();
         return Ok(new { message = "Miembro eliminado." });
     }

@@ -21,6 +21,64 @@ public class PublicController : ControllerBase
         _tokens = tokens;
     }
 
+    private static int ConvertirHoraAMinutos(string hStr)
+    {
+        if (string.IsNullOrWhiteSpace(hStr)) return 0;
+        var str = hStr.ToLower().Trim();
+        var esPm = str.Contains("pm");
+        var esAm = str.Contains("am");
+        var clean = System.Text.RegularExpressions.Regex.Replace(str, @"[apm\s]", "");
+        var parts = clean.Split(':');
+        var hh = int.TryParse(parts[0], out var h) ? h : 0;
+        var mm = parts.Length > 1 && int.TryParse(parts[1], out var m) ? m : 0;
+        if (esPm && hh < 12) hh += 12;
+        if (esAm && hh == 12) hh = 0;
+        return hh * 60 + mm;
+    }
+
+    // Fecha de hoy en Colombia (yyyy-MM-dd), para no ofrecer citas que ya pasaron
+    private static string FechaHoyColombia() => DateTime.UtcNow.AddHours(-5).ToString("yyyy-MM-dd");
+    private static int MinutosAhoraColombia() { var t = DateTime.UtcNow.AddHours(-5); return t.Hour * 60 + t.Minute; }
+
+    // Nombre y teléfono del cliente: longitud razonable y sin caracteres de HTML
+    private static string? ValidarDatosCliente(string? nombre, string? telefono)
+    {
+        var n = (nombre ?? "").Trim();
+        if (n.Length < 2 || n.Length > 60) return "Escribe tu nombre (entre 2 y 60 caracteres).";
+        if (n.IndexOfAny(new[] { '<', '>', '"', '`' }) >= 0) return "El nombre contiene caracteres no permitidos.";
+        var t = (telefono ?? "").Trim();
+        var digitos = TelefonoHelper.SoloDigitos(t);
+        if (digitos.Length < 7 || digitos.Length > 15 || t.Any(c => !(char.IsDigit(c) || c == '+' || c == ' ' || c == '-' || c == '(' || c == ')')))
+            return "Número de teléfono no válido.";
+        return null;
+    }
+
+    // Fecha (yyyy-MM-dd) y hora válidas, en día laboral, dentro del horario y no en el pasado
+    private static string? ValidarFechaHora(Barberia barberia, string? fecha, string? hora, bool soloFormato = false)
+    {
+        if (string.IsNullOrWhiteSpace(fecha) || !DateTime.TryParseExact(fecha, "yyyy-MM-dd",
+                System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var dia))
+            return "Fecha no válida.";
+        if (string.IsNullOrWhiteSpace(hora) || !System.Text.RegularExpressions.Regex.IsMatch(hora.Trim(), @"^\d{1,2}:\d{2}\s*([aApP][mM])?$"))
+            return "Hora no válida.";
+        if (soloFormato) return null;
+
+        var hoy = FechaHoyColombia();
+        if (string.CompareOrdinal(fecha, hoy) < 0) return "No puedes reservar en una fecha que ya pasó.";
+        if (dia > DateTime.UtcNow.AddDays(120)) return "Solo puedes reservar con máximo 4 meses de anticipación.";
+
+        var diasLaborales = (barberia.DiasLaborales ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (diasLaborales.Length > 0 && !diasLaborales.Contains(((int)dia.DayOfWeek).ToString()))
+            return "La barbería no atiende ese día. Elige otro día.";
+
+        var inicio = ConvertirHoraAMinutos(hora);
+        if (inicio < ConvertirHoraAMinutos(barberia.HoraApertura) || inicio >= ConvertirHoraAMinutos(barberia.HoraCierre))
+            return "Esa hora está fuera del horario de atención.";
+        if (fecha == hoy && inicio <= MinutosAhoraColombia())
+            return "Esa hora ya pasó. Elige un horario más tarde.";
+        return null;
+    }
+
     [HttpGet("barberia/{slug}")]
     public async Task<IActionResult> ObtenerBarberia(string slug)
     {
@@ -165,6 +223,20 @@ public class PublicController : ControllerBase
             return NotFound(new { message = "Barbería no encontrada." });
         }
 
+        var errorDatos = ValidarDatosCliente(dto.NombreCliente, dto.TelefonoCliente);
+        if (errorDatos != null) return BadRequest(new { message = errorDatos });
+
+        // El barbero de esta barbería (con sesión) puede registrar clientes sin cita fuera de horario o a la hora actual
+        var esBarberoDeEstaBarberia = User.FindFirst(PoliticasAuth.ClaimBarberiaId)?.Value == barberia.Id.ToString();
+        var errorHorario = ValidarFechaHora(barberia, dto.Fecha, dto.Hora, soloFormato: esBarberoDeEstaBarberia);
+        if (errorHorario != null) return BadRequest(new { message = errorHorario });
+
+        if (dto.MiembroEquipoId.HasValue &&
+            !await _context.Miembros.AnyAsync(m => m.Id == dto.MiembroEquipoId.Value && m.BarberiaId == barberia.Id && m.Activo))
+        {
+            return BadRequest(new { message = "El profesional seleccionado no es válido." });
+        }
+
         var bloqueoDia = barberia.Bloqueos.Any(b => b.Fecha == dto.Fecha && (string.IsNullOrEmpty(b.Hora) || b.Hora == "TODO_EL_DIA"));
         if (bloqueoDia)
         {
@@ -177,28 +249,13 @@ public class PublicController : ControllerBase
             return BadRequest(new { message = "Este horario ha sido bloqueado por la barbería." });
         }
 
-        var servicio = barberia.Servicios.FirstOrDefault(s => s.Id == dto.ServicioId);
+        var servicio = barberia.Servicios.FirstOrDefault(s => s.Id == dto.ServicioId && s.Activo);
         if (servicio == null)
         {
             return BadRequest(new { message = "Servicio no válido." });
         }
 
         // Validación matemática de traslape con citas existentes según duración del servicio
-        static int ConvertirHoraAMinutos(string hStr)
-        {
-            if (string.IsNullOrWhiteSpace(hStr)) return 0;
-            var str = hStr.ToLower().Trim();
-            var esPm = str.Contains("pm");
-            var esAm = str.Contains("am");
-            var clean = System.Text.RegularExpressions.Regex.Replace(str, @"[apm\s]", "");
-            var parts = clean.Split(':');
-            var hh = int.TryParse(parts[0], out var h) ? h : 0;
-            var mm = parts.Length > 1 && int.TryParse(parts[1], out var m) ? m : 0;
-            if (esPm && hh < 12) hh += 12;
-            if (esAm && hh == 12) hh = 0;
-            return hh * 60 + mm;
-        }
-
         // Si es un reagendamiento, la cita original debe ser de esta barbería y del mismo teléfono
         Cita? citaAnterior = null;
         if (dto.ReagendarCitaId.HasValue)
@@ -213,6 +270,10 @@ public class PublicController : ControllerBase
 
         var nuevoTurnoInicio = ConvertirHoraAMinutos(dto.Hora);
         var nuevoTurnoFin = nuevoTurnoInicio + servicio.DuracionMinutos;
+        if (nuevoTurnoFin > ConvertirHoraAMinutos(barberia.HoraCierre) + 15)
+        {
+            return BadRequest(new { message = "Ese horario termina después del cierre de la barbería. Elige una hora más temprano." });
+        }
 
         var citasDia = await _context.Citas
             .Include(c => c.Servicio)
@@ -259,44 +320,23 @@ public class PublicController : ControllerBase
         _context.Citas.Add(cita);
         await _context.SaveChangesAsync();
 
-        // 🚀 DISPARAR NOTIFICACIÓN AUTOMÁTICA AL BOT DE WHATSAPP (SEGUNDO PLANO)
-        _ = Task.Run(async () =>
+        // 🚀 NOTIFICACIÓN AUTOMÁTICA AL BOT DE WHATSAPP (segundo plano, solo la barbería del bot)
+        NotificarBot("/api/notificar-cita", barberia, new
         {
-            try
-            {
-                var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
-                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(5) };
-                var notifPayload = new
-                {
-                    citaId = cita.Id,
-                    codigoReserva = cita.CodigoReserva,
-                    barberiaSlug = barberia.Slug,
-                    barberiaNombre = barberia.Nombre,
-                    barberiaDireccion = barberia.Direccion,
-                    barberiaTelefono = barberia.TelefonoWhatsApp,
-                    nombreCliente = cita.NombreCliente,
-                    telefonoCliente = cita.TelefonoCliente,
-                    servicio = servicio.Nombre,
-                    fecha = cita.Fecha,
-                    hora = cita.Hora,
-                    total = cita.Total
-                };
-                var jsonContent = new StringContent(
-                    System.Text.Json.JsonSerializer.Serialize(notifPayload),
-                    System.Text.Encoding.UTF8,
-                    "application/json"
-                );
-                var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
-                if (!string.IsNullOrWhiteSpace(botKey))
-                {
-                    http.DefaultRequestHeaders.Add(RequiereBotKeyAttribute.Header, botKey);
-                }
-                await http.PostAsync($"{botUrl}/api/notificar-cita", jsonContent);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Bot Notificar Cita Error]: {ex.Message}");
-            }
+            citaId = cita.Id,
+            codigoReserva = cita.CodigoReserva,
+            barberiaSlug = barberia.Slug,
+            barberiaNombre = barberia.Nombre,
+            barberiaDireccion = barberia.Direccion,
+            barberiaTelefono = barberia.TelefonoWhatsApp,
+            nombreCliente = cita.NombreCliente,
+            telefonoCliente = cita.TelefonoCliente,
+            servicio = servicio.Nombre,
+            duracionMinutos = servicio.DuracionMinutos,
+            fecha = cita.Fecha,
+            hora = cita.Hora,
+            total = cita.Total,
+            esReagendamiento = citaAnterior != null
         });
 
         return Ok(new
@@ -321,6 +361,10 @@ public class PublicController : ControllerBase
         if (dto.Estrellas < 1 || dto.Estrellas > 5)
         {
             return BadRequest(new { message = "La valoración debe ser de 1 a 5 estrellas." });
+        }
+        if ((dto.NombreCliente ?? "").Length > 60 || (dto.Comentario ?? "").Length > 500)
+        {
+            return BadRequest(new { message = "El nombre o el comentario son demasiado largos." });
         }
 
         var val = new Valoracion
@@ -372,6 +416,10 @@ public class PublicController : ControllerBase
         {
             return BadRequest(new { message = "La calificación debe ser de 1 a 5 estrellas." });
         }
+        if ((dto.Comentario ?? "").Length > 500)
+        {
+            return BadRequest(new { message = "El comentario es demasiado largo (máximo 500 caracteres)." });
+        }
 
         var val = new Valoracion
         {
@@ -400,13 +448,16 @@ public class PublicController : ControllerBase
         var citasActivas = await _context.Citas
             .Include(c => c.Servicio)
             .Include(c => c.MiembroEquipo)
-            .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada")
+            .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "Completada")
             .ToListAsync();
 
+        // La próxima cita pendiente (hoy o futura) de este teléfono
+        var hoy = FechaHoyColombia();
         var cita = citasActivas
+            .Where(c => string.CompareOrdinal(c.Fecha, hoy) >= 0)
             .Where(c => TelefonoHelper.MismoTelefono(c.TelefonoCliente, telefono))
-            .OrderByDescending(c => c.Fecha)
-            .ThenByDescending(c => c.Hora)
+            .OrderBy(c => c.Fecha)
+            .ThenBy(c => ConvertirHoraAMinutos(c.Hora))
             .FirstOrDefault();
 
         if (cita == null) return NotFound(new { message = "No tienes citas activas para cancelar." });
@@ -454,6 +505,18 @@ public class PublicController : ControllerBase
                 Servicio = cita.Servicio?.Nombre ?? "Servicio"
             }
         });
+    }
+
+    // Estado actual de una cita (para que el bot no escriba sobre citas canceladas o reagendadas)
+    [RequiereBotKey]
+    [HttpGet("bot/{slug}/cita/{id}")]
+    public async Task<IActionResult> ObtenerEstadoCitaBot(string slug, int id)
+    {
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+        var cita = await _context.Citas.FirstOrDefaultAsync(c => c.Id == id && c.BarberiaId == barberia.Id);
+        if (cita == null) return NotFound(new { message = "Cita no encontrada." });
+        return Ok(new { cita.Id, cita.Estado, cita.Fecha, cita.Hora });
     }
 
     [RequiereBotKey]
@@ -533,11 +596,9 @@ public class PublicController : ControllerBase
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
+        var errorDatos = ValidarDatosCliente(dto.Nombre, dto.Telefono);
+        if (errorDatos != null) return BadRequest(new { message = errorDatos });
         var telLimpio = TelefonoHelper.SoloDigitos(dto.Telefono);
-        if (string.IsNullOrWhiteSpace(telLimpio) || telLimpio.Length < 7)
-        {
-            return BadRequest(new { message = "Número de teléfono no válido." });
-        }
 
         if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 4)
         {
@@ -582,22 +643,56 @@ public class PublicController : ControllerBase
     }
 
     [Authorize(Policy = PoliticasAuth.Cliente)]
+    [HttpGet("clientes/me")]
+    public async Task<IActionResult> ObtenerPerfilCliente()
+    {
+        var cliente = await ObtenerClienteAutenticado();
+        if (cliente == null) return Unauthorized(new { message = "Tu sesión expiró. Inicia sesión de nuevo." });
+
+        var barberia = await _context.Barberias.FindAsync(cliente.BarberiaId);
+        return Ok(new
+        {
+            cliente.Id,
+            cliente.Nombre,
+            cliente.Telefono,
+            cliente.Genero,
+            cliente.FechaRegistro,
+            BarberiaSlug = barberia?.Slug,
+            BarberiaNombre = barberia?.Nombre
+        });
+    }
+
+    // Una cita es "próxima" si no está cancelada ni completada y su hora aún no ha pasado (hora Colombia)
+    private static bool EsCitaProxima(Cita c)
+    {
+        if (c.Estado == "Cancelada" || c.Estado == "Completada") return false;
+        var hoy = FechaHoyColombia();
+        var cmp = string.CompareOrdinal(c.Fecha, hoy);
+        if (cmp > 0) return true;
+        if (cmp < 0) return false;
+        return ConvertirHoraAMinutos(c.Hora) >= MinutosAhoraColombia();
+    }
+
+    private async Task<List<Cita>> CitasDelCliente(ClienteUsuario cliente)
+    {
+        var citasBarberia = await _context.Citas
+            .Include(c => c.Servicio)
+            .Include(c => c.MiembroEquipo)
+            .Where(c => c.BarberiaId == cliente.BarberiaId)
+            .ToListAsync();
+        return citasBarberia.Where(c => TelefonoHelper.MismoTelefono(c.TelefonoCliente, cliente.Telefono)).ToList();
+    }
+
+    [Authorize(Policy = PoliticasAuth.Cliente)]
     [HttpGet("clientes/me/citas")]
     public async Task<IActionResult> ObtenerCitasCliente()
     {
         var cliente = await ObtenerClienteAutenticado();
         if (cliente == null) return Unauthorized(new { message = "Tu sesión expiró. Inicia sesión de nuevo." });
 
-        var citasBarberia = await _context.Citas
-            .Include(c => c.Servicio)
-            .Include(c => c.MiembroEquipo)
-            .Where(c => c.BarberiaId == cliente.BarberiaId)
-            .ToListAsync();
-
-        var citas = citasBarberia
-            .Where(c => TelefonoHelper.MismoTelefono(c.TelefonoCliente, cliente.Telefono))
+        var citas = (await CitasDelCliente(cliente))
             .OrderByDescending(c => c.Fecha)
-            .ThenByDescending(c => c.Hora)
+            .ThenByDescending(c => ConvertirHoraAMinutos(c.Hora))
             .Select(c => new
             {
                 c.Id,
@@ -606,12 +701,67 @@ public class PublicController : ControllerBase
                 c.Hora,
                 c.Total,
                 c.Estado,
+                Proxima = EsCitaProxima(c),
                 Servicio = c.Servicio?.Nombre ?? "Servicio",
+                DuracionMinutos = c.Servicio?.DuracionMinutos ?? 0,
                 Barbero = c.MiembroEquipo?.Nombre ?? "Master Barber"
             })
             .ToList();
 
         return Ok(citas);
+    }
+
+    [Authorize(Policy = PoliticasAuth.Cliente)]
+    [HttpPost("clientes/me/citas/{id}/cancelar")]
+    public async Task<IActionResult> CancelarCitaCliente(int id)
+    {
+        var cliente = await ObtenerClienteAutenticado();
+        if (cliente == null) return Unauthorized(new { message = "Tu sesión expiró. Inicia sesión de nuevo." });
+
+        var cita = (await CitasDelCliente(cliente)).FirstOrDefault(c => c.Id == id);
+        if (cita == null) return NotFound(new { message = "No encontramos esa cita en tu cuenta." });
+        if (!EsCitaProxima(cita)) return BadRequest(new { message = "Esta cita ya no se puede cancelar." });
+
+        cita.Estado = "Cancelada";
+        await _context.SaveChangesAsync();
+
+        // Avisar al barbero por WhatsApp (solo si el bot atiende esta barbería)
+        var barberia = await _context.Barberias.FindAsync(cita.BarberiaId);
+        if (barberia != null) NotificarBot("/api/notificar-cancelacion", barberia, new
+        {
+            citaId = cita.Id,
+            barberiaSlug = barberia.Slug,
+            nombreCliente = cita.NombreCliente,
+            servicio = cita.Servicio?.Nombre ?? "Servicio",
+            fecha = cita.Fecha,
+            hora = cita.Hora
+        });
+
+        return Ok(new { message = "Tu cita fue cancelada." });
+    }
+
+    // Envía un aviso al bot de WhatsApp en segundo plano, solo para la barbería que atiende el bot
+    private static void NotificarBot(string ruta, Barberia barberia, object payload)
+    {
+        var slugBot = Environment.GetEnvironmentVariable("BOT_BARBERIA_SLUG") ?? "barberia-jr";
+        if (!string.Equals(slugBot, barberia.Slug, StringComparison.OrdinalIgnoreCase)) return;
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
+                using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
+                var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
+                if (!string.IsNullOrWhiteSpace(botKey)) http.DefaultRequestHeaders.Add(RequiereBotKeyAttribute.Header, botKey);
+                var json = new StringContent(System.Text.Json.JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
+                await http.PostAsync($"{botUrl.TrimEnd('/')}{ruta}", json);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Bot {ruta} Error]: {ex.Message}");
+            }
+        });
     }
 
     [Authorize(Policy = PoliticasAuth.Cliente)]

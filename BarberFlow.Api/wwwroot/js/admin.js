@@ -18,6 +18,11 @@ function getAuthHeaders() {
   };
 }
 
+// Escapa texto antes de insertarlo como HTML (nombres, comentarios, etc. escritos por clientes)
+function escapeHtml(valor) {
+  return String(valor ?? "").replace(/[&<>"'`]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;", "`": "&#96;" }[ch]));
+}
+
 async function initAdmin() {
   const hoyStr = new Date().toISOString().split('T')[0];
   const inputFechaBloq = document.getElementById('bloq-fecha');
@@ -387,19 +392,19 @@ function renderTablaCitas() {
     const enlaceWhatsAppRecordatorio = `https://wa.me/${phoneClean}?text=${msgRecordatorio}`;
 
     tr.innerHTML = `
-      <td class="px-3 sm:px-4 py-3 font-mono font-bold text-blue-400 text-xs">${c.codigoReserva}</td>
+      <td class="px-3 sm:px-4 py-3 font-mono font-bold text-blue-400 text-xs">${escapeHtml(c.codigoReserva)}</td>
       <td class="px-3 sm:px-4 py-3">
-        <div class="font-bold text-white text-xs sm:text-sm">${c.nombreCliente}</div>
+        <div class="font-bold text-white text-xs sm:text-sm">${escapeHtml(c.nombreCliente)}</div>
         <a href="https://wa.me/${phoneClean}" target="_blank" class="text-[11px] text-gray-400 hover:text-emerald-400 flex items-center gap-1 mt-0.5">
-          <i data-lucide="phone" class="w-3 h-3 text-emerald-400"></i> ${c.telefonoCliente}
+          <i data-lucide="phone" class="w-3 h-3 text-emerald-400"></i> ${escapeHtml(c.telefonoCliente)}
         </a>
       </td>
       <td class="px-3 sm:px-4 py-3">
-        <div class="text-white text-xs">${c.servicio}</div>
-        <div class="text-[11px] text-gray-400">${c.barbero}</div>
+        <div class="text-white text-xs">${escapeHtml(c.servicio)}</div>
+        <div class="text-[11px] text-gray-400">${escapeHtml(c.barbero)}</div>
       </td>
       <td class="px-3 sm:px-4 py-3 text-xs text-blue-300 whitespace-nowrap font-semibold">
-        ${c.fecha}<br><span class="text-gray-400 font-normal">${c.hora}</span>
+        ${escapeHtml(c.fecha)}<br><span class="text-gray-400 font-normal">${escapeHtml(c.hora)}</span>
       </td>
       <td class="px-3 sm:px-4 py-3 font-bold text-white text-xs sm:text-sm">$ ${Number(c.total).toLocaleString()}</td>
       <td class="px-3 sm:px-4 py-3">
@@ -1015,7 +1020,7 @@ async function guardarCitaManual(e) {
   try {
     const res = await fetch('/api/public/citas', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders(),
       body: JSON.stringify(payload)
     });
 
