@@ -819,7 +819,7 @@
       </p>
 
       <div class="bg-white p-3 rounded-xl inline-block shadow-inner my-2">
-        <iframe id="iframe-qr-bot" src="http://localhost:3001" class="w-[260px] h-[310px] border-none overflow-hidden rounded-lg"></iframe>
+        <div id="iframe-qr-bot" class="w-[260px] h-[310px]"></div>
       </div>
 
       <div class="mt-3 pt-2 border-t border-gray-800 flex justify-center">
@@ -830,7 +830,7 @@
     </div>
   </div>
 
-  <script src="/js/admin.js?v=20261112"></script>
+  <script src="/js/admin.js?v=20261123"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

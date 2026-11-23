@@ -1,13 +1,10 @@
-using System.IdentityModel.Tokens.Jwt;
-using System.Security.Claims;
-using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.IdentityModel.Tokens;
 using BarberFlow.Api.Data;
 using BarberFlow.Api.DTOs;
 using BarberFlow.Api.Models;
+using BarberFlow.Api.Services;
 
 namespace BarberFlow.Api.Controllers;
 
@@ -16,12 +13,12 @@ namespace BarberFlow.Api.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly AppDbContext _context;
-    private readonly IConfiguration _config;
+    private readonly TokenService _tokens;
 
-    public AuthController(AppDbContext context, IConfiguration config)
+    public AuthController(AppDbContext context, TokenService tokens)
     {
         _context = context;
-        _config = config;
+        _tokens = tokens;
     }
 
     private static bool EsEmailValido(string email)
@@ -96,7 +93,7 @@ public class AuthController : ControllerBase
         _context.Barberias.Add(barberia);
         await _context.SaveChangesAsync();
 
-        var token = GenerarJwtToken(barbero, barberia);
+        var token = _tokens.GenerarTokenBarbero(barbero, barberia);
         return Ok(new AuthResponseDto(token, barbero.NombreCompleto, barbero.Email, barberia.Slug, barberia.Nombre));
     }
 
@@ -114,32 +111,8 @@ public class AuthController : ControllerBase
         }
 
         var barberia = barbero.Barberia!;
-        var token = GenerarJwtToken(barbero, barberia);
+        var token = _tokens.GenerarTokenBarbero(barbero, barberia);
         return Ok(new AuthResponseDto(token, barbero.NombreCompleto, barbero.Email, barberia.Slug, barberia.Nombre));
-    }
-
-    private string GenerarJwtToken(BarberoUser user, Barberia barberia)
-    {
-        var secretKey = _config["Jwt:Key"] ?? "ClaveSecretaSuperSeguraParaBarberFlow2026!DebeTenerMasDe32Caracteres";
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
-        var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
-
-        var claims = new[]
-        {
-            new Claim(ClaimTypes.NameIdentifier, user.Id.ToString()),
-            new Claim(ClaimTypes.Email, user.Email),
-            new Claim(ClaimTypes.Name, user.NombreCompleto),
-            new Claim("BarberiaId", barberia.Id.ToString()),
-            new Claim("BarberiaSlug", barberia.Slug)
-        };
-
-        var token = new JwtSecurityToken(
-            claims: claims,
-            expires: DateTime.UtcNow.AddDays(7),
-            signingCredentials: creds
-        );
-
-        return new JwtSecurityTokenHandler().WriteToken(token);
     }
 
     private static string GenerarSlug(string phrase)

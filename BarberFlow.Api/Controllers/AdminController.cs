@@ -4,10 +4,11 @@ using Microsoft.EntityFrameworkCore;
 using BarberFlow.Api.Data;
 using BarberFlow.Api.DTOs;
 using BarberFlow.Api.Models;
+using BarberFlow.Api.Services;
 
 namespace BarberFlow.Api.Controllers;
 
-[Authorize]
+[Authorize(Policy = PoliticasAuth.Barbero)]
 [ApiController]
 [Route("api/[controller]")]
 public class AdminController : ControllerBase
@@ -506,5 +507,49 @@ public class AdminController : ControllerBase
         _context.BotReglas.Remove(regla);
         await _context.SaveChangesAsync();
         return Ok(new { message = "Regla de bot eliminada." });
+    }
+
+    // ESTADO / QR DEL BOT DE WHATSAPP (proxy autenticado: el navegador nunca habla directo con el bot)
+    private static readonly HttpClient _botHttp = new() { Timeout = TimeSpan.FromSeconds(8) };
+
+    [HttpGet("bot/estado")]
+    public async Task<IActionResult> ObtenerEstadoBot()
+    {
+        var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
+        var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
+        if (string.IsNullOrWhiteSpace(botKey))
+        {
+            return StatusCode(503, new { message = "BOT_API_KEY no está configurada en el servidor." });
+        }
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{botUrl.TrimEnd('/')}/api/status");
+            req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
+            using var resp = await _botHttp.SendAsync(req);
+            if (!resp.IsSuccessStatusCode)
+            {
+                return StatusCode(502, new { message = "El servicio de WhatsApp no respondió correctamente." });
+            }
+
+            var json = await resp.Content.ReadAsStringAsync();
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var root = doc.RootElement;
+
+            // El bot actual atiende una sola barbería: solo su dueño puede ver el QR.
+            var slugBot = root.TryGetProperty("barberiaSlug", out var s) ? s.GetString() : null;
+            var slugAdmin = User.FindFirst("BarberiaSlug")?.Value;
+            if (string.IsNullOrEmpty(slugBot) || !string.Equals(slugBot, slugAdmin, StringComparison.OrdinalIgnoreCase))
+            {
+                return StatusCode(403, new { message = "El bot de WhatsApp no está asignado a tu barbería." });
+            }
+
+            return Content(json, "application/json");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Bot Estado Error]: {ex.Message}");
+            return StatusCode(502, new { message = "No se pudo conectar con el servicio de WhatsApp." });
+        }
     }
 }

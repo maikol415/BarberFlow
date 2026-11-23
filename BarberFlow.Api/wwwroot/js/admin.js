@@ -1250,14 +1250,20 @@ async function abrirModalVincularWhatsApp() {
 
   async function consultarEstadoBot() {
     try {
-      // Consultar directamente el bot en la nube (Render) o fallback local
-      let res;
-      try {
-        res = await fetch('https://barberflow-bot.onrender.com/api/status');
-      } catch (e) {
-        res = await fetch('http://localhost:3001/api/status');
+      // El estado y el QR se piden a la API (autenticada); el navegador nunca habla directo con el bot
+      const res = await fetch('/api/admin/bot/estado', { headers: getAuthHeaders() });
+      if (!res.ok) {
+        const txtErr = document.getElementById('txt-estado-qr');
+        const loaderErr = document.getElementById('loader-qr');
+        let msg = 'Conectando con el servicio de WhatsApp...';
+        try { msg = (await res.json()).message || msg; } catch (e) {}
+        if (txtErr) txtErr.innerText = msg;
+        if (res.status === 403 || res.status === 503) {
+          if (loaderErr) loaderErr.classList.add('hidden');
+          clearInterval(intervalPollBot);
+        }
+        return;
       }
-      if (!res.ok) return;
       const data = await res.json();
 
       const txt = document.getElementById('txt-estado-qr');

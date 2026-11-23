@@ -1,4 +1,5 @@
 using System.Text;
+using BarberFlow.Api.Services;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -62,7 +63,21 @@ builder.Services.AddDbContext<AppDbContext>(options =>
 });
 
 // Configuración de Autenticación JWT
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "ClaveSecretaSuperSeguraParaBarberFlow2026!DebeTenerMasDe32Caracteres";
+// La clave se lee de la variable de entorno Jwt__Key (o JWT_KEY). Nunca debe estar en el repositorio.
+var jwtKey = builder.Configuration["Jwt:Key"] ?? Environment.GetEnvironmentVariable("JWT_KEY");
+if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
+{
+    throw new InvalidOperationException(
+        "Falta la clave JWT. Define la variable de entorno Jwt__Key (mínimo 32 caracteres) en Render. " +
+        "En desarrollo local se toma de appsettings.Development.json.");
+}
+if (!builder.Environment.IsDevelopment() && jwtKey.StartsWith("solo-desarrollo-local"))
+{
+    throw new InvalidOperationException("Se está usando la clave JWT de desarrollo fuera de Development. Define Jwt__Key en el servidor.");
+}
+var tokenService = new TokenService(jwtKey);
+builder.Services.AddSingleton(tokenService);
+
 builder.Services.AddAuthentication(options =>
 {
     options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
@@ -75,11 +90,17 @@ builder.Services.AddAuthentication(options =>
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuerSigningKey = true,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        IssuerSigningKey = tokenService.Key,
         ValidateIssuer = false,
         ValidateAudience = false,
         ClockSkew = TimeSpan.Zero
     };
+});
+
+builder.Services.AddAuthorization(options =>
+{
+    options.AddPolicy(PoliticasAuth.Barbero, p => p.RequireClaim(PoliticasAuth.ClaimBarberiaId));
+    options.AddPolicy(PoliticasAuth.Cliente, p => p.RequireClaim(PoliticasAuth.ClaimClienteId));
 });
 
 builder.Services.AddCors(options =>

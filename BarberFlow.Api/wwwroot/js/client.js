@@ -1039,10 +1039,27 @@ function verificarSesionClienteLocal() {
   try {
     const raw = localStorage.getItem('bf_cliente_session');
     if (raw) {
-      clienteSesion = JSON.parse(raw);
+      const datos = JSON.parse(raw);
+      // Sesiones guardadas antes de usar token ya no sirven: pedir login de nuevo
+      if (!datos || !datos.token) {
+        localStorage.removeItem('bf_cliente_session');
+        return;
+      }
+      clienteSesion = datos;
       actualizarUiClienteLogueado();
     }
   } catch (e) {}
+}
+
+function headersAuthCliente() {
+  return clienteSesion && clienteSesion.token
+    ? { Authorization: `Bearer ${clienteSesion.token}` }
+    : {};
+}
+
+function manejarSesionClienteExpirada() {
+  alert('Tu sesión expiró. Por favor inicia sesión de nuevo.');
+  cerrarSesionCliente();
 }
 
 // Función para descomponer número y separar indicativo internacional
@@ -1216,7 +1233,11 @@ async function cargarCitasClientePerfil() {
   container.innerHTML = '<p class="text-xs text-gray-500 py-3 text-center">Cargando tus citas...</p>';
 
   try {
-    const res = await fetch(`/api/public/clientes/${clienteSesion.id}/citas`);
+    const res = await fetch('/api/public/clientes/me/citas', { headers: headersAuthCliente() });
+    if (res.status === 401) {
+      manejarSesionClienteExpirada();
+      return;
+    }
     if (!res.ok) {
       container.innerHTML = '<p class="text-xs text-gray-500 py-3 text-center">No se pudieron cargar tus citas.</p>';
       return;
@@ -1269,15 +1290,21 @@ function cerrarSesionCliente() {
 }
 
 async function confirmarEliminarCuentaCliente() {
-  if (!clienteSesion || !clienteSesion.id) return;
+  if (!clienteSesion || !clienteSesion.token) return;
 
   const confirma = confirm('¿Estás seguro de que deseas eliminar tu cuenta de usuario? Tus citas registradas en la barbería no se perderán, pero ya no tendrás acceso con esta cuenta.');
   if (!confirma) return;
 
   try {
-    const res = await fetch(`/api/public/clientes/${clienteSesion.id}`, {
-      method: 'DELETE'
+    const res = await fetch('/api/public/clientes/me', {
+      method: 'DELETE',
+      headers: headersAuthCliente()
     });
+
+    if (res.status === 401) {
+      manejarSesionClienteExpirada();
+      return;
+    }
 
     if (res.ok) {
       alert('Tu cuenta de usuario ha sido eliminada con éxito.');

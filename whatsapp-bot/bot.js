@@ -3,11 +3,38 @@ import QRCode from 'qrcode';
 import http from 'http';
 import fetch from 'node-fetch';
 import fs from 'fs';
+import crypto from 'crypto';
 
 const PORT = process.env.PORT || 3001;
 const API_BASE_URL = process.env.BARBERFLOW_API_URL || 'https://barberflow-aos9.onrender.com/api/public';
 const BARBERIA_SLUG = process.env.BARBERIA_SLUG || 'barberia-jr';
 const BASE_WEB_URL = process.env.BARBERFLOW_WEB_URL || 'https://barberflow-aos9.onrender.com';
+// Clave compartida con la API (misma variable BOT_API_KEY en ambos servicios de Render)
+const BOT_API_KEY = process.env.BOT_API_KEY || '';
+if (!BOT_API_KEY) {
+  console.warn('⚠️ BOT_API_KEY no está definida: la API rechazará las consultas del bot y los webhooks quedarán cerrados.');
+}
+
+// fetch hacia los endpoints /bot/* de la API, siempre con la clave del bot
+function apiBotFetch(ruta, opciones = {}) {
+  return fetch(`${API_BASE_URL}${ruta}`, {
+    ...opciones,
+    headers: { ...(opciones.headers || {}), 'X-Bot-Key': BOT_API_KEY }
+  });
+}
+
+// Verifica el encabezado X-Bot-Key de las peticiones entrantes (API ➔ bot)
+function peticionAutorizada(req) {
+  if (!BOT_API_KEY) return false;
+  const recibida = Buffer.from(String(req.headers['x-bot-key'] || ''));
+  const esperada = Buffer.from(BOT_API_KEY);
+  return recibida.length === esperada.length && crypto.timingSafeEqual(recibida, esperada);
+}
+
+function responderNoAutorizado(res) {
+  res.writeHead(401, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ error: 'No autorizado' }));
+}
 
 const ultimaInteraccionCliente = new Map(); // Para saber cuándo habló por última vez
 const ultimaDerivacionMap = new Map(); // Para registrar el tiempo exacto de derivación por remitente
@@ -136,8 +163,14 @@ http.createServer(async (req, res) => {
     return;
   }
 
+  // Todos los endpoints /api/* exigen la clave compartida con la API
+  if (req.url.startsWith('/api/') && !peticionAutorizada(req)) {
+    responderNoAutorizado(res);
+    return;
+  }
+
   // 1. Endpoint para resetear sesión de WhatsApp
-  if (req.url.startsWith('/api/reset')) {
+  if (req.method === 'POST' && req.url.startsWith('/api/reset')) {
     try {
       fs.rmSync('./auth_info_baileys', { recursive: true, force: true });
     } catch (e) {}
@@ -154,6 +187,7 @@ http.createServer(async (req, res) => {
   if (req.url.startsWith('/api/status')) {
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
+      barberiaSlug: BARBERIA_SLUG,
       conectado: estaConectado,
       estado: estadoConexion,
       qr: ultimoQrDataUrl
@@ -231,32 +265,9 @@ http.createServer(async (req, res) => {
     return;
   }
 
-  // Página embedeable dentro del iframe del modal
-  res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-  res.end(`
-    <!DOCTYPE html>
-    <html lang="es">
-    <head>
-      <meta charset="UTF-8">
-      <title>QR WhatsApp</title>
-      <style>
-        body { font-family: sans-serif; background: transparent; color: #111827; display: flex; flex-direction: column; justify-content: center; align-items: center; min-height: 100vh; margin: 0; padding: 10px; text-align: center; }
-        .qr-img { width: 230px; height: 230px; border-radius: 12px; margin: 0 auto; display: block; }
-        .status { margin-top: 10px; font-weight: bold; color: #059669; font-size: 13px; }
-      </style>
-      <meta http-equiv="refresh" content="4">
-    </head>
-    <body>
-      ${
-        estaConectado 
-          ? `<div style="padding:20px;"><h3 style="color:#059669;margin:0;">✅ ¡WhatsApp Conectado!</h3><p style="color:#4B5563;font-size:12px;margin-top:5px;">El bot está activo y listo para responder.</p></div>`
-          : ultimoQrDataUrl.startsWith('data:image') 
-            ? `<img src="${ultimoQrDataUrl}" class="qr-img" alt="Código QR"><div class="status">${estadoConexion}</div>` 
-            : `<div style="padding:30px;color:#6B7280;font-size:13px;">Generando código QR...</div>`
-      }
-    </body>
-    </html>
-  `);
+  // Página pública mínima (health check). El QR solo se entrega por /api/status con la clave.
+  res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+  res.end(`BarberFlow bot activo. WhatsApp ${estaConectado ? 'conectado' : 'sin conectar'}.`);
 }).listen(PORT, () => {
   console.log(`Servidor del Bot y Webhooks activo en el puerto ${PORT}`);
 });
@@ -368,7 +379,7 @@ async function iniciarBot() {
         if (soloNumeros === '1' || texto.includes('si') || texto.includes('sí') || texto.includes('cancelar')) {
           // Confirmó cancelar la cita
           try {
-            const resCanc = await fetch(`${API_BASE_URL}/bot/cancelar-cita/${estado.citaId}`, { method: 'POST' });
+            const resCanc = await apiBotFetch(`/bot/${BARBERIA_SLUG}/cancelar-cita/${estado.citaId}`, { method: 'POST' });
             if (resCanc.ok) {
               estadoCliente.set(remitente, { nivel: 'INICIO' });
               const nombreCliente = estado.citaNombre || 'amigo';
@@ -415,14 +426,14 @@ async function iniciarBot() {
       const buscarCitaClienteAsync = async () => {
         try {
           console.log(`[Buscando Cita] Probando con tel: ${telSoloDigitos} y ultimos10: ${ultimos10}`);
-          let res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telSoloDigitos}`);
+          let res = await apiBotFetch(`/bot/${BARBERIA_SLUG}/citas-cliente/${telSoloDigitos}`);
           if (res.ok) {
             const data = await res.json();
             console.log(`[Cita Encontrada] id: ${data.id}`);
             return data;
           }
           if (ultimos10 && ultimos10 !== telSoloDigitos) {
-            res = await fetch(`${API_BASE_URL}/bot/citas-cliente/${ultimos10}`);
+            res = await apiBotFetch(`/bot/${BARBERIA_SLUG}/citas-cliente/${ultimos10}`);
             if (res.ok) {
               const data = await res.json();
               console.log(`[Cita Encontrada con ultimos10] id: ${data.id}`);
@@ -620,7 +631,7 @@ async function iniciarBot() {
         // Intentar consultar si ya es un cliente conocido en el sistema
         let saludoPersonalizado = `💈 *Bienvenido a ${barberia.nombre || 'Barberia JR'}*`;
         try {
-          const resCli = await fetch(`${API_BASE_URL}/bot/citas-cliente/${telBusqueda}`);
+          const resCli = await apiBotFetch(`/bot/${BARBERIA_SLUG}/citas-cliente/${telBusqueda}`);
           if (resCli.ok) {
             const datosCita = await resCli.json();
             if (datosCita && datosCita.nombreCliente) {
@@ -778,7 +789,7 @@ setInterval(async () => {
 
     if (horaMinutoActual === horaObjetivo) {
       // Disparar anuncio matutino a la barbería
-      const res = await fetch(`${API_BASE_URL}/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
+      const res = await apiBotFetch(`/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
       if (res.ok) {
         const data = await res.json();
         const telefonoBarbero = data.telefonoWhatsApp;

@@ -1,8 +1,10 @@
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BarberFlow.Api.Data;
 using BarberFlow.Api.DTOs;
 using BarberFlow.Api.Models;
+using BarberFlow.Api.Services;
 
 namespace BarberFlow.Api.Controllers;
 
@@ -11,10 +13,12 @@ namespace BarberFlow.Api.Controllers;
 public class PublicController : ControllerBase
 {
     private readonly AppDbContext _context;
+    private readonly TokenService _tokens;
 
-    public PublicController(AppDbContext context)
+    public PublicController(AppDbContext context, TokenService tokens)
     {
         _context = context;
+        _tokens = tokens;
     }
 
     [HttpGet("barberia/{slug}")]
@@ -195,6 +199,18 @@ public class PublicController : ControllerBase
             return hh * 60 + mm;
         }
 
+        // Si es un reagendamiento, la cita original debe ser de esta barbería y del mismo teléfono
+        Cita? citaAnterior = null;
+        if (dto.ReagendarCitaId.HasValue)
+        {
+            citaAnterior = await _context.Citas.FindAsync(dto.ReagendarCitaId.Value);
+            if (citaAnterior == null || citaAnterior.BarberiaId != barberia.Id ||
+                !TelefonoHelper.MismoTelefono(citaAnterior.TelefonoCliente, dto.TelefonoCliente))
+            {
+                return BadRequest(new { message = "No pudimos verificar la cita que quieres reagendar. Usa el mismo número de WhatsApp con el que reservaste." });
+            }
+        }
+
         var nuevoTurnoInicio = ConvertirHoraAMinutos(dto.Hora);
         var nuevoTurnoFin = nuevoTurnoInicio + servicio.DuracionMinutos;
 
@@ -206,7 +222,7 @@ public class PublicController : ControllerBase
 
         var hayTraslapeCita = citasDia.Any(c =>
         {
-            if (dto.ReagendarCitaId.HasValue && c.Id == dto.ReagendarCitaId.Value) return false;
+            if (citaAnterior != null && c.Id == citaAnterior.Id) return false;
             var existIni = ConvertirHoraAMinutos(c.Hora);
             var existDur = c.Servicio?.DuracionMinutos ?? barberia.IntervaloMinutos;
             var existFin = existIni + existDur;
@@ -234,14 +250,10 @@ public class PublicController : ControllerBase
             Estado = "Confirmada"
         };
 
-        // Si es un reagendamiento, cancelar automáticamente la cita anterior
-        if (dto.ReagendarCitaId.HasValue)
+        // Si es un reagendamiento, cancelar automáticamente la cita anterior (ya verificada arriba)
+        if (citaAnterior != null)
         {
-            var citaAnterior = await _context.Citas.FindAsync(dto.ReagendarCitaId.Value);
-            if (citaAnterior != null && citaAnterior.BarberiaId == barberia.Id)
-            {
-                citaAnterior.Estado = "Cancelada";
-            }
+            citaAnterior.Estado = "Cancelada";
         }
 
         _context.Citas.Add(cita);
@@ -274,6 +286,11 @@ public class PublicController : ControllerBase
                     System.Text.Encoding.UTF8,
                     "application/json"
                 );
+                var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
+                if (!string.IsNullOrWhiteSpace(botKey))
+                {
+                    http.DefaultRequestHeaders.Add(RequiereBotKeyAttribute.Header, botKey);
+                }
                 await http.PostAsync($"{botUrl}/api/notificar-cita", jsonContent);
             }
             catch (Exception ex)
@@ -372,20 +389,25 @@ public class PublicController : ControllerBase
     }
 
     // 📱 CONSULTA Y GESTIÓN DE CITAS PARA EL BOT (CANCELAR / CITAS DEL DÍA)
-    [HttpGet("bot/citas-cliente/{telefono}")]
-    public async Task<IActionResult> ObtenerCitaClientePorTelefono(string telefono)
+    // Solo el bot puede llamar estos endpoints (encabezado X-Bot-Key) y siempre dentro de una barbería.
+    [RequiereBotKey]
+    [HttpGet("bot/{slug}/citas-cliente/{telefono}")]
+    public async Task<IActionResult> ObtenerCitaClientePorTelefono(string slug, string telefono)
     {
-        var cleanTel = new string(telefono.Where(char.IsDigit).ToArray());
-        var ultimos10 = cleanTel.Length >= 10 ? cleanTel.Substring(cleanTel.Length - 10) : cleanTel;
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
-        var cita = await _context.Citas
+        var citasActivas = await _context.Citas
             .Include(c => c.Servicio)
             .Include(c => c.MiembroEquipo)
-            .Where(c => c.Estado != "Cancelada" && 
-                       (c.TelefonoCliente.Contains(cleanTel) || c.TelefonoCliente.Contains(ultimos10)))
+            .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada")
+            .ToListAsync();
+
+        var cita = citasActivas
+            .Where(c => TelefonoHelper.MismoTelefono(c.TelefonoCliente, telefono))
             .OrderByDescending(c => c.Fecha)
             .ThenByDescending(c => c.Hora)
-            .FirstOrDefaultAsync();
+            .FirstOrDefault();
 
         if (cita == null) return NotFound(new { message = "No tienes citas activas para cancelar." });
 
@@ -403,12 +425,16 @@ public class PublicController : ControllerBase
         });
     }
 
-    [HttpPost("bot/cancelar-cita/{id}")]
-    public async Task<IActionResult> CancelarCitaBot(int id)
+    [RequiereBotKey]
+    [HttpPost("bot/{slug}/cancelar-cita/{id}")]
+    public async Task<IActionResult> CancelarCitaBot(string slug, int id)
     {
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
         var cita = await _context.Citas
             .Include(c => c.Servicio)
-            .FirstOrDefaultAsync(c => c.Id == id);
+            .FirstOrDefaultAsync(c => c.Id == id && c.BarberiaId == barberia.Id);
 
         if (cita == null) return NotFound(new { message = "Cita no encontrada." });
 
@@ -430,14 +456,15 @@ public class PublicController : ControllerBase
         });
     }
 
+    [RequiereBotKey]
     [HttpGet("bot/resumen-diario/{slug}")]
     public async Task<IActionResult> ObtenerResumenDiario(string slug, [FromQuery] string? fecha)
     {
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
-        var fechaFiltro = string.IsNullOrWhiteSpace(fecha) 
-            ? DateTime.UtcNow.ToString("yyyy-MM-dd") 
+        var fechaFiltro = string.IsNullOrWhiteSpace(fecha)
+            ? DateTime.UtcNow.ToString("yyyy-MM-dd")
             : fecha;
 
         var citas = await _context.Citas
@@ -477,23 +504,47 @@ public class PublicController : ControllerBase
     // ==============================================================
     // 👤 PORTAL Y REGISTRO DE CLIENTES INDEPENDIENTES POR BARBERÍA
     // ==============================================================
+    private async Task<ClienteUsuario?> BuscarClientePorTelefono(int barberiaId, string telefono)
+    {
+        var clientes = await _context.Clientes.Where(c => c.BarberiaId == barberiaId).ToListAsync();
+        return clientes.FirstOrDefault(c => TelefonoHelper.MismoTelefono(c.Telefono, telefono));
+    }
+
+    private object RespuestaSesionCliente(ClienteUsuario cliente, string message) => new
+    {
+        cliente.Id,
+        cliente.Nombre,
+        cliente.Telefono,
+        cliente.Genero,
+        Token = _tokens.GenerarTokenCliente(cliente),
+        message
+    };
+
+    private async Task<ClienteUsuario?> ObtenerClienteAutenticado()
+    {
+        var claim = User.FindFirst(PoliticasAuth.ClaimClienteId)?.Value;
+        if (!int.TryParse(claim, out var id)) return null;
+        return await _context.Clientes.FindAsync(id);
+    }
+
     [HttpPost("clientes/registro")]
     public async Task<IActionResult> RegistrarCliente([FromBody] ClienteRegisterDto dto)
     {
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
-        var telLimpio = new string(dto.Telefono.Where(char.IsDigit).ToArray());
+        var telLimpio = TelefonoHelper.SoloDigitos(dto.Telefono);
         if (string.IsNullOrWhiteSpace(telLimpio) || telLimpio.Length < 7)
         {
             return BadRequest(new { message = "Número de teléfono no válido." });
         }
 
-        var ultimos10 = telLimpio.Length >= 10 ? telLimpio.Substring(telLimpio.Length - 10) : telLimpio;
+        if (string.IsNullOrWhiteSpace(dto.Password) || dto.Password.Length < 4)
+        {
+            return BadRequest(new { message = "La contraseña debe tener al menos 4 caracteres." });
+        }
 
-        var existe = await _context.Clientes.AnyAsync(c => 
-            c.BarberiaId == barberia.Id && (c.Telefono == telLimpio || c.Telefono.EndsWith(ultimos10)));
-        if (existe)
+        if (await BuscarClientePorTelefono(barberia.Id, telLimpio) != null)
         {
             return BadRequest(new { message = "Ya existe una cuenta con este número en esta barbería. Inicia sesión directamente." });
         }
@@ -511,14 +562,7 @@ public class PublicController : ControllerBase
         _context.Clientes.Add(cliente);
         await _context.SaveChangesAsync();
 
-        return Ok(new
-        {
-            cliente.Id,
-            cliente.Nombre,
-            cliente.Telefono,
-            cliente.Genero,
-            message = "Cuenta creada con éxito."
-        });
+        return Ok(RespuestaSesionCliente(cliente, "Cuenta creada con éxito."));
     }
 
     [HttpPost("clientes/login")]
@@ -527,41 +571,31 @@ public class PublicController : ControllerBase
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
-        var telLimpio = new string(dto.Telefono.Where(char.IsDigit).ToArray());
-        var ultimos10 = telLimpio.Length >= 10 ? telLimpio.Substring(telLimpio.Length - 10) : telLimpio;
-
-        var cliente = await _context.Clientes.FirstOrDefaultAsync(c => 
-            c.BarberiaId == barberia.Id && (c.Telefono == telLimpio || c.Telefono.EndsWith(ultimos10)));
+        var cliente = await BuscarClientePorTelefono(barberia.Id, dto.Telefono);
 
         if (cliente == null || !BCrypt.Net.BCrypt.Verify(dto.Password, cliente.PasswordHash))
         {
             return BadRequest(new { message = "Teléfono o contraseña incorrecta." });
         }
 
-        return Ok(new
-        {
-            cliente.Id,
-            cliente.Nombre,
-            cliente.Telefono,
-            cliente.Genero,
-            message = "Bienvenido de nuevo."
-        });
+        return Ok(RespuestaSesionCliente(cliente, "Bienvenido de nuevo."));
     }
 
-    [HttpGet("clientes/{id}/citas")]
-    public async Task<IActionResult> ObtenerCitasCliente(int id)
+    [Authorize(Policy = PoliticasAuth.Cliente)]
+    [HttpGet("clientes/me/citas")]
+    public async Task<IActionResult> ObtenerCitasCliente()
     {
-        var cliente = await _context.Clientes.FindAsync(id);
-        if (cliente == null) return NotFound(new { message = "Cliente no encontrado." });
+        var cliente = await ObtenerClienteAutenticado();
+        if (cliente == null) return Unauthorized(new { message = "Tu sesión expiró. Inicia sesión de nuevo." });
 
-        var clienteTelDigits = new string(cliente.Telefono.Where(char.IsDigit).ToArray());
-        var clienteUltimos10 = clienteTelDigits.Length >= 10 ? clienteTelDigits.Substring(clienteTelDigits.Length - 10) : clienteTelDigits;
-
-        var citas = await _context.Citas
+        var citasBarberia = await _context.Citas
             .Include(c => c.Servicio)
             .Include(c => c.MiembroEquipo)
-            .Where(c => c.BarberiaId == cliente.BarberiaId && 
-                       (c.TelefonoCliente.Contains(clienteTelDigits) || c.TelefonoCliente.Contains(clienteUltimos10)))
+            .Where(c => c.BarberiaId == cliente.BarberiaId)
+            .ToListAsync();
+
+        var citas = citasBarberia
+            .Where(c => TelefonoHelper.MismoTelefono(c.TelefonoCliente, cliente.Telefono))
             .OrderByDescending(c => c.Fecha)
             .ThenByDescending(c => c.Hora)
             .Select(c => new
@@ -572,19 +606,20 @@ public class PublicController : ControllerBase
                 c.Hora,
                 c.Total,
                 c.Estado,
-                Servicio = c.Servicio != null ? c.Servicio.Nombre : "Servicio",
-                Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "Master Barber"
+                Servicio = c.Servicio?.Nombre ?? "Servicio",
+                Barbero = c.MiembroEquipo?.Nombre ?? "Master Barber"
             })
-            .ToListAsync();
+            .ToList();
 
         return Ok(citas);
     }
 
-    [HttpDelete("clientes/{id}")]
-    public async Task<IActionResult> EliminarCuentaCliente(int id)
+    [Authorize(Policy = PoliticasAuth.Cliente)]
+    [HttpDelete("clientes/me")]
+    public async Task<IActionResult> EliminarCuentaCliente()
     {
-        var cliente = await _context.Clientes.FindAsync(id);
-        if (cliente == null) return NotFound(new { message = "Cliente no encontrado." });
+        var cliente = await ObtenerClienteAutenticado();
+        if (cliente == null) return Unauthorized(new { message = "Tu sesión expiró. Inicia sesión de nuevo." });
 
         _context.Clientes.Remove(cliente);
         await _context.SaveChangesAsync();
