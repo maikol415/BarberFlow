@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Infrastructure;
 var builder = WebApplication.CreateBuilder(args);
 
 // Configuración de Base de Datos (Soporta Supabase / PostgreSQL, SQL Server o SQLite local)
-var supabaseConn = Environment.GetEnvironmentVariable("DATABASE_URL") 
+var supabaseConn = Environment.GetEnvironmentVariable("DATABASE_URL")
                    ?? builder.Configuration.GetConnectionString("SupabaseConnection");
 var useSqlServer = builder.Configuration.GetValue<bool>("UseSqlServer");
 
@@ -128,7 +128,7 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    
+
     // Si es PostgreSQL (Supabase), crear las tablas si no existen
     if (db.Database.IsNpgsql())
     {
@@ -165,6 +165,7 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""RecordatoriosActivos"" boolean NOT NULL DEFAULT true;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasRecordatorio"" integer NOT NULL DEFAULT 2;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PedirOpinionActivo"" boolean NOT NULL DEFAULT true;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasRecordatorios"" text NOT NULL DEFAULT '24,2';
             ");
         }
         catch (Exception ex)

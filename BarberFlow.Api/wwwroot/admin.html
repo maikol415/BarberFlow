@@ -10,8 +10,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126f">
-  <script src="/js/iconos.js?v=20261126f"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261126g">
+  <script src="/js/iconos.js?v=20261126g"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -587,16 +587,17 @@
                 <div class="w-9 h-5 bg-gray-800 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
               </label>
                 </div>
-                <div id="fila-horas-recordatorio" class="mt-3 flex items-center gap-2 flex-wrap">
-                  <label for="conf-horas-recordatorio" class="text-[11px] text-gray-300 font-semibold">Enviarlo</label>
-                  <select id="conf-horas-recordatorio" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white cursor-pointer">
-                    <option value="1">1 hora antes</option>
-                    <option value="2" selected>2 horas antes</option>
-                    <option value="3">3 horas antes</option>
-                    <option value="6">6 horas antes</option>
-                    <option value="12">12 horas antes</option>
-                    <option value="24">1 día antes</option>
-                  </select>
+                <div id="fila-horas-recordatorio" class="mt-3">
+                  <p class="text-[11px] text-gray-300 font-semibold mb-2">¿Cuándo? Puedes elegir varios:</p>
+                  <div id="opciones-horas-recordatorio" class="flex flex-wrap gap-2">
+                    <label class="cursor-pointer"><input type="checkbox" name="horas-recordatorio" value="48" class="sr-only peer"><span class="block text-xs px-3 py-2 rounded-xl border border-gray-700 text-gray-300 peer-checked:bg-emerald-600/20 peer-checked:border-emerald-500 peer-checked:text-emerald-200 transition">2 días antes</span></label>
+                    <label class="cursor-pointer"><input type="checkbox" name="horas-recordatorio" value="24" class="sr-only peer"><span class="block text-xs px-3 py-2 rounded-xl border border-gray-700 text-gray-300 peer-checked:bg-emerald-600/20 peer-checked:border-emerald-500 peer-checked:text-emerald-200 transition">1 día antes</span></label>
+                    <label class="cursor-pointer"><input type="checkbox" name="horas-recordatorio" value="12" class="sr-only peer"><span class="block text-xs px-3 py-2 rounded-xl border border-gray-700 text-gray-300 peer-checked:bg-emerald-600/20 peer-checked:border-emerald-500 peer-checked:text-emerald-200 transition">12 horas antes</span></label>
+                    <label class="cursor-pointer"><input type="checkbox" name="horas-recordatorio" value="6" class="sr-only peer"><span class="block text-xs px-3 py-2 rounded-xl border border-gray-700 text-gray-300 peer-checked:bg-emerald-600/20 peer-checked:border-emerald-500 peer-checked:text-emerald-200 transition">6 horas antes</span></label>
+                    <label class="cursor-pointer"><input type="checkbox" name="horas-recordatorio" value="3" class="sr-only peer"><span class="block text-xs px-3 py-2 rounded-xl border border-gray-700 text-gray-300 peer-checked:bg-emerald-600/20 peer-checked:border-emerald-500 peer-checked:text-emerald-200 transition">3 horas antes</span></label>
+                    <label class="cursor-pointer"><input type="checkbox" name="horas-recordatorio" value="2" class="sr-only peer"><span class="block text-xs px-3 py-2 rounded-xl border border-gray-700 text-gray-300 peer-checked:bg-emerald-600/20 peer-checked:border-emerald-500 peer-checked:text-emerald-200 transition">2 horas antes</span></label>
+                    <label class="cursor-pointer"><input type="checkbox" name="horas-recordatorio" value="1" class="sr-only peer"><span class="block text-xs px-3 py-2 rounded-xl border border-gray-700 text-gray-300 peer-checked:bg-emerald-600/20 peer-checked:border-emerald-500 peer-checked:text-emerald-200 transition">1 hora antes</span></label>
+                  </div>
                 </div>
               </div>
               <div class="p-3.5 rounded-xl bg-gray-950 border border-gray-800 flex items-start justify-between gap-3">
@@ -945,9 +946,9 @@
     </div>
   </div>
 
-  <script src="/js/tema.js?v=20261126f"></script>
-  <script src="/js/avisos.js?v=20261126f"></script>
-  <script src="/js/admin.js?v=20261126f"></script>
+  <script src="/js/tema.js?v=20261126g"></script>
+  <script src="/js/avisos.js?v=20261126g"></script>
+  <script src="/js/admin.js?v=20261126g"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

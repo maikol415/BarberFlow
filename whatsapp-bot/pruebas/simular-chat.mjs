@@ -28,6 +28,7 @@ const {
   avisoDeHoy,
   INTENCION,
   probarConversacion,
+  horasDeRecordatorio,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -251,8 +252,15 @@ const telCarlaJid = { remoteJid: `${dig(telCarla)}@s.whatsapp.net` };
 // Recordatorio: simular que faltan 2 horas para la cita de Carla
 const [ma, mm, md] = manana.split('-').map(Number);
 const mediodia = Date.UTC(ma, mm - 1, md, 5, minCarla - 120);
+// Varios recordatorios: 1 día antes y 2 horas antes (configuración por defecto)
+comprobar('Recordatorios elegidos por defecto: 1 día y 2 horas antes', horasDeRecordatorio({ horasRecordatorios: '24,2' }).join(','), ['24,2']);
+comprobar('Recordatorios: ignora valores raros y ordena', horasDeRecordatorio({ horasRecordatorios: '2,99,48' }).join(','), ['48,2']);
+comprobar('Recordatorios: barberías sin la opción nueva usan la anterior', horasDeRecordatorio({ horasRecordatorio: 3 }).join(','), ['3']);
 enviados.length = 0;
-let recordados = await revisarRecordatorios(mediodia);
+let recordados = await revisarRecordatorios(mediodia - 22 * 3600000);
+comprobar('Recordatorio 1 día antes de la cita', recordados.includes(citaCarla.id) ? enviados.map(e => e.texto).join(' | ') : 'no enviado', ['Te recordamos tu cita de mañana']);
+enviados.length = 0;
+recordados = await revisarRecordatorios(mediodia);
 comprobar('Recordatorio 2 h antes de la cita (pide confirmar si falta)', recordados.includes(citaCarla.id) ? todo() : 'no enviado', ['Te recordamos tu cita', citaCarla.hora, 'Responde *SI*']);
 
 r = await cliente(telCarlaJid, 'Si');

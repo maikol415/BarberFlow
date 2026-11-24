@@ -35,7 +35,8 @@ public class Barberia
 
     // Mensajes automáticos del bot a los clientes
     public bool RecordatoriosActivos { get; set; } = true; // Recordar la cita por WhatsApp
-    public int HorasRecordatorio { get; set; } = 2;        // Cuántas horas antes (1, 2, 3, 6, 12 o 24)
+    public int HorasRecordatorio { get; set; } = 2;        // (anterior: un solo recordatorio) se conserva por compatibilidad
+    public string HorasRecordatorios { get; set; } = "24,2"; // Uno o varios: horas antes de la cita (48, 24, 12, 6, 3, 2, 1)
     public bool PedirOpinionActivo { get; set; } = true;   // Pedir calificación 1 hora después de la cita
     public string DiasLaborales { get; set; } = "1,2,3,4,5,6"; // 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb, 0=Dom
 

@@ -118,7 +118,8 @@ async function cargarPerfil() {
     const chkRecordatorios = document.getElementById('conf-recordatorios-activos');
     if (chkRecordatorios) {
       chkRecordatorios.checked = barberiaActual.recordatoriosActivos !== false;
-      document.getElementById('conf-horas-recordatorio').value = String(barberiaActual.horasRecordatorio || 2);
+      const elegidas = String(barberiaActual.horasRecordatorios || barberiaActual.horasRecordatorio || '24,2').split(',');
+      document.querySelectorAll('input[name="horas-recordatorio"]').forEach(c => { c.checked = elegidas.includes(c.value); });
       const alternarHoras = () => document.getElementById('fila-horas-recordatorio').classList.toggle('opacity-40', !chkRecordatorios.checked);
       chkRecordatorios.onchange = alternarHoras;
       alternarHoras();
@@ -1257,6 +1258,11 @@ function mostrarSeccion(sec) {
 
 // FUNCIONES DEL BOT DE WHATSAPP
 async function guardarConfiguracionBot() {
+  const recordar = document.getElementById('conf-recordatorios-activos');
+  if (recordar?.checked && !document.querySelector('input[name="horas-recordatorio"]:checked')) {
+    avisar('Elige al menos un momento para el recordatorio (por ejemplo "1 día antes"), o apaga los recordatorios.', 'error');
+    return;
+  }
   const payload = {
     nombre: barberiaActual.nombre,
     descripcion: barberiaActual.descripcion,
@@ -1279,7 +1285,7 @@ async function guardarConfiguracionBot() {
     plantillaConfirmacion: document.getElementById('conf-bot-confirmacion').value,
     plantillaRecordatorio: document.getElementById('conf-bot-recordatorio').value,
     recordatoriosActivos: document.getElementById('conf-recordatorios-activos')?.checked !== false,
-    horasRecordatorio: parseInt(document.getElementById('conf-horas-recordatorio')?.value || '2'),
+    horasRecordatorios: [...document.querySelectorAll('input[name="horas-recordatorio"]:checked')].map(c => c.value).join(',') || undefined,
     pedirOpinionActivo: document.getElementById('conf-pedir-opinion')?.checked !== false,
     anuncioMatutinoActivo: document.getElementById('conf-anuncio-activo')?.checked !== false,
     horaAnuncioSemana: document.getElementById('conf-anuncio-semana')?.value || '08:00',

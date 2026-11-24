@@ -562,39 +562,51 @@ function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barber
   return Math.round(espera / 60000);
 }
 
-// Recordatorio automático X horas antes de cada cita (X se elige en el panel: 1, 2, 3, 6, 12 o 24).
-// Se apaga desde el panel o con RECORDATORIOS_ACTIVOS=0. Se recuerda en memoria qué citas ya se avisaron.
-const HORAS_RECORDATORIO_VALIDAS = [1, 2, 3, 6, 12, 24];
-const recordatoriosEnviados = new Set();
+// Recordatorios automáticos: el barbero elige en el panel uno o varios momentos (2 días, 1 día, 12, 6, 3, 2 o 1 hora antes).
+// Se apagan desde el panel o con RECORDATORIOS_ACTIVOS=0. Se recuerda en memoria qué recordatorio de cada cita ya salió.
+const HORAS_RECORDATORIO_VALIDAS = [48, 24, 12, 6, 3, 2, 1];
+const recordatoriosEnviados = new Set(); // "citaId:horas"
+
+export function horasDeRecordatorio(barberia) {
+  const lista = String(barberia?.horasRecordatorios ?? '').split(',').map(Number).filter(h => HORAS_RECORDATORIO_VALIDAS.includes(h));
+  if (lista.length) return [...new Set(lista)].sort((a, b) => b - a);
+  const una = Number(barberia?.horasRecordatorio);
+  return [HORAS_RECORDATORIO_VALIDAS.includes(una) ? una : 2];
+}
+
 export async function revisarRecordatorios(ahoraMs = Date.now()) {
   if (process.env.RECORDATORIOS_ACTIVOS === '0') return [];
   if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return [];
 
   const barberiaDatos = await obtenerDatosBarberia();
   if (barberiaDatos.recordatoriosActivos === false) return [];
-  const horas = HORAS_RECORDATORIO_VALIDAS.includes(Number(barberiaDatos.horasRecordatorio)) ? Number(barberiaDatos.horasRecordatorio) : 2;
-  const objetivo = horas * 60;
+  const listaHoras = horasDeRecordatorio(barberiaDatos);
+  const masLejano = Math.max(...listaHoras);
 
   const fechaCo = ms => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ms));
   const hoy = fechaCo(ahoraMs);
-  // Con 6 horas o más, la cita a recordar puede ser de mañana
-  const fechas = horas >= 6 ? [hoy, fechaCo(ahoraMs + 86400000)] : [hoy];
+  const manana = fechaCo(ahoraMs + 86400000);
+  // Días a revisar: hoy y los siguientes que alcance el recordatorio más lejano
+  const fechas = [hoy];
+  for (let d = 1; d <= Math.ceil((masLejano + 1) / 24); d++) fechas.push(fechaCo(ahoraMs + d * 86400000));
   const enviados = [];
 
   for (const fechaIso of fechas) {
     const res = await apiBotFetch(`/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
     if (!res.ok) continue;
     const data = await res.json();
-    const cuando = fechaIso === hoy ? 'de hoy' : 'de mañana';
+    const cuando = fechaIso === hoy ? 'de hoy' : fechaIso === manana ? 'de mañana' : `del ${fechaLegible(fechaIso)}`;
 
     for (const c of data.citas || []) {
-      if (!['Confirmada', 'Pendiente'].includes(c.estado) || !c.telefonoCliente || recordatoriosEnviados.has(c.id)) continue;
+      if (!['Confirmada', 'Pendiente'].includes(c.estado) || !c.telefonoCliente) continue;
       const inicio = instanteCita(fechaIso, c.hora);
       if (!inicio) continue;
       const minutosFaltan = (inicio - ahoraMs) / 60000;
-      if (minutosFaltan < objetivo - 30 || minutosFaltan > objetivo + 30) continue;
+      // ¿Toca alguno de los recordatorios elegidos? (ventana de ±30 min alrededor de cada uno)
+      const horas = listaHoras.find(h => Math.abs(minutosFaltan - h * 60) <= 30);
+      if (!horas || recordatoriosEnviados.has(`${c.id}:${horas}`)) continue;
 
-      recordatoriosEnviados.add(c.id);
+      recordatoriosEnviados.add(`${c.id}:${horas}`);
       const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
       const plantillaRec = (barberiaDatos.plantillaRecordatorio || '').trim();
       if (plantillaRec) {

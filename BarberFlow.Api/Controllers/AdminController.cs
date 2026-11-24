@@ -68,7 +68,7 @@ public class AdminController : ControllerBase
                 barberia.IntervaloMinutos,
                 barberia.MinutosAnticipacion,
                 barberia.RecordatoriosActivos,
-                barberia.HorasRecordatorio,
+                barberia.HorasRecordatorios,
                 barberia.PedirOpinionActivo,
                 barberia.DiasLaborales,
                 barberia.MostrarSelectorBarbero,
@@ -145,6 +145,16 @@ public class AdminController : ControllerBase
         if (dto.AnuncioMatutinoActivo.HasValue) barberia.AnuncioMatutinoActivo = dto.AnuncioMatutinoActivo.Value;
         if (dto.RecordatoriosActivos.HasValue) barberia.RecordatoriosActivos = dto.RecordatoriosActivos.Value;
         if (dto.HorasRecordatorio is 1 or 2 or 3 or 6 or 12 or 24) barberia.HorasRecordatorio = dto.HorasRecordatorio.Value;
+        if (dto.HorasRecordatorios != null)
+        {
+            // Solo valores permitidos, sin repetir, del más lejano al más cercano: "48,24,2"
+            var permitidas = new[] { 48, 24, 12, 6, 3, 2, 1 };
+            var elegidas = dto.HorasRecordatorios.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(h => int.TryParse(h, out var n) ? n : 0)
+                .Where(permitidas.Contains).Distinct().OrderByDescending(h => h).ToList();
+            if (elegidas.Count == 0) return BadRequest(new { message = "Elige al menos un momento para el recordatorio, o apaga los recordatorios." });
+            barberia.HorasRecordatorios = string.Join(",", elegidas);
+        }
         if (dto.PedirOpinionActivo.HasValue) barberia.PedirOpinionActivo = dto.PedirOpinionActivo.Value;
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSemana)) barberia.HoraAnuncioSemana = dto.HoraAnuncioSemana.Trim();
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSabado)) barberia.HoraAnuncioSabado = dto.HoraAnuncioSabado.Trim();
