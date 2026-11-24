@@ -10,8 +10,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126n">
-  <script src="/js/iconos.js?v=20261126n"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261124c">
+  <script src="/js/iconos.js?v=20261124c"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -199,8 +199,13 @@
           </div>
 
           <label class="block text-xs font-semibold text-gray-400 mb-2">Portada (fondo de la parte de arriba de tu página)</label>
-          <div id="preview-portada" class="h-28 rounded-xl border border-gray-800 bg-gray-900 flex items-end p-3">
+          <div id="preview-portada" class="w-full max-w-xl aspect-[5/2] rounded-xl border border-gray-800 bg-gray-900 flex items-end p-3">
             <span id="preview-portada-nombre" class="text-xs font-bold text-white bg-black/50 rounded-lg px-2 py-1"></span>
+          </div>
+          <div id="ajuste-portada" class="hidden mt-2 w-full max-w-xl p-3 rounded-xl bg-gray-950 border border-gray-800 space-y-2">
+            <p class="text-[11px] text-gray-400"><b class="text-gray-200">Ajusta qué parte de la foto se ve:</b> arrástrala dentro del recuadro o usa las barras. Así se verá en tu página.</p>
+            <label class="flex items-center gap-3 text-[11px] text-gray-400"><span class="w-28 flex-shrink-0">↕ Arriba / abajo</span><input type="range" id="portada-pos-y" min="0" max="100" class="flex-1 accent-blue-500 cursor-pointer"></label>
+            <label class="flex items-center gap-3 text-[11px] text-gray-400"><span class="w-28 flex-shrink-0">↔ Izquierda / derecha</span><input type="range" id="portada-pos-x" min="0" max="100" class="flex-1 accent-blue-500 cursor-pointer"></label>
           </div>
           <p class="text-[11px] text-gray-500 mt-3 mb-2">Elige un diseño (usa el color de tu marca) o sube tu propia foto:</p>
           <div id="galeria-portadas" class="grid grid-cols-4 sm:grid-cols-7 gap-2"></div>
@@ -210,7 +215,7 @@
               <input type="file" id="input-file-portada" accept="image/*" class="hidden" onchange="subirPortadaBarberia(event)">
             </label>
             <button type="button" onclick="quitarPortadaBarberia()" class="py-1.5 px-3 rounded-lg text-xs text-gray-400 hover:text-red-300">Quitar portada</button>
-            <span class="text-[11px] text-gray-500">Recomendado: foto horizontal del local o de tus cortes.</span>
+            <span class="text-[11px] text-gray-500">Tamaño ideal: <b class="text-gray-300">1500 × 600 px</b> (horizontal). Deja lo importante en el centro: así se ve igual en celular y computador.</span>
           </div>
         </div>
 
@@ -436,23 +441,35 @@
             <span class="block text-sm font-bold text-blue-300">☕ Pausa de la tarde</span>
             <span class="block text-xs text-gray-400 mt-0.5">4:30 – 5:30 p. m.</span>
           </button>
+          <button type="button" onclick="cerrarRestoDeHoy()" class="col-span-2 p-3 rounded-2xl text-left bg-red-500/10 border border-red-500/25 hover:bg-red-500/20 transition">
+            <span class="block text-sm font-bold text-red-300">🚨 Tengo un imprevisto: cerrar el resto de hoy</span>
+            <span class="block text-xs text-gray-400 mt-0.5">Desde ahora hasta el cierre. Si hay clientes con cita, te ofrecemos avisarles por WhatsApp para que reagenden.</span>
+          </button>
         </div>
 
         <form id="form-bloqueo" onsubmit="agregarBloqueo(event)" class="p-4 rounded-2xl bg-gray-950 border border-gray-800 space-y-4 mb-6">
           <p class="text-sm font-bold text-white">Bloquear otro día u horario</p>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label class="block text-xs text-gray-400 mb-1 font-semibold" for="bloq-fecha">Fecha</label>
+              <label id="lbl-bloq-fecha" class="block text-xs text-gray-400 mb-1 font-semibold" for="bloq-fecha">Fecha</label>
               <input type="date" id="bloq-fecha" required class="campo">
             </div>
             <div>
               <label class="block text-xs text-gray-400 mb-1 font-semibold" for="bloq-tipo">¿Qué quieres bloquear?</label>
               <select id="bloq-tipo" onchange="alternarCamposBloqueo()" class="campo cursor-pointer">
                 <option value="dia">Todo el día</option>
+                <option value="dias">Varios días seguidos (vacaciones, viaje…)</option>
                 <option value="rango" selected>Un rango de horas</option>
                 <option value="hora">Un solo turno</option>
               </select>
             </div>
+          </div>
+          <div id="col-bloq-hasta" class="hidden grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs text-gray-400 mb-1 font-semibold" for="bloq-fecha-hasta">Hasta (incluido)</label>
+              <input type="date" id="bloq-fecha-hasta" class="campo">
+            </div>
+            <p class="text-[11px] text-gray-500 self-end pb-2">Ej: del jueves al sábado. Esos días no se podrán reservar.</p>
           </div>
           <div id="col-bloq-rango" class="grid grid-cols-2 gap-3">
             <div>
@@ -893,21 +910,26 @@
           </div>
           <div>
             <label class="block text-xs text-gray-400 mb-1">Barbero *</label>
-            <select id="manual-barbero" required class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+            <select id="manual-barbero" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
               <!-- Opciones dinámicas -->
             </select>
           </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Fecha *</label>
-            <input type="date" id="manual-fecha" required class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs text-gray-400">Día *</label>
+            <span id="manual-dia-texto" class="text-[11px] text-gray-500"></span>
           </div>
-          <div>
-            <label class="block text-xs text-gray-400 mb-1">Hora *</label>
-            <input type="time" id="manual-hora" required value="14:00" class="w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white focus:outline-none focus:border-blue-500">
-          </div>
+          <div id="manual-dias" class="flex gap-1.5 overflow-x-auto pb-1 sin-barra"></div>
+          <input type="hidden" id="manual-fecha">
+        </div>
+
+        <div>
+          <label class="block text-xs text-gray-400 mb-1.5">Hora * <span class="text-gray-500">(solo salen las libres)</span></label>
+          <div id="manual-horas" class="grid grid-cols-3 sm:grid-cols-4 gap-1.5 max-h-44 overflow-y-auto pr-1"></div>
+          <button type="button" id="manual-otra-hora-btn" onclick="alternarOtraHoraManual()" class="mt-2 text-[11px] text-blue-300 underline underline-offset-2">Poner otra hora a mano (cliente que llegó sin cita, fuera de horario…)</button>
+          <input type="time" id="manual-hora" class="hidden mt-2 w-full bg-gray-950 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
         </div>
 
         <div class="flex items-center justify-end gap-2 pt-3 border-t border-gray-800">
@@ -965,9 +987,10 @@
     </div>
   </div>
 
-  <script src="/js/tema.js?v=20261126n"></script>
-  <script src="/js/avisos.js?v=20261126n"></script>
-  <script src="/js/admin.js?v=20261126n"></script>
+  <script src="/js/tema.js?v=20261124c"></script>
+  <script src="/js/avisos.js?v=20261124c"></script>
+  <script src="/js/turnos.js?v=20261124c"></script>
+  <script src="/js/admin.js?v=20261124c"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

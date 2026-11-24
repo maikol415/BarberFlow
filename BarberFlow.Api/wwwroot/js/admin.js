@@ -246,7 +246,8 @@ function pintarPreviewPortada() {
   if (!prev || !window.fondoPortada) return;
   const color = document.getElementById('conf-color').value;
   const actual = barberiaActual.portadaUrl || '';
-  prev.style.background = fondoPortada(actual, color);
+  prev.style.background = fondoPortada(actual, color, barberiaActual.portadaPosicion);
+  configurarEncuadrePortada(prev, !!actual && !actual.startsWith('preset:'));
   const nombre = actual.startsWith('preset:') ? (PORTADAS_BARBERIA[actual.slice(7)]?.nombre || 'Diseño')
     : actual ? 'Tu foto' : 'Degradado';
   document.getElementById('preview-portada-nombre').textContent = nombre;
@@ -266,6 +267,52 @@ function pintarPreviewPortada() {
   });
 }
 
+// Encuadre de la portada: arrastrar la foto o mover las barras cambia qué parte se ve ("x y" en %)
+function leerPosicionPortada() {
+  const m = /^(\d{1,3}) (\d{1,3})$/.exec(barberiaActual.portadaPosicion || '');
+  return m ? [Math.min(100, +m[1]), Math.min(100, +m[2])] : [50, 50];
+}
+
+function fijarPosicionPortada(x, y) {
+  const lim = v => Math.max(0, Math.min(100, Math.round(v)));
+  barberiaActual.portadaPosicion = `${lim(x)} ${lim(y)}`;
+  const prev = document.getElementById('preview-portada');
+  prev.style.backgroundPosition = `${lim(x)}% ${lim(y)}%`;
+  document.getElementById('portada-pos-x').value = lim(x);
+  document.getElementById('portada-pos-y').value = lim(y);
+}
+
+function configurarEncuadrePortada(prev, esFoto) {
+  document.getElementById('ajuste-portada').classList.toggle('hidden', !esFoto);
+  prev.style.cursor = esFoto ? 'grab' : '';
+  prev.style.touchAction = esFoto ? 'none' : '';
+  if (!esFoto) return;
+  const [x, y] = leerPosicionPortada();
+  document.getElementById('portada-pos-x').value = x;
+  document.getElementById('portada-pos-y').value = y;
+  if (prev.dataset.encuadreListo) return;
+  prev.dataset.encuadreListo = '1';
+
+  document.getElementById('portada-pos-x').oninput = e => fijarPosicionPortada(+e.target.value, leerPosicionPortada()[1]);
+  document.getElementById('portada-pos-y').oninput = e => fijarPosicionPortada(leerPosicionPortada()[0], +e.target.value);
+  // Arrastrar: mover el dedo hacia abajo baja la foto (se ve más de la parte de arriba)
+  let inicio = null;
+  prev.addEventListener('pointerdown', e => {
+    if (document.getElementById('ajuste-portada').classList.contains('hidden')) return;
+    inicio = { px: e.clientX, py: e.clientY, pos: leerPosicionPortada() };
+    prev.setPointerCapture(e.pointerId);
+    prev.style.cursor = 'grabbing';
+  });
+  prev.addEventListener('pointermove', e => {
+    if (!inicio) return;
+    const r = prev.getBoundingClientRect();
+    fijarPosicionPortada(inicio.pos[0] - (e.clientX - inicio.px) / r.width * 100, inicio.pos[1] - (e.clientY - inicio.py) / r.height * 100);
+  });
+  const soltar = () => { if (inicio) { inicio = null; prev.style.cursor = 'grab'; } };
+  prev.addEventListener('pointerup', soltar);
+  prev.addEventListener('pointercancel', soltar);
+}
+
 function hexARgbAdmin(hex) {
   const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
   return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [37, 99, 235];
@@ -276,8 +323,9 @@ async function subirPortadaBarberia(e) {
   if (!file) return;
   try {
     barberiaActual.portadaUrl = await comprimirImagen(file, 1800, 900, 0.82);
+    barberiaActual.portadaPosicion = '50 50';
     pintarPreviewPortada();
-    avisar('Portada lista. Haz clic en "Guardar Cambios de la Barbería" para publicarla.');
+    avisar('Portada lista. Ajusta qué parte se ve y haz clic en "Guardar Cambios de la Barbería" para publicarla.');
   } catch (err) {
     avisar('No se pudo procesar la imagen de portada.');
   }
@@ -483,6 +531,15 @@ function minutosDeHora(hora) {
 function horaLegible(hora) {
   const min = minutosDeHora(hora), h = Math.floor(min / 60);
   return `${h % 12 || 12}:${String(min % 60).padStart(2, '0')}\u00a0${h < 12 ? 'a.\u00a0m.' : 'p.\u00a0m.'}`;
+}
+
+function sumarDiasIso(iso, n) {
+  return new Date(Date.parse(iso + 'T12:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+}
+
+// "jue 26 nov"
+function fechaCorta(iso) {
+  return new Date(iso + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short' }).replace(/\./g, '').replace(',', '');
 }
 
 function hoyBogotaIso(desplazarDias = 0) {
@@ -734,18 +791,33 @@ function renderListaBloqueos(bloqueos) {
     return;
   }
 
-  container.innerHTML = proximos.map(b => {
+  // Días completos seguidos con el mismo motivo se muestran juntos ("jue 26 nov – sáb 28 nov · 3 días")
+  const grupos = [];
+  proximos.forEach(b => {
     const diaCompleto = !b.hora || b.hora === 'TODO_EL_DIA';
+    const ultimo = grupos[grupos.length - 1];
+    if (diaCompleto && ultimo?.diaCompleto && ultimo.motivo === b.motivo && sumarDiasIso(ultimo.hasta, 1) === b.fecha) {
+      ultimo.hasta = b.fecha;
+      ultimo.ids.push(b.id);
+    } else {
+      grupos.push({ diaCompleto, motivo: b.motivo, desde: b.fecha, hasta: b.fecha, hora: b.hora, ids: [b.id] });
+    }
+  });
+
+  container.innerHTML = grupos.map(g => {
+    const varios = g.ids.length > 1;
+    const titulo = varios ? `${fechaCorta(g.desde)} – ${fechaCorta(g.hasta)}` : tituloDia(g.desde);
+    const detalle = varios ? `${g.ids.length} días` : textoHorasBloqueo(g.hora);
     return `
       <div class="p-3 rounded-2xl bg-gray-950/60 border border-gray-800 flex items-center gap-3">
-        <span class="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center ${diaCompleto ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}">
-          <i data-lucide="${diaCompleto ? 'calendar-x' : 'clock'}" class="w-5 h-5"></i>
+        <span class="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center ${g.diaCompleto ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}">
+          <i data-lucide="${g.diaCompleto ? 'calendar-x' : 'clock'}" class="w-5 h-5"></i>
         </span>
         <div class="min-w-0 flex-1">
-          <p class="text-sm font-bold text-white">${escapeHtml(tituloDia(b.fecha))}</p>
-          <p class="text-xs text-gray-400 truncate">${escapeHtml(textoHorasBloqueo(b.hora))}${b.motivo ? ` · ${escapeHtml(b.motivo)}` : ''}</p>
+          <p class="text-sm font-bold text-white">${escapeHtml(titulo)}</p>
+          <p class="text-xs text-gray-400 truncate">${escapeHtml(detalle)}${g.motivo ? ` · ${escapeHtml(g.motivo)}` : ''}</p>
         </div>
-        <button onclick="eliminarBloqueo(${b.id})" class="text-xs px-3 py-2 rounded-xl text-gray-300 bg-gray-800 hover:bg-gray-700 font-semibold flex-shrink-0">Quitar</button>
+        <button onclick="eliminarBloqueos([${g.ids.join(',')}])" class="text-xs px-3 py-2 rounded-xl text-gray-300 bg-gray-800 hover:bg-gray-700 font-semibold flex-shrink-0">Quitar</button>
       </div>`;
   }).join('');
   lucide.createIcons();
@@ -762,6 +834,7 @@ async function guardarPerfilBarberia(e) {
     logoUrl: document.getElementById('conf-logo').value.trim() || barberiaActual.logoUrl,
     colorPrimario: document.getElementById('conf-color').value,
     portadaUrl: barberiaActual.portadaUrl || '',
+    portadaPosicion: barberiaActual.portadaPosicion || '50 50',
     mostrarSelectorBarbero: document.getElementById('conf-mostrar-barberos').checked,
     horaApertura: barberiaActual.horaApertura || '09:00',
     horaCierre: barberiaActual.horaCierre || '20:00',
@@ -1005,24 +1078,89 @@ async function bloquearPausaRapida(tipo) {
 
   for (const h of horas) {
     try {
-      await fetch('/api/admin/bloqueos', {
+      const res = await fetch('/api/admin/bloqueos', {
         method: 'POST',
         headers: getAuthHeaders(),
         body: JSON.stringify({ fecha: hoyIso, hora: h, motivo: motivo })
       });
+      if (res.ok) {
+        avisar(`¡${motivo} bloqueado para hoy con éxito!`);
+        await ofrecerAvisarCitasAfectadas(await res.json().catch(() => ({})), motivo.replace(/^\S+\s/, ''));
+      }
     } catch (err) {}
   }
-
-  avisar(`¡${motivo} bloqueado para hoy con éxito!`);
   cargarPerfil();
+}
+
+// Imprevisto: cerrar desde ahora hasta la hora de cierre de hoy
+async function cerrarRestoDeHoy() {
+  const ahora = TurnosBF.ahoraBogota();
+  const desde = Math.floor(ahora.minutos / 10) * 10;
+  const cierre = TurnosBF.aMinutos(barberiaActual?.horaCierre || '20:00');
+  if (desde >= cierre) {
+    avisar('Ya pasó la hora de cierre de hoy. Si es para otro día, usa "Bloquear otro día u horario".', 'info');
+    return;
+  }
+  const motivo = await pedirTexto(
+    `Se cerrará hoy desde las ${TurnosBF.minutosATexto(desde)} hasta las ${TurnosBF.minutosATexto(cierre)}.\n\n¿Cuál es el motivo? (tus clientes lo verán)`,
+    'Ej: Calamidad, cita médica, sin luz'
+  );
+  if (motivo === null) return;
+  const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const motivoFinal = motivo.trim() || 'Imprevisto';
+  try {
+    const res = await fetch('/api/admin/bloqueos', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ fecha: ahora.iso, hora: `${hhmm(desde)}-${hhmm(cierre)}`, motivo: motivoFinal })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return avisar(data.message || 'No se pudo cerrar el resto del día.', 'error');
+    avisar('Listo: el resto de hoy quedó cerrado para reservas.');
+    await ofrecerAvisarCitasAfectadas(data, motivoFinal);
+  } catch (err) {
+    avisar('Error al conectar con el servidor.', 'error');
+  }
+  cargarPerfil();
+}
+
+// Si el bloqueo cae sobre citas, ofrecer avisarles por WhatsApp (se cancelan y reciben el enlace para reagendar)
+async function ofrecerAvisarCitasAfectadas(data, motivo) {
+  const citas = data?.citasAfectadas || [];
+  if (!citas.length) return;
+  const lista = citas.slice(0, 8).map(c => `• ${c.nombreCliente} – ${tituloDia(c.fecha)}, ${horaLegible(c.hora)}`).join('\n') +
+    (citas.length > 8 ? `\n…y ${citas.length - 8} más` : '');
+  const n = citas.length === 1 ? 'una cita' : `${citas.length} citas`;
+  const pregunta = data.avisoPorWhatsApp
+    ? `Ese horario tenía ${n}:\n${lista}\n\n¿Les avisamos por WhatsApp? Sus citas se cancelan y cada cliente recibe el motivo y un enlace para elegir otra hora.`
+    : `Ese horario tenía ${n}:\n${lista}\n\nEl bot de WhatsApp no está conectado a tu barbería, así que avísales tú. ¿Cancelamos esas citas para liberar los horarios?`;
+  const si = await confirmar(pregunta, { aceptar: data.avisoPorWhatsApp ? 'Sí, avisarles' : 'Sí, cancelarlas', cancelar: 'No, yo me encargo', peligro: false });
+  if (!si) return;
+  try {
+    const res = await fetch('/api/admin/citas/avisar-imprevisto', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ citaIds: citas.map(c => c.id), motivo })
+    });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) return avisar(r.message || 'No se pudo avisar a los clientes.', 'error');
+    avisar(r.avisoPorWhatsApp
+      ? `Listo: se cancelaron ${r.canceladas} cita(s) y el bot les está escribiendo a los clientes.`
+      : `Listo: se cancelaron ${r.canceladas} cita(s). Recuerda avisarles tú.`);
+    cargarCitas();
+  } catch (err) {
+    avisar('Error al conectar con el servidor.', 'error');
+  }
 }
 
 function alternarCamposBloqueo() {
   const tipo = document.getElementById('bloq-tipo').value;
   const colRango = document.getElementById('col-bloq-rango');
   const colHora = document.getElementById('col-bloq-hora');
+  document.getElementById('col-bloq-hasta').classList.toggle('hidden', tipo !== 'dias');
+  document.getElementById('lbl-bloq-fecha').textContent = tipo === 'dias' ? 'Desde' : 'Fecha';
 
-  if (tipo === 'dia') {
+  if (tipo === 'dia' || tipo === 'dias') {
     colRango.classList.add('hidden');
     colHora.classList.add('hidden');
   } else if (tipo === 'rango') {
@@ -1041,8 +1179,15 @@ async function agregarBloqueo(e) {
   const motivo = document.getElementById('bloq-motivo').value.trim() || 'Descanso';
 
   let horaString = 'TODO_EL_DIA';
+  let fechaHasta = null;
 
-  if (tipo === 'rango') {
+  if (tipo === 'dias') {
+    fechaHasta = document.getElementById('bloq-fecha-hasta').value;
+    if (!fechaHasta || fechaHasta < fecha) {
+      avisar('Elige hasta qué día quieres bloquear (igual o después del primer día).', 'error');
+      return;
+    }
+  } else if (tipo === 'rango') {
     const desde = document.getElementById('bloq-desde').value;
     const hasta = document.getElementById('bloq-hasta').value;
     if (!desde || !hasta) {
@@ -1061,6 +1206,7 @@ async function agregarBloqueo(e) {
 
   const payload = {
     fecha: fecha,
+    fechaHasta: fechaHasta,
     hora: horaString,
     motivo: motivo
   };
@@ -1071,23 +1217,29 @@ async function agregarBloqueo(e) {
       headers: getAuthHeaders(),
       body: JSON.stringify(payload)
     });
+    const data = await res.json().catch(() => ({}));
     if (res.ok) {
       document.getElementById('bloq-motivo').value = '';
-      avisar('¡Horario o día bloqueado con éxito!');
+      avisar(fechaHasta ? `¡Listo! Bloqueaste del ${fechaCorta(fecha)} al ${fechaCorta(fechaHasta)}.` : '¡Horario o día bloqueado con éxito!');
+      await ofrecerAvisarCitasAfectadas(data, motivo);
       cargarPerfil();
+    } else {
+      avisar(data.message || 'No se pudo bloquear.', 'error');
     }
   } catch (err) {
     avisar('Error al registrar bloqueo.');
   }
 }
 
-async function eliminarBloqueo(id) {
-  if (!(await confirmar('¿Quitar este bloqueo? Ese horario vuelve a estar disponible para reservar.', { peligro: false, aceptar: 'Sí, quitar' }))) return;
+async function eliminarBloqueo(id) { return eliminarBloqueos([id]); }
+
+async function eliminarBloqueos(ids) {
+  const texto = ids.length > 1
+    ? `¿Quitar este bloqueo de ${ids.length} días? Esos días vuelven a estar disponibles para reservar.`
+    : '¿Quitar este bloqueo? Ese horario vuelve a estar disponible para reservar.';
+  if (!(await confirmar(texto, { peligro: false, aceptar: 'Sí, quitar' }))) return;
   try {
-    await fetch(`/api/admin/bloqueos/${id}`, {
-      method: 'DELETE',
-      headers: getAuthHeaders()
-    });
+    await Promise.all(ids.map(id => fetch(`/api/admin/bloqueos/${id}`, { method: 'DELETE', headers: getAuthHeaders() })));
     cargarPerfil();
   } catch (err) {
     avisar('Error al eliminar bloqueo.');
@@ -1095,30 +1247,111 @@ async function eliminarBloqueo(id) {
 }
 
 // ----------------- AGENDAMIENTO MANUAL (TABLET / LOCAL) -----------------
-function abrirModalCitaManual() {
+// Datos públicos de la barbería (citas ocupadas, bloqueos, horario) para mostrar solo horas libres
+let agendaManual = { datos: null, horaMin: null };
+
+async function abrirModalCitaManual() {
   const modal = document.getElementById('modal-cita-manual');
   if (!modal) return;
 
-  // Llenar selectores con servicios y barberos actuales
+  const servicios = (barberiaActual?.servicios || []).filter(s => s.activo !== false);
   const servSelect = document.getElementById('manual-servicio');
-  servSelect.innerHTML = (barberiaActual?.servicios || []).map(s =>
-    `<option value="${s.id}">${s.nombre} ($${Number(s.precio).toLocaleString()} - ${s.duracionMinutos}m)</option>`
+  servSelect.innerHTML = servicios.map(s =>
+    `<option value="${s.id}">${escapeHtml(s.nombre)} (${Number(s.precio).toLocaleString('es-CO')} · ${s.duracionMinutos} min)</option>`
   ).join('');
 
   const barbSelect = document.getElementById('manual-barbero');
-  const miembros = barberiaActual?.miembros || [];
-  barbSelect.innerHTML = miembros.map(m =>
-    `<option value="${m.id}">${m.nombre} (${m.rol})</option>`
-  ).join('');
+  const miembros = (barberiaActual?.miembros || []).filter(m => m.activo !== false);
+  barbSelect.innerHTML = (miembros.length > 1 ? '<option value="">Cualquiera (el que esté libre)</option>' : '') +
+    miembros.map(m => `<option value="${m.id}">${escapeHtml(m.nombre)}</option>`).join('');
 
-  // Fecha de hoy por defecto
-  const hoy = new Date();
-  const anio = hoy.getFullYear();
-  const mes = String(hoy.getMonth() + 1).padStart(2, '0');
-  const dia = String(hoy.getDate()).padStart(2, '0');
-  document.getElementById('manual-fecha').value = `${anio}-${mes}-${dia}`;
+  document.getElementById('manual-fecha').value = TurnosBF.ahoraBogota().iso;
+  agendaManual.horaMin = null;
+  document.getElementById('manual-hora').classList.add('hidden');
+  document.getElementById('manual-hora').value = '';
+  servSelect.onchange = barbSelect.onchange = () => { agendaManual.horaMin = null; pintarHorasManual(); };
 
   modal.classList.remove('hidden');
+  document.getElementById('manual-horas').innerHTML = '<p class="col-span-full text-xs text-gray-500 py-3">Cargando horas libres…</p>';
+  try {
+    const res = await fetch(`/api/public/barberia/${encodeURIComponent(barberiaActual.slug)}`);
+    agendaManual.datos = res.ok ? await res.json() : null;
+  } catch (e) { agendaManual.datos = null; }
+  pintarDiasManual();
+  pintarHorasManual();
+}
+
+function servicioManual() {
+  const id = Number(document.getElementById('manual-servicio').value);
+  return (agendaManual.datos?.servicios || barberiaActual?.servicios || []).find(s => s.id === id) || null;
+}
+
+function barberoManual() {
+  const v = document.getElementById('manual-barbero').value;
+  return v ? Number(v) : null;
+}
+
+function pintarDiasManual() {
+  const cont = document.getElementById('manual-dias');
+  const datos = agendaManual.datos || barberiaActual;
+  const hoy = TurnosBF.ahoraBogota().iso;
+  const elegido = document.getElementById('manual-fecha').value;
+  const dias = Array.from({ length: 30 }, (_, i) => TurnosBF.sumarDias(hoy, i));
+  cont.innerHTML = dias.map((iso, i) => {
+    const abierto = TurnosBF.diaLaborable(datos, iso);
+    const d = new Date(iso + 'T12:00:00Z');
+    const nombre = i === 0 ? 'Hoy' : i === 1 ? 'Mañ' : d.toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'short' }).replace('.', '');
+    const activo = iso === elegido;
+    return `<button type="button" data-fecha="${iso}" ${abierto ? '' : 'disabled'}
+      class="flex-shrink-0 w-12 py-1.5 rounded-xl border text-center transition ${activo ? 'bg-blue-600 border-blue-500 text-white' : abierto ? 'bg-gray-950 border-gray-800 text-gray-200 hover:border-gray-600' : 'bg-gray-950/40 border-gray-900 text-gray-600 cursor-not-allowed'}">
+      <span class="block text-[10px] uppercase">${nombre}</span>
+      <span class="block text-sm font-bold">${d.getUTCDate()}</span>
+    </button>`;
+  }).join('');
+  cont.querySelectorAll('button[data-fecha]').forEach(b => b.onclick = () => {
+    document.getElementById('manual-fecha').value = b.dataset.fecha;
+    agendaManual.horaMin = null;
+    pintarDiasManual();
+    pintarHorasManual();
+  });
+  const t = new Date(elegido + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+  document.getElementById('manual-dia-texto').textContent = t.charAt(0).toUpperCase() + t.slice(1);
+  cont.querySelector('.bg-blue-600')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+function pintarHorasManual() {
+  const cont = document.getElementById('manual-horas');
+  const datos = agendaManual.datos;
+  const fecha = document.getElementById('manual-fecha').value;
+  if (!datos) {
+    cont.innerHTML = '<p class="col-span-full text-xs text-gray-500 py-3">No se pudieron cargar las horas libres. Usa "Poner otra hora a mano".</p>';
+    return;
+  }
+  const cerrado = TurnosBF.diaCerrado(datos, fecha);
+  // El barbero puede anotar desde la hora actual (sin la anticipación que se le pide al cliente)
+  const turnos = TurnosBF.calcular(datos, servicioManual(), fecha, barberoManual(), { anticipacion: 0 });
+  if (!turnos.length) {
+    cont.innerHTML = `<p class="col-span-full text-xs text-gray-500 py-3">${cerrado ? `Ese día está cerrado${cerrado.motivo ? ` (${escapeHtml(cerrado.motivo)})` : ''}.` : 'No quedan horas libres ese día con este servicio.'}</p>`;
+    return;
+  }
+  cont.innerHTML = turnos.map(m => `<button type="button" data-min="${m}"
+    class="py-2 rounded-lg border text-xs font-semibold transition ${agendaManual.horaMin === m ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-950 border-gray-800 text-gray-200 hover:border-gray-600'}">${TurnosBF.minutosATexto(m)}</button>`).join('');
+  cont.querySelectorAll('button[data-min]').forEach(b => b.onclick = () => {
+    agendaManual.horaMin = Number(b.dataset.min);
+    document.getElementById('manual-hora').classList.add('hidden');
+    document.getElementById('manual-hora').value = '';
+    pintarHorasManual();
+  });
+}
+
+function alternarOtraHoraManual() {
+  const input = document.getElementById('manual-hora');
+  input.classList.toggle('hidden');
+  if (!input.classList.contains('hidden')) {
+    agendaManual.horaMin = null;
+    pintarHorasManual();
+    input.focus();
+  }
 }
 
 function cerrarModalCitaManual() {
@@ -1135,17 +1368,18 @@ async function guardarCitaManual(e) {
   const telefonoCompleto = `${pais}${telefonoLimpio}`;
 
   const servicioId = parseInt(document.getElementById('manual-servicio').value);
-  const miembroId = parseInt(document.getElementById('manual-barbero').value);
+  const miembroId = barberoManual();
   const fecha = document.getElementById('manual-fecha').value;
-  const rawHora = document.getElementById('manual-hora').value; // ej: "14:30"
+  const rawHora = document.getElementById('manual-hora').value; // "14:30" si la escribió a mano
 
-  // Convertir hora militar a formato am/pm legible (ej: 02:30pm)
-  const [hhStr, mmStr] = rawHora.split(':');
-  let hh = parseInt(hhStr);
-  const ampm = hh >= 12 ? 'pm' : 'am';
-  let hh12 = hh % 12;
-  if (hh12 === 0) hh12 = 12;
-  const horaFormateada = `${String(hh12).padStart(2, '0')}:${mmStr}${ampm}`;
+  // Hora elegida en la lista de horas libres, o escrita a mano
+  let minutos = agendaManual.horaMin;
+  if (!document.getElementById('manual-hora').classList.contains('hidden') && rawHora) minutos = TurnosBF.aMinutos(rawHora);
+  if (minutos == null || !fecha) {
+    avisar('Elige el día y una hora libre (o pon la hora a mano).', 'error');
+    return;
+  }
+  const horaFormateada = TurnosBF.minutosAValor(minutos);
 
   const payload = {
     barberiaSlug: barberiaActual.slug,
@@ -1170,33 +1404,10 @@ async function guardarCitaManual(e) {
 
     const data = await res.json();
     if (res.ok) {
-      avisar(`¡Cita agendada con éxito para ${nombre} a las ${horaFormateada}!`);
+      avisar(`¡Cita agendada para ${nombre}: ${tituloDia(fecha)} a las ${TurnosBF.minutosATexto(minutos)}${data.barberoNombre ? ` con ${data.barberoNombre}` : ''}! El cliente recibe la confirmación por WhatsApp.`);
       cerrarModalCitaManual();
       document.getElementById('form-cita-manual').reset();
       cargarCitas();
-
-      // Opción de enviar confirmación inmediata al WhatsApp del cliente
-      const servObj = (barberiaActual.servicios || []).find(s => s.id === servicioId);
-      const barbObj = (barberiaActual.miembros || []).find(m => m.id === miembroId);
-      const nomBarberia = (barberiaActual.nombre || 'BARBERÍA').toUpperCase();
-
-      const msgConfirm = encodeURIComponent(
-        `💈 *${nomBarberia}* 💈\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n` +
-        `¡Hola ${nombre}! 👋\n` +
-        `Tu cita ha sido agendada con éxito en nuestro local:\n\n` +
-        `✂️ *Servicio:* ${servObj?.nombre || 'Servicio'}\n` +
-        `💈 *Profesional:* ${barbObj?.nombre || 'Master Barber'}\n` +
-        `📅 *Fecha:* ${fecha}\n` +
-        `⏰ *Hora:* ${horaFormateada}\n` +
-        `🔖 *Código:* #${data.codigoReserva}\n\n` +
-        `📍 *Ubicación:* ${barberiaActual.direccion || 'En la barbería'}\n` +
-        `━━━━━━━━━━━━━━━━━━━━\n` +
-        `¡Te esperamos puntual! ✂️🔥`
-      );
-
-      const cleanPais = pais.replace('+', '');
-      window.open(`https://wa.me/${cleanPais}${telefonoLimpio}?text=${msgConfirm}`, '_blank');
     } else {
       avisar(data.message || 'No se pudo agendar la cita.');
     }

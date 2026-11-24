@@ -367,6 +367,7 @@ const servidorHttp = http.createServer(async (req, res) => {
   const webhooks = {
     '/api/notificar-cita': manejarNotificarCita,
     '/api/notificar-cancelacion': manejarNotificarCancelacion,
+    '/api/notificar-imprevisto': manejarNotificarImprevisto,
     '/api/probar': probarConversacion
   };
   const ruta = req.url.split('?')[0];
@@ -496,13 +497,15 @@ function menuPrincipal(barberia, saludo, nombreCliente) {
   const encabezado = bienvenida
     ? aplicarPlantilla(bienvenida, { barberia: barberia.nombre, cliente: nombreCliente || '' })
     : `${saludo}\n\n¿En qué te podemos ayudar?`;
+  // La gente a veces escribe "quiero cita el viernes": se aclara que se responde con un número
   return `${encabezado}\n\n` +
-    `*1.* 📅 Reservar una cita\n` +
-    `*2.* 💲 Servicios y precios\n` +
-    `*3.* 📍 Ubicación y horario\n` +
-    `*4.* 💳 Formas de pago\n\n` +
-    `También puedes escribir *CANCELAR* o *REAGENDAR* si ya tienes una cita.\n` +
-    `_Responde con el número de la opción._`;
+    `👇 *Escribe solo el número* de lo que necesitas:\n\n` +
+    `*1* 📅 Reservar una cita\n` +
+    `*2* 💲 Servicios y precios\n` +
+    `*3* 📍 Ubicación y horario\n` +
+    `*4* 💳 Formas de pago\n\n` +
+    `_Por ejemplo, escribe *1* para reservar._\n` +
+    `Si ya tienes una cita, escribe *CANCELAR* o *REAGENDAR*.`;
 }
 
 // ----------------- SEGUIMIENTO DE CITAS (confirmación, reseña, recordatorio) -----------------
@@ -542,6 +545,19 @@ async function cambiarEstadoCita(citaId, estado) {
     return res.ok;
   } catch (e) {
     console.error('[Estado cita] Error:', e.message);
+    return false;
+  }
+}
+
+// ¿Se prestó el servicio? Solo citas confirmadas por el cliente (o ya completadas).
+// Si nunca respondió SI, queda "No Confirmada" y no se le pide opinión.
+async function citaFueAtendida(citaId) {
+  try {
+    const res = await apiBotFetch(`/bot/${BARBERIA_SLUG}/cita/${citaId}`);
+    if (!res.ok) return false;
+    const cita = await res.json();
+    return cita.estado === 'Confirmada' || cita.estado === 'Completada';
+  } catch (e) {
     return false;
   }
 }
@@ -618,11 +634,49 @@ export async function manejarNotificarCita(payload) {
 
   const enviado = await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
   ultimaInteraccionCliente.set(jid, ahora);
+  if (enviado && citaId) confirmacionEnviada.set(citaId, ahora);
   // Solo si el mensaje salió queda "Por confirmar" (si no, el cliente nunca vería la pregunta)
   if (enviado && citaId) await cambiarEstadoCita(citaId, 'Pendiente');
 
   const encuesta = agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barberiaNombre, fecha, hora, duracionMinutos);
   return { enviado: true, jid, encuestaEnMinutos: encuesta };
+}
+
+// El barbero tuvo un imprevisto: a cada cliente afectado se le avisa que su cita quedó cancelada,
+// con el motivo y el enlace para elegir otra hora. Se envían en segundo plano (uno tras otro, con pausa humana).
+export function mensajeImprevisto({ nombreCliente, servicio, fecha, hora }, barberiaNombre, motivo) {
+  return `😔 ¡Hola ${obtenerPrimerNombre(nombreCliente)}! Te escribimos de *${barberiaNombre || 'la barbería'}*.\n\n` +
+    `Por un imprevisto${motivo ? ` (${motivo})` : ''} el barbero no podrá atenderte el *${fechaLegible(fecha)}* a las *${hora}*` +
+    `${servicio ? ` (${servicio})` : ''}, así que tu cita quedó cancelada. Disculpa las molestias 🙏\n\n` +
+    `📅 Elige otro horario aquí:\n👉 ${linkReservas()}\n\n` +
+    `El barbero también se comunicará contigo por este chat.`;
+}
+
+export async function manejarNotificarImprevisto(payload) {
+  const { barberiaSlug, barberiaNombre, motivo, citas } = payload || {};
+  if (barberiaSlug && barberiaSlug.toLowerCase() !== BARBERIA_SLUG.toLowerCase()) {
+    return { enviado: false, razon: 'Aviso de otra barbería' };
+  }
+  if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return { enviado: false, razon: 'Bot no conectado' };
+  const lista = (Array.isArray(citas) ? citas : []).filter(c => c?.telefonoCliente);
+
+  const enviarTodos = async () => {
+    const enviados = [];
+    for (const c of lista) {
+      try {
+        const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
+        if (await enviarMensajeHumano(socketActivo, jid, mensajeImprevisto(c, barberiaNombre, motivo))) enviados.push(c.id);
+      } catch (e) {
+        console.error('[Imprevisto] No se pudo avisar a', c.nombreCliente, e.message);
+      }
+    }
+    console.log(`[Imprevisto] Avisados ${enviados.length} de ${lista.length} clientes.`);
+    return enviados;
+  };
+  // En pruebas se espera; en producción se responde de una vez y se envía en segundo plano
+  if (MODO_PRUEBA) return { enviado: true, enviados: await enviarTodos() };
+  enviarTodos();
+  return { enviado: true, programados: lista.length };
 }
 
 export async function manejarNotificarCancelacion(payload) {
@@ -665,7 +719,7 @@ function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barber
     try {
       if (!socketActivo || !estaConectado) return;
       if ((await obtenerDatosBarberia()).pedirOpinionActivo === false) return; // el barbero lo apagó en el panel
-      if (!await citaSigueActiva(citaId)) return; // cancelada o reagendada: no pedir reseña
+      if (!await citaFueAtendida(citaId)) return; // sin confirmar, cancelada o reagendada: no pedir reseña
       const urlCalificar = urlCalificarCita(tokenPublico);
       const msgResena =
         `¡Hola ${primerNombre}! 👋 Esperamos que hayas quedado 10/10 con tu servicio de hoy en *${barberiaNombre || 'la barbería'}* 💈✂️\n\n` +
@@ -684,6 +738,7 @@ function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barber
 // Se apagan desde el panel o con RECORDATORIOS_ACTIVOS=0. Se recuerda en memoria qué recordatorio de cada cita ya salió.
 const HORAS_RECORDATORIO_VALIDAS = [48, 24, 12, 6, 3, 2, 1];
 const recordatoriosEnviados = new Set(); // "citaId:horas"
+const confirmacionEnviada = new Map();   // citaId -> cuándo se le mandó la confirmación de la reserva
 
 export function horasDeRecordatorio(barberia) {
   const lista = String(barberia?.horasRecordatorios ?? '').split(',').map(Number).filter(h => HORAS_RECORDATORIO_VALIDAS.includes(h));
@@ -720,9 +775,13 @@ export async function revisarRecordatorios(ahoraMs = Date.now()) {
       const inicio = instanteCita(fechaIso, c.hora);
       if (!inicio) continue;
       const minutosFaltan = (inicio - ahoraMs) / 60000;
-      // ¿Toca alguno de los recordatorios elegidos? (ventana de ±30 min alrededor de cada uno)
-      const horas = listaHoras.find(h => Math.abs(minutosFaltan - h * 60) <= 30);
+      // ¿Toca alguno de los recordatorios elegidos? Se envía cuando faltan como máximo esas horas
+      // (p. ej. "2 horas antes" sale entre 2:00 y 1:00 antes; con la revisión cada 5 min, a las ~2 h justas)
+      const horas = listaHoras.find(h => minutosFaltan <= h * 60 && minutosFaltan > h * 60 - 60);
       if (!horas || recordatoriosEnviados.has(`${c.id}:${horas}`)) continue;
+      // Si acaba de reservar (le llegó la confirmación hace menos de 1 h y media), no recordarle todavía
+      const desdeConfirmacion = ahoraMs - (confirmacionEnviada.get(c.id) ?? -Infinity);
+      if (desdeConfirmacion >= 0 && desdeConfirmacion < 90 * 60 * 1000) continue;
 
       recordatoriosEnviados.add(`${c.id}:${horas}`);
       const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
@@ -1259,7 +1318,7 @@ export async function procesarMensajeEntrante(sock, m) {
       if (soloNumeros === '1' || INTENCION.reservar.test(textoN)) {
         estadoCliente.set(remitente, { nivel: 'INICIO' });
         await enviarMensajeHumano(sock, remitente,
-          `📅 *Reserva tu cita en línea*\n\nElige servicio, día y hora aquí (toma menos de un minuto):\n👉 ${linkReservas()}\n\n` +
+          `📅 *Reserva tu cita en línea*\n\nLas citas se apartan en este enlace: ahí eliges el servicio, el día y la hora que estén libres (toma menos de un minuto):\n👉 ${linkReservas()}\n\n` +
           `Te llegará la confirmación por este chat. ✅`);
         return;
       }

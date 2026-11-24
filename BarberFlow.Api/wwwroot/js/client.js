@@ -173,6 +173,16 @@ function renderEncabezado() {
   $('barber-name').textContent = barberia.nombre;
   $('barber-desc').textContent = barberia.descripcion || '';
 
+  // Portada con foto propia: se toca para verla completa (y reaccionar)
+  const portada = $('portada-barberia');
+  if (portada && portadaEsFoto()) {
+    portada.classList.add('es-foto');
+    portada.setAttribute('role', 'button');
+    portada.setAttribute('aria-label', 'Ver la foto de portada');
+    portada.onclick = abrirVisorPortada;
+    portada.innerHTML = '<span class="absolute top-2.5 right-2.5 flex items-center gap-1 text-[11px] font-bold text-white bg-black/55 backdrop-blur rounded-full px-2.5 py-1"><i data-lucide="zoom-in" class="w-3.5 h-3.5"></i> Ver foto</span>';
+  }
+
   const logo = barberia.logoUrl || DEFAULT_AVATAR;
   ['barber-logo', 'header-logo'].forEach(id => {
     const img = $(id);
@@ -200,6 +210,8 @@ function renderEncabezado() {
 }
 
 function abrirModalImagenGrande(src, titulo, subtitulo = '') {
+  mostrar('img-grande-reacciones', false);
+  $('modal-foto-grande').firstElementChild.classList.replace('max-w-3xl', 'max-w-md');
   $('img-grande-src').src = src;
   $('img-grande-titulo').textContent = titulo || '';
   $('img-grande-subtitulo').textContent = subtitulo || '';
@@ -207,6 +219,66 @@ function abrirModalImagenGrande(src, titulo, subtitulo = '') {
 }
 
 function cerrarModalFotoGrande() { mostrar('modal-foto-grande', false); }
+
+// ----- Portada: se abre en grande y se le puede reaccionar -----
+const REACCIONES_PORTADA = [['corazon', '❤️', 'Me encanta'], ['fuego', '🔥', 'Está brutal'], ['aplausos', '👏', 'Excelente'], ['wow', '😍', 'Qué belleza']];
+
+function portadaEsFoto() {
+  return !!barberia?.portadaUrl && !barberia.portadaUrl.startsWith('preset:');
+}
+
+function claveReaccionPortada() {
+  return `bf_reaccion_portada_${barberia.slug}_${barberia.portadaUrl}`;
+}
+
+function miReaccionPortada() {
+  try { return localStorage.getItem(claveReaccionPortada()); } catch (e) { return null; }
+}
+
+function abrirVisorPortada() {
+  if (!portadaEsFoto()) return;
+  abrirModalImagenGrande(barberia.portadaUrl, barberia.nombre, '¿Te gusta? Déjale una reacción');
+  $('modal-foto-grande').firstElementChild.classList.replace('max-w-md', 'max-w-3xl');
+  pintarReaccionesPortada();
+  mostrar('img-grande-reacciones', true);
+}
+
+function pintarReaccionesPortada() {
+  const conteos = barberia.reaccionesPortada || {};
+  const mia = miReaccionPortada();
+  $('img-grande-reacciones').innerHTML = REACCIONES_PORTADA.map(([tipo, emoji, nombre]) => {
+    const activa = mia === tipo;
+    const n = conteos[tipo] || 0;
+    return `<button type="button" data-reaccion="${tipo}" title="${nombre}" aria-pressed="${activa}"
+      class="min-w-[3.5rem] px-3 py-2 rounded-2xl border text-sm font-bold transition ${activa ? 'bg-blue-600/20 border-blue-500 text-white scale-105' : 'bg-gray-900 border-gray-700 text-gray-200 hover:border-gray-500'}">
+      <span class="text-lg leading-none">${emoji}</span>${n ? ` <span class="text-xs">${n}</span>` : ''}
+    </button>`;
+  }).join('');
+  $('img-grande-reacciones').querySelectorAll('button').forEach(b => b.onclick = () => reaccionarPortada(b.dataset.reaccion));
+}
+
+async function reaccionarPortada(tipo) {
+  const anterior = miReaccionPortada();
+  const nueva = anterior === tipo ? null : tipo; // tocar la misma la quita
+  // Se ve al instante; luego se confirma con lo que guarda el servidor
+  const conteos = { ...(barberia.reaccionesPortada || {}) };
+  if (anterior) conteos[anterior] = Math.max(0, (conteos[anterior] || 0) - 1);
+  if (nueva) conteos[nueva] = (conteos[nueva] || 0) + 1;
+  barberia.reaccionesPortada = conteos;
+  try { nueva ? localStorage.setItem(claveReaccionPortada(), nueva) : localStorage.removeItem(claveReaccionPortada()); } catch (e) {}
+  pintarReaccionesPortada();
+  try {
+    const res = await fetch(`/api/public/barberia/${encodeURIComponent(barberia.slug)}/reaccion-portada`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tipo: nueva, anterior })
+    });
+    if (res.ok) {
+      barberia.reaccionesPortada = await res.json();
+      pintarReaccionesPortada();
+    }
+  } catch (e) {}
+}
 
 window.addEventListener('keydown', (e) => {
   if (e.key !== 'Escape') return;

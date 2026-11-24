@@ -55,7 +55,8 @@ public record UpdateBarberiaDto(
     int? HorasRecordatorio = null,
     bool? PedirOpinionActivo = null,
     string? HorasRecordatorios = null,
-    int? MinutosPausaBot = null
+    int? MinutosPausaBot = null,
+    string? PortadaPosicion = null
 );
 
 public record CrearBotReglaDto(
@@ -101,8 +102,11 @@ public record BloqueoDto(
     int Id,
     [Required] string Fecha,
     string? Hora,
-    string? Motivo
+    string? Motivo,
+    string? FechaHasta = null   // Para bloquear varios días seguidos (vacaciones, viaje...)
 );
+
+public record AvisarImprevistoDto(List<int> CitaIds, string? Motivo);
 
 public record UploadImageDto(
     [Required] string ImageData

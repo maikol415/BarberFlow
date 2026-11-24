@@ -43,7 +43,13 @@
   window.PORTADAS_BARBERIA = PORTADAS;
 
   // Fondo CSS de una portada ("preset:puntos", una foto data:/https:, o vacío = degradado)
-  window.fondoPortada = function (portadaUrl, colorHex) {
+  // posicion: "x y" en porcentaje ("50 30" = centrada y un poco hacia arriba)
+  function posicionCss(posicion) {
+    const m = /^(\d{1,3}) (\d{1,3})$/.exec(String(posicion || '').trim());
+    return m ? `${Math.min(100, +m[1])}% ${Math.min(100, +m[2])}%` : 'center';
+  }
+
+  window.fondoPortada = function (portadaUrl, colorHex, posicion) {
     const rgb = hexARgb(colorHex) || [37, 99, 235];
     const valor = String(portadaUrl || '');
     if (valor.startsWith('preset:')) {
@@ -51,7 +57,7 @@
       return p.css(rgb);
     }
     if (valor) {
-      return `linear-gradient(to bottom, rgba(11,15,25,.05), rgba(17,24,39,.95)), url("${valor.replace(/"/g, '%22')}") center / cover`;
+      return `linear-gradient(to bottom, rgba(11,15,25,.05), rgba(17,24,39,.95)), url("${valor.replace(/"/g, '%22')}") ${posicionCss(posicion)} / cover`;
     }
     return PORTADAS.degradado.css(rgb);
   };
@@ -67,7 +73,7 @@
 
     const portada = document.getElementById('portada-barberia');
     if (portada && barberia) {
-      portada.style.background = window.fondoPortada(barberia.portadaUrl, barberia.colorPrimario);
+      portada.style.background = window.fondoPortada(barberia.portadaUrl, barberia.colorPrimario, barberia.portadaPosicion);
       if (barberia.portadaUrl) portada.classList.add('con-foto');
     }
   };

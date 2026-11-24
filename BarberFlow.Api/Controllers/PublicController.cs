@@ -124,6 +124,42 @@ public class PublicController : ControllerBase
         return File(bytes, mime);
     }
 
+    // ----- Reacciones a la foto de portada (❤️ 🔥 👏 😍) -----
+    private static readonly string[] TiposReaccion = { "corazon", "fuego", "aplausos", "wow" };
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Desde, int Cuenta)> _limiteReacciones = new();
+    public record ReaccionDto(string? Tipo, string? Anterior);
+
+    private static Dictionary<string, int> LeerReacciones(string? json)
+    {
+        Dictionary<string, int>? guardadas = null;
+        try { if (!string.IsNullOrWhiteSpace(json)) guardadas = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, int>>(json); }
+        catch (System.Text.Json.JsonException) { }
+        return TiposReaccion.ToDictionary(t => t, t => Math.Max(0, guardadas?.GetValueOrDefault(t) ?? 0));
+    }
+
+    // Una persona tiene una reacción: "Anterior" se quita y "Tipo" se suma (Tipo null = quitar la suya)
+    [HttpPost("barberia/{slug}/reaccion-portada")]
+    public async Task<IActionResult> ReaccionarPortada(string slug, [FromBody] ReaccionDto dto)
+    {
+        var ip = Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim()
+                 ?? HttpContext.Connection.RemoteIpAddress?.ToString() ?? "?";
+        var ahoraUtc = DateTime.UtcNow;
+        var uso = _limiteReacciones.AddOrUpdate($"{ip}|{slug}", (ahoraUtc, 1),
+            (_, v) => ahoraUtc - v.Desde > TimeSpan.FromHours(1) ? (ahoraUtc, 1) : (v.Desde, v.Cuenta + 1));
+        if (uso.Cuenta > 30) return StatusCode(429, new { message = "Demasiadas reacciones seguidas. Intenta más tarde." });
+
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+        if (barberia == null || string.IsNullOrEmpty(barberia.PortadaUrl) || barberia.PortadaUrl.StartsWith("preset:"))
+            return NotFound(new { message = "Esta barbería no tiene foto de portada." });
+
+        var reacciones = LeerReacciones(barberia.ReaccionesPortada);
+        if (dto.Anterior != null && reacciones.TryGetValue(dto.Anterior, out var antes) && antes > 0) reacciones[dto.Anterior] = antes - 1;
+        if (dto.Tipo != null && reacciones.ContainsKey(dto.Tipo)) reacciones[dto.Tipo]++;
+        barberia.ReaccionesPortada = System.Text.Json.JsonSerializer.Serialize(reacciones);
+        await _context.SaveChangesAsync();
+        return Ok(reacciones);
+    }
+
     [HttpGet("barberia/{slug}")]
     public async Task<IActionResult> ObtenerBarberia(string slug)
     {
@@ -214,6 +250,8 @@ public class PublicController : ControllerBase
                 LogoUrl = UrlImagen(barberia.LogoUrl, "logo", barberia.Id),
                 barberia.ColorPrimario,
                 PortadaUrl = UrlImagen(barberia.PortadaUrl, "portada", barberia.Id),
+                ReaccionesPortada = LeerReacciones(barberia.ReaccionesPortada),
+                barberia.PortadaPosicion,
                 barberia.PlantillaConfirmacion,
                 barberia.PlantillaRecordatorio,
                 barberia.HorarioTexto,
@@ -536,6 +574,9 @@ public class PublicController : ControllerBase
     {
         if (c.CalificadaUtc != null) return "Ya calificaste esta cita. ¡Gracias por tu opinión!";
         if (c.Estado == "Cancelada") return "Esta cita fue cancelada, por eso no se puede calificar.";
+        // Solo se califica un servicio que se prestó (cita confirmada o completada)
+        if (c.Estado == EstadosCitas.NoConfirmada || c.Estado == EstadosCitas.Pendiente && CitaYaComenzo(c))
+            return "Esta cita no se confirmó, por eso no se puede calificar.";
         if (!CitaYaComenzo(c)) return "Podrás calificar tu servicio después de tu cita.";
         return null;
     }
@@ -694,6 +735,8 @@ public class PublicController : ControllerBase
     {
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+        // Estados al día (p. ej. Pendiente -> No Confirmada si ya pasó la hora) antes de responder al bot
+        await EstadosCitas.AplicarAsync(_context, barberia.Id);
         var cita = await _context.Citas.FirstOrDefaultAsync(c => c.Id == id && c.BarberiaId == barberia.Id);
         if (cita == null) return NotFound(new { message = "Cita no encontrada." });
         return Ok(new { cita.Id, cita.Estado, cita.Fecha, cita.Hora });
@@ -950,7 +993,11 @@ public class PublicController : ControllerBase
     }
 
     // Envía un aviso al bot de WhatsApp en segundo plano, solo para la barbería que atiende el bot
-    private static void NotificarBot(string ruta, Barberia barberia, object payload)
+    // El bot atiende una sola barbería (BOT_BARBERIA_SLUG)
+    internal static bool BotAtiende(Barberia barberia) =>
+        string.Equals(Environment.GetEnvironmentVariable("BOT_BARBERIA_SLUG") ?? "barberia-jr", barberia.Slug, StringComparison.OrdinalIgnoreCase);
+
+    internal static void NotificarBot(string ruta, Barberia barberia, object payload)
     {
         var slugBot = Environment.GetEnvironmentVariable("BOT_BARBERIA_SLUG") ?? "barberia-jr";
         if (!string.Equals(slugBot, barberia.Slug, StringComparison.OrdinalIgnoreCase)) return;

@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126n">
-  <link rel="stylesheet" href="/css/tema.css?v=20261126n">
-  <script src="/js/iconos.js?v=20261126n"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261124c">
+  <link rel="stylesheet" href="/css/tema.css?v=20261124c">
+  <script src="/js/iconos.js?v=20261124c"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="/js/confetti.browser.min.js"></script>
   <style>
@@ -59,7 +59,7 @@
 
     <!-- Presentación de la barbería -->
     <section class="tarjeta overflow-hidden">
-      <div id="portada-barberia" class="h-20 sm:h-24"></div>
+      <div id="portada-barberia" class="relative h-20 sm:h-24"></div>
       <div class="px-5 sm:px-7 pb-6 -mt-10 sm:-mt-12">
         <div class="flex items-end justify-between gap-3">
           <button type="button" onclick="abrirModalImagenGrande(document.getElementById('barber-logo').src, barberia?.nombre)" class="rounded-2xl ring-4 ring-[#111827] flex-shrink-0" aria-label="Ver logo en grande">
@@ -245,6 +245,7 @@
       <img id="img-grande-src" src="" alt="" class="w-full max-h-[72vh] object-contain rounded-3xl bg-gray-900 border border-gray-800">
       <p id="img-grande-titulo" class="text-white font-bold mt-3"></p>
       <p id="img-grande-subtitulo" class="text-xs text-gray-400 mt-0.5"></p>
+      <div id="img-grande-reacciones" class="oculto flex justify-center gap-2 mt-3"></div>
       <button type="button" onclick="cerrarModalFotoGrande()" class="mt-3 text-sm text-gray-400 hover:text-white">Cerrar</button>
     </div>
   </div>
@@ -279,8 +280,8 @@
     <a href="/login.html" class="text-gray-600 hover:text-blue-400 mt-1 inline-block">¿Eres el barbero? Ingresa aquí</a>
   </footer>
 
-  <script src="/js/tema.js?v=20261126n"></script>
-  <script src="/js/avisos.js?v=20261126n"></script>
-  <script src="/js/client.js?v=20261126n"></script>
+  <script src="/js/tema.js?v=20261124c"></script>
+  <script src="/js/avisos.js?v=20261124c"></script>
+  <script src="/js/client.js?v=20261124c"></script>
 </body>
 </html>

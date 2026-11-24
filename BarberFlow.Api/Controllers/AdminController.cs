@@ -62,6 +62,7 @@ public class AdminController : ControllerBase
                 barberia.LogoUrl,
                 barberia.ColorPrimario,
                 barberia.PortadaUrl,
+                barberia.PortadaPosicion,
                 barberia.HorarioTexto,
                 barberia.HoraApertura,
                 barberia.HoraCierre,
@@ -141,6 +142,9 @@ public class AdminController : ControllerBase
                 (portada.StartsWith("data:image/jpeg;base64,") || portada.StartsWith("data:image/png;base64,") ||
                  portada.StartsWith("data:image/webp;base64,") || portada.StartsWith("https://") || portada.StartsWith("/uploads/"));
             if (!valida) return BadRequest(new { message = "La imagen de portada no es válida o es demasiado grande." });
+            if (barberia.PortadaUrl != portada) barberia.ReaccionesPortada = ""; // portada nueva: reacciones desde cero
+            if (dto.PortadaPosicion != null && System.Text.RegularExpressions.Regex.IsMatch(dto.PortadaPosicion, @"^(100|\d{1,2}) (100|\d{1,2})$"))
+                barberia.PortadaPosicion = dto.PortadaPosicion;
             barberia.PortadaUrl = portada;
         }
         if (!string.IsNullOrWhiteSpace(dto.DiasLaborales)) barberia.DiasLaborales = dto.DiasLaborales;
@@ -514,18 +518,106 @@ public class AdminController : ControllerBase
     [HttpPost("bloqueos")]
     public async Task<IActionResult> CrearBloqueo([FromBody] BloqueoDto dto)
     {
-        var barberiaId = ObtenerBarberiaId();
-        var bloqueo = new HorarioBloqueo
-        {
-            BarberiaId = barberiaId,
-            Fecha = dto.Fecha,
-            Hora = string.IsNullOrWhiteSpace(dto.Hora) ? "TODO_EL_DIA" : dto.Hora,
-            Motivo = string.IsNullOrWhiteSpace(dto.Motivo) ? "Descanso / No disponible" : dto.Motivo
-        };
+        var barberia = await _context.Barberias.FindAsync(ObtenerBarberiaId());
+        if (barberia == null) return NotFound();
 
-        _context.Bloqueos.Add(bloqueo);
+        var formato = System.Globalization.CultureInfo.InvariantCulture;
+        if (!DateTime.TryParseExact(dto.Fecha, "yyyy-MM-dd", formato, System.Globalization.DateTimeStyles.None, out var desde))
+            return BadRequest(new { message = "La fecha no es válida." });
+        var hasta = desde;
+        if (!string.IsNullOrWhiteSpace(dto.FechaHasta))
+        {
+            if (!DateTime.TryParseExact(dto.FechaHasta, "yyyy-MM-dd", formato, System.Globalization.DateTimeStyles.None, out hasta) || hasta < desde)
+                return BadRequest(new { message = "La fecha final debe ser igual o posterior a la inicial." });
+            if ((hasta - desde).TotalDays > 60)
+                return BadRequest(new { message = "Puedes bloquear máximo 60 días seguidos." });
+        }
+
+        var hora = string.IsNullOrWhiteSpace(dto.Hora) ? "TODO_EL_DIA" : dto.Hora.Trim();
+        var motivo = string.IsNullOrWhiteSpace(dto.Motivo) ? "Descanso / No disponible" : dto.Motivo.Trim();
+        if (motivo.Length > 80) motivo = motivo[..80];
+        var esDiaCompleto = hora == "TODO_EL_DIA";
+
+        var fechas = Enumerable.Range(0, (hasta - desde).Days + 1).Select(i => desde.AddDays(i).ToString("yyyy-MM-dd")).ToList();
+        var diasYaCerrados = esDiaCompleto
+            ? await _context.Bloqueos
+                .Where(b => b.BarberiaId == barberia.Id && fechas.Contains(b.Fecha) && (b.Hora == null || b.Hora == "" || b.Hora == "TODO_EL_DIA"))
+                .Select(b => b.Fecha).ToListAsync()
+            : new List<string>();
+
+        var creados = fechas.Where(f => !diasYaCerrados.Contains(f))
+            .Select(f => new HorarioBloqueo { BarberiaId = barberia.Id, Fecha = f, Hora = hora, Motivo = motivo })
+            .ToList();
+        _context.Bloqueos.AddRange(creados);
         await _context.SaveChangesAsync();
-        return Ok(bloqueo);
+
+        // Citas activas que quedan dentro del bloqueo: el panel ofrece avisarles para que reagenden
+        int ini, fin;
+        if (esDiaCompleto) { ini = 0; fin = 24 * 60; }
+        else if (hora.Contains('-'))
+        {
+            var partes = hora.Split('-');
+            ini = EstadosCitas.HoraAMinutos(partes[0]);
+            fin = EstadosCitas.HoraAMinutos(partes[1]);
+        }
+        else { ini = EstadosCitas.HoraAMinutos(hora); fin = ini + barberia.IntervaloMinutos; }
+
+        var ahora = EstadosCitas.AhoraColombia();
+        var citas = await _context.Citas.Include(c => c.Servicio)
+            .Where(c => c.BarberiaId == barberia.Id && fechas.Contains(c.Fecha)
+                        && (c.Estado == EstadosCitas.Pendiente || c.Estado == EstadosCitas.Confirmada))
+            .ToListAsync();
+        var afectadas = citas
+            .Where(c =>
+            {
+                var ci = EstadosCitas.HoraAMinutos(c.Hora);
+                var cf = ci + (c.Servicio?.DuracionMinutos ?? barberia.IntervaloMinutos);
+                var inicio = EstadosCitas.InicioCita(c.Fecha, c.Hora);
+                return ci < fin && cf > ini && inicio != null && inicio.Value > ahora;
+            })
+            .OrderBy(c => c.Fecha).ThenBy(c => EstadosCitas.HoraAMinutos(c.Hora))
+            .Select(c => new { c.Id, c.NombreCliente, c.Fecha, c.Hora, Servicio = c.Servicio?.Nombre ?? "" })
+            .ToList();
+
+        return Ok(new { bloqueos = creados, citasAfectadas = afectadas, avisoPorWhatsApp = PublicController.BotAtiende(barberia) });
+    }
+
+    // Imprevisto: el barbero no podrá atender estas citas. Se cancelan y el bot le escribe a cada cliente
+    // con el motivo y el enlace para elegir otra hora (el barbero también puede escribirle personalmente).
+    [HttpPost("citas/avisar-imprevisto")]
+    public async Task<IActionResult> AvisarImprevisto([FromBody] AvisarImprevistoDto dto)
+    {
+        var barberia = await _context.Barberias.FindAsync(ObtenerBarberiaId());
+        if (barberia == null) return NotFound();
+        var ids = (dto.CitaIds ?? new List<int>()).Distinct().Take(200).ToList();
+        if (ids.Count == 0) return BadRequest(new { message = "No hay citas para avisar." });
+
+        var citas = await _context.Citas.Include(c => c.Servicio)
+            .Where(c => c.BarberiaId == barberia.Id && ids.Contains(c.Id)
+                        && (c.Estado == EstadosCitas.Pendiente || c.Estado == EstadosCitas.Confirmada))
+            .ToListAsync();
+        foreach (var c in citas) c.Estado = EstadosCitas.Cancelada;
+        await _context.SaveChangesAsync();
+
+        var motivo = (dto.Motivo ?? "").Trim();
+        if (motivo.Length > 80) motivo = motivo[..80];
+        PublicController.NotificarBot("/api/notificar-imprevisto", barberia, new
+        {
+            barberiaSlug = barberia.Slug,
+            barberiaNombre = barberia.Nombre,
+            motivo,
+            citas = citas.Select(c => new
+            {
+                c.Id,
+                nombreCliente = c.NombreCliente,
+                telefonoCliente = c.TelefonoCliente,
+                servicio = c.Servicio?.Nombre ?? "",
+                fecha = c.Fecha,
+                hora = c.Hora
+            })
+        });
+
+        return Ok(new { canceladas = citas.Count, avisoPorWhatsApp = PublicController.BotAtiende(barberia) });
     }
 
     [HttpDelete("bloqueos/{id}")]

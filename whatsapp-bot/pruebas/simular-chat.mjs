@@ -31,6 +31,8 @@ const {
   horasDeRecordatorio,
   aplicarPlantilla,
   respuestaAgradecimiento,
+  manejarNotificarImprevisto,
+  mensajeImprevisto,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -194,14 +196,14 @@ r = await cliente(nuevo3, 'tienen parqueadero?');
 comprobar('Primer mensaje que no entiende: bienvenida + menú + aviso del barbero', r, ['Bienvenid', 'el barbero te responderá']);
 
 r = await cliente(bob, 'hola');
-comprobar('Saludo con menú principal', r, ['*1.*', 'Servicios y precios', 'CANCELAR']);
+comprobar('Saludo con menú principal', r, ['Escribe solo el número', '*1* 📅', 'Servicios y precios', 'CANCELAR']);
 
 r = await cliente(bob, '2');
 comprobar('Menú de servicios con íconos por categoría', r, ['Servicios y precios', '✂️ Cortes']);
 
 const nuevo = { remoteJid: `5730077${base}@s.whatsapp.net` };
 r = await cliente(nuevo, '4');
-comprobar('Conversación que empieza con "4": primero saluda con el menú', r, ['Bienvenid', '*4.*']);
+comprobar('Conversación que empieza con "4": primero saluda con el menú', r, ['Bienvenid', '*4* 💳']);
 r = await cliente(nuevo, '4');
 comprobar('Ya en la conversación, "4" muestra las formas de pago', r, ['Formas de pago']);
 r = await cliente(nuevo, 'a las 3 tienen cupo?');
@@ -264,6 +266,9 @@ enviados.length = 0;
 let recordados = await revisarRecordatorios(mediodia - 22 * 3600000);
 comprobar('Recordatorio 1 día antes de la cita', recordados.includes(citaCarla.id) ? enviados.map(e => e.texto).join(' | ') : 'no enviado', ['Te recordamos tu cita de mañana']);
 enviados.length = 0;
+recordados = await revisarRecordatorios(mediodia - 30 * 60000);
+comprobar('No recuerda 2 h y media antes (espera a las 2 h justas)', recordados.includes(citaCarla.id) ? 'enviado' : 'ok', ['ok']);
+enviados.length = 0;
 recordados = await revisarRecordatorios(mediodia);
 comprobar('Recordatorio 2 h antes de la cita (pide confirmar si falta)', recordados.includes(citaCarla.id) ? todo() : 'no enviado', ['Te recordamos tu cita', citaCarla.hora, 'Responde *SI*']);
 
@@ -310,7 +315,7 @@ comprobar('"Hola, cuánto vale?" no es casual', INTENCION.casual.test(normalizar
 
 const paisa = { remoteJid: `5730066${base}@s.whatsapp.net` };
 r = await cliente(paisa, 'Quiuboooo');
-comprobar('"Quiuboooo" responde con la bienvenida y el menú', r, ['Bienvenid', '*1.*']);
+comprobar('"Quiuboooo" responde con la bienvenida y el menú', r, ['Bienvenid', '*1* 📅']);
 r = await cliente(paisa, 'melo pues');
 comprobar('"melo pues" en plena conversación no dispara respuestas', r || 'silencio', ['silencio']);
 
@@ -326,7 +331,7 @@ comprobar('Aviso de hoy: nada si el bloqueo es otro día', avisoDeHoy({ bloqueos
 let prueba = await probarConversacion({ slug: 'otra-barberia', texto: 'hola' });
 comprobar('Chat de prueba: rechaza otra barbería', String(prueba.status), ['403']);
 prueba = await probarConversacion({ slug: SLUG, texto: 'Buenaaas', reiniciar: true });
-comprobar('Chat de prueba: responde con la bienvenida', prueba.respuestas.join(' | '), ['Bienvenid', '*1.*']);
+comprobar('Chat de prueba: responde con la bienvenida', prueba.respuestas.join(' | '), ['Bienvenid', '*1* 📅']);
 prueba = await probarConversacion({ slug: SLUG, texto: '2' });
 comprobar('Chat de prueba: sigue la conversación (opción 2)', prueba.respuestas.join(' | '), ['Servicios y precios']);
 prueba = await probarConversacion({ slug: SLUG, texto: 'hola', reiniciar: true });
@@ -379,5 +384,11 @@ comprobar('La respuesta al gracias es amable', /gusto|A ti/.test(r) ? 'amable' :
 r = await cliente(bob, 'listo mil gracias parce');
 comprobar('Un segundo gracias seguido no se responde (no ser cansón)', r || 'silencio', ['silencio']);
 comprobar('Respuesta sin nombre si no lo conocemos', respuestaAgradecimiento('', 0), ['¡Con mucho gusto! 💈']);
+// Imprevisto del barbero: cada cliente afectado recibe el aviso con el motivo y el enlace para reservar otra hora
+const telImpre = `+57302${base}`;
+enviados.length = 0;
+const imp = await manejarNotificarImprevisto({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', motivo: 'Calamidad', citas: [{ id: 999, nombreCliente: 'lucia gómez', telefonoCliente: telImpre, servicio: 'Corte', fecha: manana, hora: '03:00pm' }] });
+comprobar('Imprevisto: avisa al cliente con motivo, fecha y enlace', enviados.map(e => e.texto).join(' | '), ['Hola Lucia', 'imprevisto (Calamidad)', legible(manana), '03:00pm', 'quedó cancelada', 'index.html?b=', 'se comunicará contigo']);
+comprobar('Imprevisto: no avisa citas de otra barbería', (await manejarNotificarImprevisto({ barberiaSlug: 'otra', citas: [] })).razon || '', ['otra barbería']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

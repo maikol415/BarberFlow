@@ -30,4 +30,6 @@
 }
 #portada-barberia.con-foto { height: 9rem; }
 @media (min-width: 640px) { #portada-barberia.con-foto { height: 11rem; } }
+/* Foto propia: misma proporción en celular y computador (5:2), así se recorta igual en todos lados */
+#portada-barberia.es-foto { height: auto !important; aspect-ratio: 5 / 2; max-height: 320px; cursor: zoom-in; }
 .ring-blue-500\/30 { --tw-ring-color: rgba(var(--acento-rgb), .3) !important; }
