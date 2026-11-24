@@ -91,7 +91,8 @@ public record CrearCitaPublicaDto(
     [Required] string TelefonoCliente,
     [Required] string Fecha,
     [Required] string Hora,
-    string? ReagendarToken = null
+    string? ReagendarToken = null,
+    bool CorrerSiguientes = false   // Solo el barbero: si se cruza, correr las citas siguientes de esa agenda
 );
 
 public record CambiarEstadoCitaDto(

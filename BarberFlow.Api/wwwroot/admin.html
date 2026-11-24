@@ -10,8 +10,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261124j">
-  <script src="/js/iconos.js?v=20261124j"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261124k">
+  <script src="/js/iconos.js?v=20261124k"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -946,6 +946,7 @@
               <select id="manual-hora-ap" aria-label="a. m. o p. m." class="campo cursor-pointer text-center"><option value="am">a. m.</option><option value="pm">p. m.</option></select>
             </div>
             <p id="manual-hora-resumen" class="text-[11px] text-gray-500 mt-2"></p>
+            <div id="manual-hora-choque" class="hidden mt-2.5"></div>
           </div>
           <input type="hidden" id="manual-hora">
         </div>
@@ -1005,10 +1006,10 @@
     </div>
   </div>
 
-  <script src="/js/tema.js?v=20261124j"></script>
-  <script src="/js/avisos.js?v=20261124j"></script>
-  <script src="/js/turnos.js?v=20261124j"></script>
-  <script src="/js/admin.js?v=20261124j"></script>
+  <script src="/js/tema.js?v=20261124k"></script>
+  <script src="/js/avisos.js?v=20261124k"></script>
+  <script src="/js/turnos.js?v=20261124k"></script>
+  <script src="/js/admin.js?v=20261124k"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

@@ -33,6 +33,7 @@ const {
   respuestaAgradecimiento,
   manejarNotificarImprevisto,
   mensajeImprevisto,
+  manejarNotificarCambioHora,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -399,5 +400,10 @@ const estadoLocal = await (await fetch(`${API}/bot/${SLUG}/cita/${citaLocal.id}`
 comprobar('Cita del local: no pide SI y queda Confirmada', `${/Responde *SI*/.test(enviados.map(e => e.texto).join(' ')) ? 'pide SI' : 'sin SI'} | ${estadoLocal.estado}`, ['sin SI', '| Confirmada']);
 comprobar('Imprevisto con motivo genérico no lo repite', mensajeImprevisto({ nombreCliente: 'Ana', fecha: manana, hora: '03:00pm' }, 'X', 'Imprevisto'), ['Por un imprevisto el barbero']);
 comprobar('Imprevisto con emoji de almuerzo no lo repite', mensajeImprevisto({ nombreCliente: 'Ana', fecha: manana, hora: '03:00pm' }, 'X', '🍱 Almuerzo'), ['Por un imprevisto el barbero']);
+// Cita corrida por el barbero: el cliente recibe la hora anterior, la nueva y el enlace para reagendar
+const telCorrida = `+57304${base}`;
+enviados.length = 0;
+await manejarNotificarCambioHora({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', citas: [{ id: 77, nombreCliente: 'carlos ruiz', telefonoCliente: telCorrida, servicio: 'Corte', fecha: manana, horaAnterior: '05:20pm', horaNueva: '05:50pm', tokenPublico: 'abc123' }] });
+comprobar('Cita corrida: avisa hora anterior, nueva y enlace para reagendar', enviados.map(e => e.texto).join(' | '), ['Hola Carlos', legible(manana), '~05:20pm~', '*05:50pm*', 'reagendar=abc123']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

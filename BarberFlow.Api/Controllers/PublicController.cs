@@ -447,6 +447,8 @@ public class PublicController : ControllerBase
             return nuevoTurnoInicio < existFin && nuevoTurnoFin > existIni;
         });
 
+        var citasCorridas = new List<CorrimientoCitas.Cambio>();
+
         // Varios barberos: cada uno tiene su agenda. Si el cliente eligió "Cualquiera",
         // se le asigna el barbero libre a esa hora con menos citas ese día (así siempre sabe con quién va).
         var miembrosActivos = barberia.Miembros.Where(m => m.Activo).OrderBy(m => m.Id).ToList();
@@ -469,7 +471,21 @@ public class PublicController : ControllerBase
         {
             if (miembroAsignado == null && miembrosActivos.Count == 1) miembroAsignado = miembrosActivos[0].Id;
             if (variosBarberos ? Choca(miembroAsignado) : Choca(null))
-                return BadRequest(new { message = "Ese horario o parte de su duración ya fue reservado. Por favor elige otro horario." });
+            {
+                // El barbero, desde el local, puede correr las citas siguientes de esa agenda para hacerle espacio
+                if (!(esBarberoDeEstaBarberia && dto.CorrerSiguientes))
+                    return BadRequest(new { message = "Ese horario o parte de su duración ya fue reservado. Por favor elige otro horario." });
+
+                var agenda = citasDia
+                    .Where(c => citaAnterior == null || c.Id != citaAnterior.Id)
+                    .Where(c => !variosBarberos || c.MiembroEquipoId == null || c.MiembroEquipoId == miembroAsignado)
+                    .ToList();
+                var (cambios, bloqueante) = CorrimientoCitas.Planear(agenda, nuevoTurnoInicio, nuevoTurnoFin, barberia.IntervaloMinutos);
+                if (bloqueante != null)
+                    return BadRequest(new { message = $"Se cruza con la cita de {bloqueante.NombreCliente} ({bloqueante.Hora}), que empieza antes y todavía no termina. Elige otra hora." });
+                foreach (var cambio in cambios) cambio.Cita.Hora = cambio.HoraNueva;
+                citasCorridas = cambios;
+            }
         }
         var nombreBarbero = miembrosActivos.FirstOrDefault(m => m.Id == miembroAsignado)?.Nombre ?? "";
 
@@ -521,6 +537,27 @@ public class PublicController : ControllerBase
             creadaPorBarbero = esBarberoDeEstaBarberia   // anotada en el local: no se le pide confirmar con SI
         });
 
+        // Citas que se corrieron para hacerle espacio: a cada cliente se le avisa su nueva hora
+        if (citasCorridas.Count > 0)
+        {
+            NotificarBot("/api/notificar-cambio-hora", barberia, new
+            {
+                barberiaSlug = barberia.Slug,
+                barberiaNombre = barberia.Nombre,
+                citas = citasCorridas.Select(cm => new
+                {
+                    id = cm.Cita.Id,
+                    nombreCliente = cm.Cita.NombreCliente,
+                    telefonoCliente = cm.Cita.TelefonoCliente,
+                    servicio = cm.Cita.Servicio?.Nombre ?? "",
+                    fecha = cm.Cita.Fecha,
+                    horaAnterior = cm.HoraAnterior,
+                    horaNueva = cm.HoraNueva,
+                    tokenPublico = cm.Cita.TokenPublico
+                })
+            });
+        }
+
         return Ok(new
         {
             cita.Id,
@@ -532,7 +569,8 @@ public class PublicController : ControllerBase
             BarberoNombre = nombreBarbero,
             BarberiaWhatsApp = barberia.TelefonoWhatsApp,
             BarberiaNombre = barberia.Nombre,
-            AvisoPorWhatsApp = BotAtiende(barberia)
+            AvisoPorWhatsApp = BotAtiende(barberia),
+            CitasCorridas = citasCorridas.Select(cm => new { cm.Cita.NombreCliente, cm.Cita.TelefonoCliente, cm.Cita.Fecha, cm.HoraAnterior, cm.HoraNueva })
         });
     }
 

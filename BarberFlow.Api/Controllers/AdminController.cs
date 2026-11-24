@@ -583,6 +583,60 @@ public class AdminController : ControllerBase
         return Ok(new { bloqueos = creados, citasAfectadas = afectadas, avisoPorWhatsApp = PublicController.BotAtiende(barberia) });
     }
 
+    // ----- Agendar en local: ¿la hora elegida se cruza? ¿qué citas habría que correr? -----
+    public record SimularCitaLocalDto(string Fecha, string Hora, int ServicioId, int? MiembroEquipoId);
+
+    [HttpPost("citas/simular-local")]
+    public async Task<IActionResult> SimularCitaLocal([FromBody] SimularCitaLocalDto dto)
+    {
+        var barberia = await _context.Barberias.AsNoTracking()
+            .Include(b => b.Servicios)
+            .Include(b => b.Miembros)
+            .FirstOrDefaultAsync(b => b.Id == ObtenerBarberiaId());
+        if (barberia == null) return NotFound();
+        var servicio = barberia.Servicios.FirstOrDefault(s => s.Id == dto.ServicioId);
+        if (servicio == null) return BadRequest(new { message = "Servicio no válido." });
+
+        var inicio = EstadosCitas.HoraAMinutos(dto.Hora);
+        var fin = inicio + servicio.DuracionMinutos;
+        var citas = await _context.Citas.AsNoTracking().Include(c => c.Servicio).Include(c => c.MiembroEquipo)
+            .Where(c => c.BarberiaId == barberia.Id && c.Fecha == dto.Fecha && c.Estado != EstadosCitas.Cancelada && c.Estado != EstadosCitas.NoConfirmada)
+            .ToListAsync();
+
+        var miembros = barberia.Miembros.Where(m => m.Activo).ToList();
+        var varios = barberia.MostrarSelectorBarbero && miembros.Count > 1;
+        bool Cruza(Cita c)
+        {
+            var ci = EstadosCitas.HoraAMinutos(c.Hora);
+            var cf = ci + (c.Servicio?.DuracionMinutos ?? barberia.IntervaloMinutos);
+            return inicio < cf && fin > ci;
+        }
+        List<Cita> AgendaDe(int? miembroId) => varios && miembroId != null
+            ? citas.Where(c => c.MiembroEquipoId == null || c.MiembroEquipoId == miembroId).ToList()
+            : citas;
+
+        // "Cualquiera": basta con que un barbero esté libre (se le asigna a él)
+        if (varios && dto.MiembroEquipoId == null)
+        {
+            var hayLibre = miembros.Any(m => !AgendaDe(m.Id).Any(Cruza));
+            return Ok(new { choca = !hayLibre, todosOcupados = !hayLibre });
+        }
+
+        var agenda = AgendaDe(varios ? dto.MiembroEquipoId : null);
+        var choques = agenda.Where(Cruza).OrderBy(c => EstadosCitas.HoraAMinutos(c.Hora)).ToList();
+        if (choques.Count == 0) return Ok(new { choca = false });
+
+        var (cambios, bloqueante) = CorrimientoCitas.Planear(agenda, inicio, fin, barberia.IntervaloMinutos);
+        return Ok(new
+        {
+            choca = true,
+            conQuien = choques.Select(c => new { c.NombreCliente, c.Hora, Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "" }),
+            bloqueante = bloqueante == null ? null : new { bloqueante.NombreCliente, bloqueante.Hora },
+            cambios = cambios.Select(cm => new { cm.Cita.NombreCliente, cm.HoraAnterior, cm.HoraNueva }),
+            horaCierre = barberia.HoraCierre
+        });
+    }
+
     // Imprevisto: el barbero no podrá atender estas citas. Se cancelan y el bot le escribe a cada cliente
     // con el motivo y el enlace para elegir otra hora (el barbero también puede escribirle personalmente).
     [HttpPost("citas/avisar-imprevisto")]

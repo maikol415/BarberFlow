@@ -368,6 +368,7 @@ const servidorHttp = http.createServer(async (req, res) => {
     '/api/notificar-cita': manejarNotificarCita,
     '/api/notificar-cancelacion': manejarNotificarCancelacion,
     '/api/notificar-imprevisto': manejarNotificarImprevisto,
+    '/api/notificar-cambio-hora': manejarNotificarCambioHora,
     '/api/probar': probarConversacion
   };
   const ruta = req.url.split('?')[0];
@@ -678,6 +679,46 @@ export async function manejarNotificarImprevisto(payload) {
     return enviados;
   };
   // En pruebas se espera; en producción se responde de una vez y se envía en segundo plano
+  if (MODO_PRUEBA) return { enviado: true, enviados: await enviarTodos() };
+  enviarTodos();
+  return { enviado: true, programados: lista.length };
+}
+
+// El barbero corrió esta cita para atender a alguien en el local: se le avisa la nueva hora
+// y, si no le sirve, el enlace para elegir otra.
+export function mensajeCambioHora({ nombreCliente, servicio, fecha, horaAnterior, horaNueva, tokenPublico }, barberiaNombre, ahoraMs = Date.now()) {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ahoraMs));
+  const cuando = fecha === hoy ? 'de hoy' : `del ${fechaLegible(fecha)}`;
+  const enlace = tokenPublico
+    ? `${BASE_WEB_URL}/index.html?b=${encodeURIComponent(BARBERIA_SLUG)}&reagendar=${encodeURIComponent(tokenPublico)}`
+    : linkReservas();
+  return `⏰ ¡Hola ${obtenerPrimerNombre(nombreCliente)}! Te escribimos de *${barberiaNombre || 'la barbería'}*.\n\n` +
+    `Tuvimos un ajuste en la agenda y tu cita ${cuando}${servicio ? ` (${servicio})` : ''} se corrió un poquito:\n\n` +
+    `🕒 Antes: ~${horaAnterior}~\n` +
+    `✅ Ahora: *${horaNueva}*\n\n` +
+    `Si la nueva hora no te sirve, elige otra aquí:\n👉 ${enlace}\n\n` +
+    `¡Gracias por tu paciencia! 🙏`;
+}
+
+export async function manejarNotificarCambioHora(payload) {
+  const { barberiaSlug, barberiaNombre, citas } = payload || {};
+  if (barberiaSlug && barberiaSlug.toLowerCase() !== BARBERIA_SLUG.toLowerCase()) {
+    return { enviado: false, razon: 'Aviso de otra barbería' };
+  }
+  if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return { enviado: false, razon: 'Bot no conectado' };
+  const lista = (Array.isArray(citas) ? citas : []).filter(c => c?.telefonoCliente);
+  const enviarTodos = async () => {
+    const enviados = [];
+    for (const c of lista) {
+      try {
+        const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
+        if (await enviarMensajeHumano(socketActivo, jid, mensajeCambioHora(c, barberiaNombre))) enviados.push(c.id);
+      } catch (e) {
+        console.error('[Cambio de hora] No se pudo avisar a', c.nombreCliente, e.message);
+      }
+    }
+    return enviados;
+  };
   if (MODO_PRUEBA) return { enviado: true, enviados: await enviarTodos() };
   enviarTodos();
   return { enviado: true, programados: lista.length };

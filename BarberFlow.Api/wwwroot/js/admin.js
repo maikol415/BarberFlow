@@ -1140,6 +1140,30 @@ async function cerrarRestoDeHoy() {
   cargarPerfil();
 }
 
+// Aviso a mano (sin bot) para las citas que se corrieron
+function mostrarAvisoCambioHora(citas) {
+  const enlace = c => {
+    const tel = String(c.telefonoCliente || '').replace(/\D/g, '');
+    const texto = `Hola ${String(c.nombreCliente || '').split(' ')[0]}, te escribimos de ${barberiaActual?.nombre || 'la barbería'}. Tuvimos un ajuste en la agenda y tu cita del ${fechaLarga(c.fecha)} pasó de las ${horaLegible(c.horaAnterior).replace(/\u00a0/g, ' ')} a las ${horaLegible(c.horaNueva).replace(/\u00a0/g, ' ')}. Si no te sirve, avísanos por aquí y buscamos otra hora. ¡Gracias por tu paciencia! 🙏`;
+    return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
+  };
+  const fondo = abrirVentanaPanel(`
+    <p class="text-base font-bold text-white">Avisa la nueva hora</p>
+    <p class="text-xs text-gray-400 mt-1 leading-relaxed">Tu barbería no tiene el bot de WhatsApp conectado. Toca cada cliente para avisarle con el mensaje ya escrito.</p>
+    <div class="mt-4 space-y-2">${citas.map(c => `
+      <a href="${escapeHtml(enlace(c))}" target="_blank" rel="noopener"
+        class="flex items-center justify-between gap-3 p-3 rounded-2xl bg-emerald-600/10 border border-emerald-500/30 hover:bg-emerald-600/20 transition">
+        <span class="min-w-0">
+          <span class="block text-sm font-bold text-white truncate">${escapeHtml(c.nombreCliente)}</span>
+          <span class="block text-xs text-gray-400">${escapeHtml(horaLegible(c.horaAnterior))} → ${escapeHtml(horaLegible(c.horaNueva))}</span>
+        </span>
+        <span class="text-xs font-bold text-emerald-300 flex-shrink-0">Escribirle →</span>
+      </a>`).join('')}
+    </div>
+    <button type="button" data-cerrar class="mt-5 w-full py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700">Listo</button>`);
+  fondo.querySelector('[data-cerrar]').onclick = () => fondo.remove();
+}
+
 // ----- Citas que quedan dentro de un bloqueo (imprevisto, viaje...) -----
 // Ventana simple con el estilo del panel; devuelve el elemento de fondo para cerrarla
 function abrirVentanaPanel(html) {
@@ -1362,7 +1386,7 @@ async function abrirModalCitaManual() {
   document.getElementById('manual-fecha').value = TurnosBF.ahoraBogota().iso;
   agendaManual.horaMin = null;
   cerrarOtraHoraManual();
-  servSelect.onchange = barbSelect.onchange = () => { agendaManual.horaMin = null; pintarHorasManual(); };
+  servSelect.onchange = barbSelect.onchange = () => { agendaManual.horaMin = null; pintarHorasManual(); if (horaManualAbierta()) revisarChoqueManual(); };
 
   modal.classList.remove('hidden');
   document.getElementById('manual-horas').innerHTML = '<p class="col-span-full text-xs text-gray-500 py-3">Cargando horas libres…</p>';
@@ -1406,6 +1430,7 @@ function pintarDiasManual() {
     agendaManual.horaMin = null;
     pintarDiasManual();
     pintarHorasManual();
+    if (horaManualAbierta()) revisarChoqueManual();
   });
   const t = new Date(elegido + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
   document.getElementById('manual-dia-texto').textContent = t.charAt(0).toUpperCase() + t.slice(1);
@@ -1460,6 +1485,55 @@ function actualizarHoraManual() {
   const min = leerHoraManual();
   document.getElementById('manual-hora').value = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
   document.getElementById('manual-hora-resumen').textContent = `La cita quedará a las ${TurnosBF.minutosATexto(min)}`;
+  revisarChoqueManual();
+}
+
+// ¿La hora escrita a mano se cruza con otra cita? Se pregunta al servidor (sabe nombres y duraciones)
+let temporizadorChoque = null;
+function revisarChoqueManual() {
+  clearTimeout(temporizadorChoque);
+  agendaManual.simulacion = null;
+  temporizadorChoque = setTimeout(simularChoqueManual, 250);
+}
+
+async function simularChoqueManual() {
+  const caja = document.getElementById('manual-hora-choque');
+  if (!horaManualAbierta()) { caja.classList.add('hidden'); return; }
+  try {
+    const res = await fetch('/api/admin/citas/simular-local', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({
+        fecha: document.getElementById('manual-fecha').value,
+        hora: TurnosBF.minutosAValor(leerHoraManual()),
+        servicioId: Number(document.getElementById('manual-servicio').value),
+        miembroEquipoId: barberoManual()
+      })
+    });
+    if (!res.ok) throw new Error();
+    agendaManual.simulacion = await res.json();
+    pintarChoqueManual(agendaManual.simulacion);
+  } catch (e) {
+    caja.classList.add('hidden');
+  }
+}
+
+function pintarChoqueManual(d) {
+  const caja = document.getElementById('manual-hora-choque');
+  caja.classList.remove('hidden');
+  const nota = (clases, html) => { caja.innerHTML = `<div class="p-2.5 rounded-lg text-[11px] leading-relaxed ${clases}">${html}</div>`; };
+  if (!d.choca) return nota('bg-emerald-500/10 border border-emerald-500/25 text-emerald-300', '✓ Esa hora está libre.');
+  if (d.todosOcupados) return nota('bg-amber-500/10 border border-amber-500/25 text-amber-200',
+    'A esa hora <b>todos los barberos están ocupados</b>. Elige un barbero en la lista de arriba para ver cómo correr sus citas, o escoge otra hora.');
+  if (d.bloqueante) return nota('bg-red-500/10 border border-red-500/25 text-red-200',
+    `⛔ Se cruza con la cita de <b>${escapeHtml(d.bloqueante.nombreCliente)}</b> a las ${escapeHtml(horaLegible(d.bloqueante.hora))}, que empieza antes y todavía no termina. Elige otra hora.`);
+  const primero = (d.conQuien || [])[0];
+  const cierre = TurnosBF.aMinutos(d.horaCierre || '20:00');
+  const lista = (d.cambios || []).map(c => `<li>• <b>${escapeHtml(c.nombreCliente)}</b>: ${escapeHtml(horaLegible(c.horaAnterior))} → <b class="text-white">${escapeHtml(horaLegible(c.horaNueva))}</b>${TurnosBF.aMinutos(c.horaNueva) >= cierre ? ' <span class="text-red-300">(después del cierre)</span>' : ''}</li>`).join('');
+  nota('bg-amber-500/10 border border-amber-500/25 text-amber-100',
+    `⚠️ Se cruza con la cita de <b>${escapeHtml(primero?.nombreCliente || '')}</b> a las ${escapeHtml(horaLegible(primero?.hora || ''))}${primero?.barbero ? ` (con ${escapeHtml(primero.barbero)})` : ''}.<br>
+    Si la agendas así, <b>se corren estas citas</b> y cada cliente recibe un WhatsApp con su nueva hora:
+    <ul class="mt-1 space-y-0.5">${lista}</ul>`);
 }
 
 function ponerHoraManualAhora() {
@@ -1467,6 +1541,8 @@ function ponerHoraManualAhora() {
 }
 
 function cerrarOtraHoraManual() {
+  agendaManual.simulacion = null;
+  document.getElementById('manual-hora-choque').classList.add('hidden');
   document.getElementById('manual-otra-hora').classList.add('hidden');
   document.getElementById('manual-otra-hora-btn').classList.remove('hidden');
   document.getElementById('manual-hora').value = '';
@@ -1509,6 +1585,20 @@ async function guardarCitaManual(e) {
   }
   const horaFormateada = TurnosBF.minutosAValor(minutos);
 
+  let correrSiguientes = false;
+  if (horaManualAbierta()) {
+    const sim = agendaManual.simulacion;
+    if (sim?.todosOcupados) return avisar('A esa hora todos los barberos están ocupados. Elige un barbero o una hora libre.', 'error');
+    if (sim?.bloqueante) return avisar(`Esa hora se cruza con la cita de ${sim.bloqueante.nombreCliente}, que empieza antes. Elige otra hora.`, 'error');
+    if (sim?.cambios?.length) {
+      const lista = sim.cambios.map(c => `• ${c.nombreCliente}: ${horaLegible(c.horaAnterior)} → ${horaLegible(c.horaNueva)}`).join('\n');
+      const ok = await confirmar(`Para atender a ${nombre} a las ${TurnosBF.minutosATexto(minutos)} se corren estas citas:\n${lista}\n\nCada cliente recibe un WhatsApp con su nueva hora y un enlace por si prefiere otra.`,
+        { aceptar: 'Correr y agendar', cancelar: 'Volver', peligro: false });
+      if (!ok) return;
+      correrSiguientes = true;
+    }
+  }
+
   const payload = {
     barberiaSlug: barberiaActual.slug,
     servicioId: servicioId,
@@ -1516,7 +1606,8 @@ async function guardarCitaManual(e) {
     nombreCliente: nombre,
     telefonoCliente: telefonoCompleto,
     fecha: fecha,
-    hora: horaFormateada
+    hora: horaFormateada,
+    correrSiguientes: correrSiguientes
   };
 
   const btn = document.getElementById('btn-guardar-manual');
@@ -1532,7 +1623,10 @@ async function guardarCitaManual(e) {
 
     const data = await res.json();
     if (res.ok) {
-      const resumenCita = `${nombre}: ${tituloDia(fecha)} a las ${TurnosBF.minutosATexto(minutos)}${data.barberoNombre ? ` con ${data.barberoNombre}` : ''}`;
+      const resumenCita = `${nombre}: ${tituloDia(fecha)} a las ${TurnosBF.minutosATexto(minutos)}${data.barberoNombre ? ` con ${data.barberoNombre}` : ''}` +
+        (data.citasCorridas?.length ? `. Se corrieron ${data.citasCorridas.length} cita(s)` : '');
+      // Sin bot: el barbero avisa a mano a quienes se les corrió la cita
+      if (data.citasCorridas?.length && !data.avisoPorWhatsApp) mostrarAvisoCambioHora(data.citasCorridas);
       if (data.avisoPorWhatsApp) {
         avisar(`¡Cita agendada para ${resumenCita}! El cliente recibe la confirmación por WhatsApp.`);
       } else {
