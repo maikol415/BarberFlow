@@ -1,0 +1,14 @@
+/* Fuente de los estilos de la web. El CSS final (wwwroot/css/app.css) se genera con:
+   npx tailwindcss@3.4.17 -c estilos/tailwind.config.js -i estilos/entrada.css -o wwwroot/css/app.css --minify
+   (ejecutar desde la carpeta BarberFlow.Api cada vez que se agreguen clases nuevas en los .html o .js) */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Los campos .campo (definidos en el <style> de cada página) deben respetar los espaciados de Tailwind
+   que se les ponen encima (lupa del buscador, ojo de la contraseña, selects compactos del panel). */
+.campo.pl-9 { padding-left: 2.25rem; }
+.campo.pl-10 { padding-left: 2.5rem; }
+.campo.pr-11 { padding-right: 2.75rem; }
+.campo.py-2 { padding-top: .5rem; padding-bottom: .5rem; }
+.campo.text-sm { font-size: .875rem; line-height: 1.25rem; }

@@ -92,10 +92,14 @@ public class PublicController : ControllerBase
     {
         try
         {
+            // Solo lo necesario para reservar: servicios y equipo activos, y bloqueos/citas de hoy en adelante
+            var hoy = FechaHoyColombia();
             var barberia = await _context.Barberias
+                .AsNoTracking()
                 .Include(b => b.Servicios.Where(s => s.Activo))
                 .Include(b => b.Miembros.Where(m => m.Activo))
-                .Include(b => b.Bloqueos)
+                .Include(b => b.Bloqueos.Where(bl => string.Compare(bl.Fecha, hoy) >= 0))
+                .AsSplitQuery()
                 .FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
 
             if (barberia == null)
@@ -108,15 +112,15 @@ public class PublicController : ControllerBase
                 .Select(r => new { r.Id, r.PalabrasClave, r.Respuesta })
                 .ToListAsync();
 
-            // Citas reservadas actualmente para no permitir sobreposiciones (incluyendo duración real del servicio)
+            // Turnos ya tomados (de hoy en adelante) para no permitir sobreposiciones, con la duración real del servicio
             var citasOcupadas = await _context.Citas
-                .Include(c => c.Servicio)
-                .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
-                .Select(c => new 
-                { 
+                .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "No Confirmada"
+                            && string.Compare(c.Fecha, hoy) >= 0)
+                .Select(c => new
+                {
                     c.Id,
-                    c.Fecha, 
-                    c.Hora, 
+                    c.Fecha,
+                    c.Hora,
                     c.MiembroEquipoId,
                     DuracionMinutos = c.Servicio != null ? c.Servicio.DuracionMinutos : 40
                 })
@@ -126,23 +130,30 @@ public class PublicController : ControllerBase
             var totalAgendamientosReales = await _context.Citas
                 .CountAsync(c => c.BarberiaId == barberia.Id);
 
+            // Promedio y cantidad de reseñas calculados en la base de datos; solo se envían las 4 más recientes
             int totalValoraciones = 0;
             double calificacion = 5.0;
             object ultimasValoraciones = new List<object>();
-
             try
             {
-                var valoraciones = await _context.Valoraciones
+                var resumen = await _context.Valoraciones
+                    .Where(v => v.BarberiaId == barberia.Id)
+                    .GroupBy(v => 1)
+                    .Select(g => new { Total = g.Count(), Promedio = g.Average(v => (double)v.Estrellas) })
+                    .FirstOrDefaultAsync();
+                if (resumen != null)
+                {
+                    totalValoraciones = resumen.Total;
+                    calificacion = Math.Round(resumen.Promedio, 1);
+                }
+
+                var recientes = await _context.Valoraciones
                     .Where(v => v.BarberiaId == barberia.Id)
                     .OrderByDescending(v => v.FechaUtc)
+                    .Take(4)
+                    .Select(v => new { v.NombreCliente, v.Estrellas, v.Comentario, v.FechaUtc })
                     .ToListAsync();
-
-                totalValoraciones = valoraciones.Count;
-                calificacion = totalValoraciones > 0 
-                    ? Math.Round(valoraciones.Average(v => v.Estrellas), 1) 
-                    : 5.0;
-
-                ultimasValoraciones = valoraciones.Take(4).Select(v => new
+                ultimasValoraciones = recientes.Select(v => new
                 {
                     v.NombreCliente,
                     v.Estrellas,
@@ -220,7 +231,8 @@ public class PublicController : ControllerBase
         }
         catch (Exception ex)
         {
-            return StatusCode(500, new { message = "Error obteniendo barberia", error = ex.Message, details = ex.ToString() });
+            Console.WriteLine($"[Error barbería pública] {ex}");
+            return StatusCode(500, new { message = "No pudimos cargar la barbería. Intenta de nuevo en un momento." });
         }
     }
 

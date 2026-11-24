@@ -14,6 +14,11 @@ var supabaseConn = Environment.GetEnvironmentVariable("DATABASE_URL")
                    ?? builder.Configuration.GetConnectionString("SupabaseConnection");
 var useSqlServer = builder.Configuration.GetValue<bool>("UseSqlServer");
 
+// Reutilizar conexiones a PostgreSQL (antes Pooling=false abría una conexión cifrada nueva en CADA consulta:
+// ~0,5 s por consulta y ~3 s para cargar la página de una barbería). Se mantiene una conexión caliente,
+// se renuevan las inactivas y Keepalive evita que Supabase/Render las corten en silencio.
+const string PoolConexiones = "Pooling=true;Minimum Pool Size=1;Maximum Pool Size=15;Connection Idle Lifetime=120;Connection Pruning Interval=30;Keepalive=30;No Reset On Close=true";
+
 builder.Services.AddDbContext<AppDbContext>(options =>
 {
     if (!string.IsNullOrWhiteSpace(supabaseConn))
@@ -27,7 +32,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
             var port = uri.Port > 0 ? uri.Port : 5432;
             var host = uri.Host;
             // Para Render / Supabase: si usa direct pooler o db host, forzar IPv4 si es necesario
-            var npgsqlConn = $"Host={host};Port={port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true;Timeout=60;Command Timeout=60;Pooling=false";
+            var npgsqlConn = $"Host={host};Port={port};Database={uri.AbsolutePath.TrimStart('/')};Username={userInfo[0]};Password={userInfo[1]};SSL Mode=Require;Trust Server Certificate=true;Timeout=60;Command Timeout=60;{PoolConexiones}";
             options.UseNpgsql(npgsqlConn);
         }
         else
@@ -37,7 +42,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
             var connBuilder = supabaseConn;
             if (!connBuilder.Contains("Pooling=", StringComparison.OrdinalIgnoreCase))
             {
-                connBuilder += ";Pooling=false";
+                connBuilder += ";" + PoolConexiones;
             }
             if (!connBuilder.Contains("Timeout=", StringComparison.OrdinalIgnoreCase))
             {
@@ -299,6 +304,15 @@ fileOptions.OnPrepareResponse = ctx =>
     if (nombre.EndsWith(".html") || nombre == "sw.js" || nombre.EndsWith(".json"))
     {
         ctx.Context.Response.Headers["Cache-Control"] = "no-cache";
+    }
+    else if (ctx.Context.Request.Query.ContainsKey("v"))
+    {
+        // Archivos versionados (?v=...): el navegador los guarda un año; al cambiar se cambia el ?v= en el HTML
+        ctx.Context.Response.Headers["Cache-Control"] = "public, max-age=31536000, immutable";
+    }
+    else if (nombre.EndsWith(".png") || nombre.EndsWith(".svg") || nombre.EndsWith(".jpg") || nombre.EndsWith(".webp"))
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "public, max-age=604800";
     }
 };
 app.UseStaticFiles(fileOptions);

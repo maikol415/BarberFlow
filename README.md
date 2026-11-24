@@ -98,3 +98,17 @@ Servicio Node aparte (Baileys), atado a una sola barbería con `BARBERIA_SLUG`.
 - Se escanea el QR una sola vez desde el panel de administración. Para forzar un QR nuevo, `POST /api/reset` al bot con el encabezado `X-Bot-Key` borra la sesión guardada (el panel todavía no tiene botón para esto).
 - La tabla tiene RLS activado y sin políticas: no queda expuesta por la API REST pública de Supabase.
 - Simulador de conversaciones contra una API local: `npm run probar` (ver el encabezado de `whatsapp-bot/pruebas/simular-chat.mjs`).
+
+---
+
+## 🎨 Estilos e íconos de la web (`BarberFlow.Api/estilos/`)
+
+La web ya no carga Tailwind ni la librería completa de íconos en el navegador: usa archivos generados y livianos.
+
+| Archivo | Qué es | Cómo se regenera (desde `BarberFlow.Api`) |
+| --- | --- | --- |
+| `wwwroot/css/app.css` (~30 KB) | Solo las clases de Tailwind que usan las páginas | `npx tailwindcss@3.4.17 -c estilos/tailwind.config.js -i estilos/entrada.css -o wwwroot/css/app.css --minify` |
+| `wwwroot/js/iconos.js` (~10 KB) | Solo los íconos de Lucide que usan las páginas | `node estilos/generar-iconos.cjs` |
+
+- Si agregas clases nuevas de Tailwind o un ícono nuevo (`data-lucide="..."`), vuelve a correr el comando correspondiente.
+- Los archivos con `?v=` en el HTML se guardan un año en el navegador: **al cambiar un .js o .css, cambia también su `?v=`** en los `.html`.
