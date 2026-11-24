@@ -78,3 +78,23 @@ Luego abre en tu navegador:
 - **Vista Cliente:** `http://localhost:5000/index.html`
 - **Portal Barbero:** `http://localhost:5000/login.html`
 - **Panel Privado:** `http://localhost:5000/admin.html`
+
+---
+
+## 🤖 Bot de WhatsApp (`whatsapp-bot/`)
+
+Servicio Node aparte (Baileys), atado a una sola barbería con `BARBERIA_SLUG`.
+
+**Variables en Render (servicio del bot):**
+
+| Variable | Para qué |
+| --- | --- |
+| `BARBERIA_SLUG` | Barbería que atiende el bot |
+| `BOT_API_KEY` | Clave compartida con la API (grupo de entorno `barberflow-compartido`) |
+| `DATABASE_URL` | **Obligatoria en Render.** La misma base de Supabase que usa la API. Ahí se guarda la sesión de WhatsApp (tabla `bot_whatsapp_sesion`, creada sola) para que un redeploy o el apagado del plan gratuito no obligue a escanear el QR otra vez. Lo más simple es enlazar el servicio del bot al grupo `barberflow-compartido` si `DATABASE_URL` ya está ahí, o agregarla en ese grupo. |
+| `BARBERFLOW_API_URL`, `BARBERFLOW_WEB_URL` | URLs de la API y de la web |
+
+- Sin `DATABASE_URL` (desarrollo local) la sesión se guarda en la carpeta `whatsapp-bot/auth_info_baileys/`, como antes.
+- Se escanea el QR una sola vez desde el panel de administración. Para forzar un QR nuevo, `POST /api/reset` al bot con el encabezado `X-Bot-Key` borra la sesión guardada (el panel todavía no tiene botón para esto).
+- La tabla tiene RLS activado y sin políticas: no queda expuesta por la API REST pública de Supabase.
+- Simulador de conversaciones contra una API local: `npm run probar` (ver el encabezado de `whatsapp-bot/pruebas/simular-chat.mjs`).

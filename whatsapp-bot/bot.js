@@ -1,9 +1,9 @@
-import makeWASocket, { DisconnectReason, useMultiFileAuthState } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import http from 'http';
 import fetch from 'node-fetch';
-import fs from 'fs';
 import crypto from 'crypto';
+import { crearAlmacenSesion } from './auth-postgres.js';
 
 const PORT = process.env.PORT || 3001;
 const API_BASE_URL = process.env.BARBERFLOW_API_URL || 'https://barberflow-aos9.onrender.com/api/public';
@@ -199,14 +199,14 @@ const servidorHttp = http.createServer(async (req, res) => {
   // 1. Endpoint para resetear sesión de WhatsApp
   if (req.method === 'POST' && req.url.startsWith('/api/reset')) {
     try {
-      fs.rmSync('./auth_info_baileys', { recursive: true, force: true });
-    } catch (e) {}
-    ultimoQrDataUrl = '';
-    estaConectado = false;
-    estadoConexion = 'Generando nuevo QR...';
-    iniciarBot();
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ ok: true, mensaje: 'Sesión reseteada. QR en camino.' }));
+      await resetearSesionWhatsApp();
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, mensaje: 'Sesión reseteada. QR en camino.' }));
+    } catch (err) {
+      console.error('Error reseteando la sesión de WhatsApp:', err.message);
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: false, error: 'No se pudo borrar la sesión guardada' }));
+    }
     return;
   }
 
@@ -527,14 +527,62 @@ export function __usarSocketDePrueba(sock) {
 }
 
 // ----------------- MOTOR DEL BOT BAILEYS -----------------
+// La sesión de WhatsApp vive en PostgreSQL si hay DATABASE_URL (sobrevive redeploys en Render);
+// sin DATABASE_URL (local) en la carpeta ./auth_info_baileys. Ver auth-postgres.js.
+let almacenSesion = null;
+function obtenerAlmacenSesion() {
+  almacenSesion ||= crearAlmacenSesion({ databaseUrl: process.env.DATABASE_URL, sesion: BARBERIA_SLUG })
+    .then(almacen => {
+      console.log(`Sesión de WhatsApp guardada en: ${almacen.descripcion}`);
+      return almacen;
+    })
+    .catch(err => { almacenSesion = null; throw err; });
+  return almacenSesion;
+}
+
+// Cada socket recibe un número; un reset lo incrementa para que el socket viejo
+// (y sus reconexiones pendientes) dejen de actuar.
+let generacionBot = 0;
+function reintentarBot(generacion, ms) {
+  setTimeout(() => { if (generacion === generacionBot) iniciarBot(); }, ms);
+}
+
+async function resetearSesionWhatsApp() {
+  generacionBot++;
+  const anterior = socketActivo;
+  socketActivo = null;
+  try { anterior?.end(undefined); } catch (e) {}
+  ultimoQrDataUrl = '';
+  estaConectado = false;
+  estadoConexion = 'Generando nuevo QR...';
+  try {
+    await (await obtenerAlmacenSesion()).borrarSesion();
+  } finally {
+    iniciarBot();
+  }
+}
+
 async function iniciarBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
+  const generacion = ++generacionBot;
+  let estadoAuth;
+  try {
+    estadoAuth = await (await obtenerAlmacenSesion()).cargarEstado();
+  } catch (err) {
+    console.error('No se pudo cargar la sesión de WhatsApp:', err.message);
+    estadoConexion = 'No se pudo leer la sesión guardada. Reintentando...';
+    reintentarBot(generacion, 10000);
+    return;
+  }
+  if (generacion !== generacionBot) return; // un reset arrancó otro socket mientras se cargaba
+
+  const { state, saveCreds } = estadoAuth;
   const sock = makeWASocket({ auth: state, printQRInTerminal: false });
   socketActivo = sock;
 
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', async (update) => {
+    if (generacion !== generacionBot) return; // socket reemplazado por un reset
     const { connection, lastDisconnect, qr } = update;
 
     if (qr) {
@@ -552,13 +600,15 @@ async function iniciarBot() {
 
       if (shouldReconnect) {
         estadoConexion = 'Reconectando automáticamente...';
-        setTimeout(iniciarBot, 3000);
+        reintentarBot(generacion, 3000);
       } else {
         estadoConexion = 'Sesión expirada. Generando nuevo código QR...';
         try {
-          fs.rmSync('./auth_info_baileys', { recursive: true, force: true });
-        } catch (e) {}
-        setTimeout(iniciarBot, 2000);
+          await (await obtenerAlmacenSesion()).borrarSesion();
+        } catch (e) {
+          console.error('No se pudo borrar la sesión expirada:', e.message);
+        }
+        reintentarBot(generacion, 2000);
       }
     } else if (connection === 'open') {
       estaConectado = true;
