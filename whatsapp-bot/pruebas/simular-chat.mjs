@@ -346,5 +346,23 @@ comprobar('Después responde SI desde el chat @lid: confirma su cita', r, ['qued
 r = await cliente(lidMayer, 'cancelar');
 comprobar('Y CANCELAR desde el chat @lid encuentra su cita', r, ['encontramos tu cita', citaMayer.hora]);
 r = await cliente(lidMayer, '2');
+// El barbero responde a mano desde su celular: el bot se calla en ese chat
+const escribeBarbero = (remoteJid, texto, haceSeg = 0) => procesarMensajeEntrante(sockFalso, { type: 'notify', messages: [{
+  key: { remoteJid, fromMe: true, id: `HUMANO${++contador}` }, message: { conversation: texto }, messageTimestamp: Math.floor(Date.now() / 1000) - haceSeg }] });
+const amiga = { remoteJid: `5730055${base}@s.whatsapp.net` };
+await escribeBarbero(amiga.remoteJid, 'Hola amor, ya te muestro');
+r = await cliente(amiga, 'Está bonita mor sencillo');
+comprobar('Después de que el barbero escribe, el bot no se mete en el chat', r || 'silencio', ['silencio']);
+r = await cliente(amiga, 'Hola');
+comprobar('Ni siquiera con un saludo mientras dura la pausa', r || 'silencio', ['silencio']);
+const otraAmiga = { remoteJid: `5730044${base}@s.whatsapp.net` };
+await escribeBarbero(otraAmiga.remoteJid, 'mensaje viejo', 600);
+r = await cliente(otraAmiga, 'Hola');
+comprobar('Un mensaje viejo del barbero (historial) no pausa el bot', r, ['Bienvenid']);
+await escribeBarbero(`${dig(telMayer)}@s.whatsapp.net`, 'Mayerli, te escribo yo');
+r = await cliente(lidMayer, 'Hola');
+comprobar('La pausa cubre también el chat @lid del mismo cliente', r || 'silencio', ['silencio']);
+prueba = await probarConversacion({ slug: SLUG, texto: 'hola', reiniciar: true });
+comprobar('El chat de prueba del panel no se afecta por la pausa', prueba.respuestas.join(' | '), ['Bienvenid']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

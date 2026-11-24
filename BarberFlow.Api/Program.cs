@@ -166,6 +166,7 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasRecordatorio"" integer NOT NULL DEFAULT 2;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PedirOpinionActivo"" boolean NOT NULL DEFAULT true;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasRecordatorios"" text NOT NULL DEFAULT '24,2';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MinutosPausaBot"" integer NOT NULL DEFAULT 120;
             ");
         }
         catch (Exception ex)

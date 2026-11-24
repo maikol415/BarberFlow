@@ -54,7 +54,8 @@ public record UpdateBarberiaDto(
     bool? RecordatoriosActivos = null,
     int? HorasRecordatorio = null,
     bool? PedirOpinionActivo = null,
-    string? HorasRecordatorios = null
+    string? HorasRecordatorios = null,
+    int? MinutosPausaBot = null
 );
 
 public record CrearBotReglaDto(

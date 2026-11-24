@@ -224,6 +224,7 @@ public class PublicController : ControllerBase
                 barberia.RecordatoriosActivos,
                 barberia.HorasRecordatorio,
                 barberia.HorasRecordatorios,
+                barberia.MinutosPausaBot,
                 barberia.PedirOpinionActivo,
                 barberia.DiasLaborales,
                 barberia.MostrarSelectorBarbero,

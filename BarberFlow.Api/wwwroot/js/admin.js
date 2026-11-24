@@ -124,6 +124,8 @@ async function cargarPerfil() {
       chkRecordatorios.onchange = alternarHoras;
       alternarHoras();
     }
+    const selPausa = document.getElementById('conf-pausa-bot');
+    if (selPausa) selPausa.value = String(barberiaActual.minutosPausaBot || 120);
     const chkOpinion = document.getElementById('conf-pedir-opinion');
     if (chkOpinion) chkOpinion.checked = barberiaActual.pedirOpinionActivo !== false;
     const chkAnuncio = document.getElementById('conf-anuncio-activo');
@@ -1287,6 +1289,7 @@ async function guardarConfiguracionBot() {
     recordatoriosActivos: document.getElementById('conf-recordatorios-activos')?.checked !== false,
     horasRecordatorios: [...document.querySelectorAll('input[name="horas-recordatorio"]:checked')].map(c => c.value).join(',') || undefined,
     pedirOpinionActivo: document.getElementById('conf-pedir-opinion')?.checked !== false,
+    minutosPausaBot: parseInt(document.getElementById('conf-pausa-bot')?.value || '120'),
     anuncioMatutinoActivo: document.getElementById('conf-anuncio-activo')?.checked !== false,
     horaAnuncioSemana: document.getElementById('conf-anuncio-semana')?.value || '08:00',
     horaAnuncioSabado: document.getElementById('conf-anuncio-sabado')?.value || '08:00',

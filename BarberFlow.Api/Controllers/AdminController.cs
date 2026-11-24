@@ -69,6 +69,7 @@ public class AdminController : ControllerBase
                 barberia.MinutosAnticipacion,
                 barberia.RecordatoriosActivos,
                 barberia.HorasRecordatorios,
+                barberia.MinutosPausaBot,
                 barberia.PedirOpinionActivo,
                 barberia.DiasLaborales,
                 barberia.MostrarSelectorBarbero,
@@ -156,6 +157,7 @@ public class AdminController : ControllerBase
             barberia.HorasRecordatorios = string.Join(",", elegidas);
         }
         if (dto.PedirOpinionActivo.HasValue) barberia.PedirOpinionActivo = dto.PedirOpinionActivo.Value;
+        if (dto.MinutosPausaBot is 30 or 60 or 120 or 240 or 480 or 1440) barberia.MinutosPausaBot = dto.MinutosPausaBot.Value;
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSemana)) barberia.HoraAnuncioSemana = dto.HoraAnuncioSemana.Trim();
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSabado)) barberia.HoraAnuncioSabado = dto.HoraAnuncioSabado.Trim();
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioDomingo)) barberia.HoraAnuncioDomingo = dto.HoraAnuncioDomingo.Trim();

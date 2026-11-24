@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, generateMessageIDV2 } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import http from 'http';
 import fetch from 'node-fetch';
@@ -124,6 +124,58 @@ async function telefonoDelRemitenteAsync(key) {
 }
 
 const ultimaInteraccionCliente = new Map(); // Para saber cuándo habló por última vez
+
+// ----- Cuando el barbero responde a mano, el bot se calla en ese chat -----
+// El bot usa el mismo WhatsApp del barbero. Si él escribe en un chat desde su celular, el bot no debe
+// meterse en la conversación durante un rato (lo elige el barbero en el panel; por defecto 2 horas).
+const idsDelBot = new Set();           // IDs de los mensajes que manda el bot (para no confundirlos con los del barbero)
+const atencionHumana = new Map();      // chat -> cuándo escribió el barbero por última vez
+export const MINUTOS_PAUSA_VALIDOS = [30, 60, 120, 240, 480, 1440];
+
+function nuevoIdMensajeBot() {
+  // Mismo formato de ID que genera Baileys; solo se recuerda cuáles fueron del bot
+  const id = generateMessageIDV2(socketActivo?.user?.id);
+  idsDelBot.add(id);
+  if (idsDelBot.size > 5000) idsDelBot.delete(idsDelBot.values().next().value);
+  return id;
+}
+
+// Todos los envíos del bot llevan un ID propio conocido
+function marcarEnviosDelBot(sock) {
+  const enviarOriginal = sock.sendMessage.bind(sock);
+  sock.sendMessage = (jid, contenido, opciones = {}) =>
+    enviarOriginal(jid, contenido, { ...opciones, messageId: opciones.messageId || nuevoIdMensajeBot() });
+  return sock;
+}
+
+function marcaDeTiempoMs(msg) {
+  const t = msg?.messageTimestamp;
+  const seg = typeof t === 'object' && t !== null ? Number(t.low ?? t.toNumber?.() ?? 0) : Number(t || 0);
+  return seg * 1000;
+}
+
+// Un mensaje "fromMe" que NO mandó el bot = el barbero escribió a mano en ese chat
+export function registrarRespuestaDelBarbero(msg, ahoraMs = Date.now()) {
+  const jid = msg?.key?.remoteJid || '';
+  if (!jid || jid.includes('@g.us') || jid.includes('broadcast') || jid.includes('newsletter')) return false;
+  if (!msg.message || msg.message.protocolMessage || msg.message.senderKeyDistributionMessage) return false;
+  if (idsDelBot.has(msg.key.id)) return false;
+  const cuando = marcaDeTiempoMs(msg) || ahoraMs;
+  if (ahoraMs - cuando > 2 * 60 * 1000) return false; // historial viejo al reconectar
+
+  atencionHumana.set(jid, ahoraMs);
+  // El mismo cliente puede aparecer como número o como @lid: pausar los dos
+  if (jid.endsWith('@lid') && telefonoPorLid.get(jid)) atencionHumana.set(`${telefonoPorLid.get(jid)}@s.whatsapp.net`, ahoraMs);
+  if (jid.endsWith('@s.whatsapp.net') && lidPorTelefono.get(digitosDeJid(jid))) atencionHumana.set(lidPorTelefono.get(digitosDeJid(jid)), ahoraMs);
+  estadoCliente.delete(jid);
+  console.log(`[Atención humana] El barbero respondió en ${jid}: el bot no contesta en ese chat por un rato.`);
+  return true;
+}
+
+function botEnPausa(jids, barberia, ahoraMs = Date.now()) {
+  const minutos = MINUTOS_PAUSA_VALIDOS.includes(Number(barberia?.minutosPausaBot)) ? Number(barberia.minutosPausaBot) : 120;
+  return jids.filter(Boolean).some(j => ahoraMs - (atencionHumana.get(j) || 0) < minutos * 60 * 1000);
+}
 const ultimaDerivacionMap = new Map(); // Para registrar el tiempo exacto de derivación por remitente
 const estadoCliente = new Map(); // Menús o confirmaciones de cancelación
 let cacheBarberia = null;
@@ -770,7 +822,7 @@ async function iniciarBot() {
 
   const { state, saveCreds } = estadoAuth;
   almacenClavesSesion = state.keys;
-  const sock = makeWASocket({ auth: state, printQRInTerminal: false });
+  const sock = marcarEnviosDelBot(makeWASocket({ auth: state, printQRInTerminal: false }));
   socketActivo = sock;
 
   sock.ev.on('creds.update', saveCreds);
@@ -818,11 +870,18 @@ async function iniciarBot() {
 // ----------------- LÓGICA DE CONVERSACIÓN -----------------
 export async function procesarMensajeEntrante(sock, m) {
     try {
-      // Solo mensajes nuevos: al reconectar llegan mensajes de historial (type 'append') que no se deben contestar
-      if (m.type && m.type !== 'notify') return;
       if (!m.messages || m.messages.length === 0) return;
       const msg = m.messages[0];
       if (!msg.message) return;
+
+      // ¿Lo escribió el barbero desde su celular? Entonces el bot se calla un rato en ese chat
+      if (msg.key?.fromMe) {
+        registrarRespuestaDelBarbero(msg);
+        return;
+      }
+
+      // Solo mensajes nuevos: al reconectar llegan mensajes de historial (type 'append') que no se deben contestar
+      if (m.type && m.type !== 'notify') return;
 
       const remitente = msg.key.remoteJid;
       // 🛡️ REGLA 1: Ignorar grupos y difusiones
@@ -867,6 +926,13 @@ export async function procesarMensajeEntrante(sock, m) {
       console.log(`[Mensaje Recibido] De: ${remitente} | Tel: ${telSoloDigitos || '(desconocido)'} | Texto: ${texto}`);
       if (!telSoloDigitos) {
         console.warn(`[Aviso] No se pudo obtener el número real de ${remitente} (sin senderPn).`);
+      }
+
+      // El barbero está hablando personalmente con este cliente: no interrumpir
+      if (!sock.esPrueba && botEnPausa([remitente, telSoloDigitos && `${telSoloDigitos}@s.whatsapp.net`, telSoloDigitos && lidPorTelefono.get(telSoloDigitos)], barberia)) {
+        saludoPendiente.delete(remitente);
+        console.log(`[Atención humana] ${remitente} escribió, pero el barbero está atendiendo ese chat: el bot no responde.`);
+        return;
       }
 
       const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
