@@ -1361,8 +1361,7 @@ async function abrirModalCitaManual() {
 
   document.getElementById('manual-fecha').value = TurnosBF.ahoraBogota().iso;
   agendaManual.horaMin = null;
-  document.getElementById('manual-hora').classList.add('hidden');
-  document.getElementById('manual-hora').value = '';
+  cerrarOtraHoraManual();
   servSelect.onchange = barbSelect.onchange = () => { agendaManual.horaMin = null; pintarHorasManual(); };
 
   modal.classList.remove('hidden');
@@ -1432,20 +1431,55 @@ function pintarHorasManual() {
     class="py-2 rounded-lg border text-xs font-semibold transition ${agendaManual.horaMin === m ? 'bg-blue-600 border-blue-500 text-white' : 'bg-gray-950 border-gray-800 text-gray-200 hover:border-gray-600'}">${TurnosBF.minutosATexto(m)}</button>`).join('');
   cont.querySelectorAll('button[data-min]').forEach(b => b.onclick = () => {
     agendaManual.horaMin = Number(b.dataset.min);
-    document.getElementById('manual-hora').classList.add('hidden');
-    document.getElementById('manual-hora').value = '';
+    cerrarOtraHoraManual();
     pintarHorasManual();
   });
 }
 
+// ----- Hora a mano: tres listas (hora, minutos, a. m./p. m.) en vez del reloj del navegador -----
+function horaManualAbierta() {
+  return !document.getElementById('manual-otra-hora').classList.contains('hidden');
+}
+
+function leerHoraManual() {
+  const h12 = Number(document.getElementById('manual-hora-h').value);
+  const m = Number(document.getElementById('manual-hora-m').value);
+  const pm = document.getElementById('manual-hora-ap').value === 'pm';
+  return (h12 % 12 + (pm ? 12 : 0)) * 60 + m;
+}
+
+function fijarHoraManual(minutos) {
+  const h = Math.floor(minutos / 60) % 24, m = Math.floor((minutos % 60) / 5) * 5;
+  document.getElementById('manual-hora-h').value = String(h % 12 || 12);
+  document.getElementById('manual-hora-m').value = String(m).padStart(2, '0');
+  document.getElementById('manual-hora-ap').value = h < 12 ? 'am' : 'pm';
+  actualizarHoraManual();
+}
+
+function actualizarHoraManual() {
+  const min = leerHoraManual();
+  document.getElementById('manual-hora').value = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
+  document.getElementById('manual-hora-resumen').textContent = `La cita quedará a las ${TurnosBF.minutosATexto(min)}`;
+}
+
+function ponerHoraManualAhora() {
+  fijarHoraManual(TurnosBF.ahoraBogota().minutos);
+}
+
+function cerrarOtraHoraManual() {
+  document.getElementById('manual-otra-hora').classList.add('hidden');
+  document.getElementById('manual-otra-hora-btn').classList.remove('hidden');
+  document.getElementById('manual-hora').value = '';
+}
+
 function alternarOtraHoraManual() {
-  const input = document.getElementById('manual-hora');
-  input.classList.toggle('hidden');
-  if (!input.classList.contains('hidden')) {
-    agendaManual.horaMin = null;
-    pintarHorasManual();
-    input.focus();
-  }
+  document.getElementById('manual-otra-hora').classList.remove('hidden');
+  document.getElementById('manual-otra-hora-btn').classList.add('hidden');
+  ['manual-hora-h', 'manual-hora-m', 'manual-hora-ap'].forEach(id => document.getElementById(id).onchange = actualizarHoraManual);
+  agendaManual.horaMin = null;
+  pintarHorasManual();
+  // Por defecto, la hora actual (lo más común: el cliente ya está en la silla)
+  ponerHoraManualAhora();
 }
 
 function cerrarModalCitaManual() {
@@ -1468,7 +1502,7 @@ async function guardarCitaManual(e) {
 
   // Hora elegida en la lista de horas libres, o escrita a mano
   let minutos = agendaManual.horaMin;
-  if (!document.getElementById('manual-hora').classList.contains('hidden') && rawHora) minutos = TurnosBF.aMinutos(rawHora);
+  if (horaManualAbierta() && rawHora) minutos = TurnosBF.aMinutos(rawHora);
   if (minutos == null || !fecha) {
     avisar('Elige el día y una hora libre (o pon la hora a mano).', 'error');
     return;
