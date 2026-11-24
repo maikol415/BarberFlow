@@ -39,7 +39,7 @@ public record UpdateBarberiaDto(
     string? NumeroNequi = null,
     string? NumeroDaviplata = null,
     string? TitularCuenta = null,
-    bool? BotActivo = true,
+    bool? BotActivo = null,   // null = no cambiar (antes "true" volvía a encender el bot al guardar otras pestañas)
     string? MensajeBienvenidaBot = null,
     string? MensajeDerivacionHumana = null,
     string? PlantillaConfirmacion = null,

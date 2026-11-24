@@ -30,6 +30,7 @@ const {
   probarConversacion,
   horasDeRecordatorio,
   aplicarPlantilla,
+  respuestaAgradecimiento,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -370,5 +371,13 @@ const plantillaPrueba = ['¡Hola {cliente}!', '💈 *Profesional:* {barbero}', '
 comprobar('Plantilla con barbero asignado', aplicarPlantilla(plantillaPrueba, { cliente: 'Mayerli', barbero: 'Diego', hora: '05:00pm' }), ['*Profesional:* Diego', '05:00pm']);
 const sinBarbero = aplicarPlantilla(plantillaPrueba, { cliente: 'Mayerli', barbero: '', hora: '05:00pm' });
 comprobar('Plantilla sin barbero: no deja la línea vacía', sinBarbero.includes('Profesional') ? 'quedó' : sinBarbero, ['¡Hola Mayerli!', '05:00pm']);
+// Agradecimientos: respuesta amable, una sola vez cada rato
+r = await cliente(bob, '2');
+r = await cliente(bob, 'Gracias!!');
+comprobar('"Gracias" recibe una respuesta amable con su nombre', r, ['Bob']);
+comprobar('La respuesta al gracias es amable', /gusto|A ti/.test(r) ? 'amable' : r, ['amable']);
+r = await cliente(bob, 'listo mil gracias parce');
+comprobar('Un segundo gracias seguido no se responde (no ser cansón)', r || 'silencio', ['silencio']);
+comprobar('Respuesta sin nombre si no lo conocemos', respuestaAgradecimiento('', 0), ['¡Con mucho gusto! 💈']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

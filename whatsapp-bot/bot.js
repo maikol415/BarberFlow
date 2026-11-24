@@ -124,6 +124,18 @@ async function telefonoDelRemitenteAsync(key) {
 }
 
 const ultimaInteraccionCliente = new Map(); // Para saber cuándo habló por última vez
+const ultimoAgradecimiento = new Map();     // Para no responder cada "gracias" del mismo chat
+
+// Respuestas a un "gracias" (varían para que no suene a robot)
+export function respuestaAgradecimiento(nombre = '', azar = Math.random()) {
+  const quien = nombre ? `, ${nombre}` : '';
+  const opciones = [
+    `¡Con mucho gusto${quien}! 💈 Aquí estamos para lo que necesites.`,
+    `¡A ti${quien}! 🙌 Cualquier cosa nos escribes por aquí.`,
+    `¡Con todo el gusto${quien}! ✂️ Que tengas un excelente día.`
+  ];
+  return opciones[Math.floor(azar * opciones.length) % opciones.length];
+}
 
 // ----- Cuando el barbero responde a mano, el bot se calla en ese chat -----
 // El bot usa el mismo WhatsApp del barbero. Si él escribe en un chat desde su celular, el bot no debe
@@ -401,7 +413,7 @@ export function normalizarTexto(texto) {
 
 // Intenciones sobre el texto normalizado
 export const INTENCION = {
-  saludo: /\b(hol+a+s?|holi+s?|ola+|alo|buen[oa]s?|buen dia|bn[ao]?s|quiubo|quihubo|kiubo|k hubo|que hubo|que mas|q mas|qmas|que hay|que hay pues|oe+|oie|ey+|hey+|epa+|ole+|saludos|info|informacion|hi|hello|parce|parcero|mor|veci|vecino)\b/,
+  saludo: /\b(hol+a+s?|holi+s?|ola+|alo|buen[oa]s?|buen dia|bn[ao]?s|quiubo|quihubo|kiubo|k hubo|que hubo|que mas|q mas|qmas|que hay|que hay pues|oe+|oie|ey+|hey+|epa+|ole+|saludos|info|informacion|hi|hello)\b/,
   cancelar: /\b(cancel\w*|anular|no (puedo|voy a poder|alcanzo a|podre|pude) (ir|llegar|asistir)|ya no (voy|puedo ir)|me toca cancelar)\b/,
   reagendar: /\b(reagend\w*|reprogram\w*|aplazar|cambiar (la |mi |de )?(cita|fecha|hora|horario|turno|dia)|otra hora|otro horario|correr (la |mi )?(cita|turno|hora)|mover (la |mi )?(cita|turno|hora))\b/,
   // Respuesta de confirmación: todo el mensaje es un "sí"
@@ -410,6 +422,8 @@ export const INTENCION = {
   reservar: /\b(reservar|reserva|agendar|separar|apartar|cupo|cupos|pedir (una )?cita|sacar (una )?cita|quiero (una )?cita|necesito (una )?cita|cita nueva|hay turno|hay cupo|tienen cupo|turno disponible)\b/,
   ubicacion: /\b(horarios?|abren|abre|cierran|cierra|atienden|abierto|abiertos|donde|direccion|ubicacion|ubicados|como llego|como llegar|mapa)\b/,
   pagos: /\b(pagos?|pagar|nequi|daviplata|bancolombia|transferencia|transferir|consignar|consignacion|efectivo|tarjeta|datafono)\b/,
+  // Agradecimientos ("gracias amor", "listo, mil gracias", "Dios le pague"): el bot contesta con amabilidad
+  gracias: /\b(gracias|grax|grcs|dios (le|te|les) pague|dios (le|te) bendiga|muy amable|que amable|super amable|(se|te) lo agradezco|agradecid[oa]|thanks?|thank you)\b/,
   // Reacciones sueltas: el bot no responde en medio de una conversación
   casual: /^((ja|je|ji|jo|ha)+|gracias|muchas gracias|mil gracias|dios le pague|dios te pague|ok|oki|okey|okay|vale|dale|listo|lista|melo|bacano|chevere|super|perfecto|genial|excelente|bueno|bien|esta bien|asi es|de una|entendido|ah bueno|uy|chimba|que chimba|bendiciones|igualmente)( pues| parce| mor| hermano| bro)?$/
 };
@@ -1251,7 +1265,7 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       // 6. Saludos / Menú principal
-      if (INTENCION.saludo.test(textoN)) {
+      if (INTENCION.saludo.test(textoN) && !INTENCION.gracias.test(textoN)) {
         await saludarConMenu();
         return;
       }
@@ -1302,6 +1316,17 @@ export async function procesarMensajeEntrante(sock, m) {
         msgPago += `_Responde *0* para volver al menú._`;
 
         await enviarMensajeHumano(sock, remitente, msgPago);
+        return;
+      }
+
+      // 8b. AGRADECIMIENTOS: una respuesta amable (máximo una cada 30 minutos por chat, para no ser cansón)
+      if (INTENCION.gracias.test(textoN) && textoN.length <= 60) {
+        saludoPendiente.delete(remitente);
+        if (ahora - (ultimoAgradecimiento.get(remitente) || 0) > 30 * 60 * 1000) {
+          ultimoAgradecimiento.set(remitente, ahora);
+          const cita = telSoloDigitos ? await buscarCitaClienteAsync() : null;
+          await enviarMensajeHumano(sock, remitente, respuestaAgradecimiento(cita ? obtenerPrimerNombre(cita.nombreCliente) : ''));
+        }
         return;
       }
 

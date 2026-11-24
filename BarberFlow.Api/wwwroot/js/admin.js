@@ -87,7 +87,10 @@ async function cargarPerfil() {
 
     // Cargar datos de Bot de WhatsApp
     const chkBot = document.getElementById('conf-bot-activo');
-    if (chkBot) chkBot.checked = barberiaActual.botActivo !== false;
+    if (chkBot) {
+      chkBot.checked = barberiaActual.botActivo !== false;
+      chkBot.onchange = () => cambiarEstadoBot(chkBot);
+    }
 
     const txtBienvenida = document.getElementById('conf-bot-bienvenida');
     if (txtBienvenida) txtBienvenida.value = barberiaActual.mensajeBienvenidaBot || '¡Hola! 💈 Bienvenido a {barberia}. ¿En qué podemos ayudarte hoy?\n\n1️⃣ Agendar una cita\n2️⃣ Ver precios y servicios\n3️⃣ Horarios y ubicación';
@@ -1259,6 +1262,23 @@ function mostrarSeccion(sec) {
 }
 
 // FUNCIONES DEL BOT DE WHATSAPP
+// El interruptor "Estado" se guarda al momento (no hace falta el botón Guardar)
+async function cambiarEstadoBot(chk) {
+  const activo = chk.checked;
+  chk.disabled = true;
+  try {
+    const res = await fetch('/api/admin/bot/activo', { method: 'PUT', headers: getAuthHeaders(), body: JSON.stringify({ activo }) });
+    if (!res.ok) throw new Error();
+    barberiaActual.botActivo = activo;
+    avisar(activo ? 'Bot encendido: vuelve a responder a tus clientes.' : 'Bot apagado: no responderá mensajes hasta que lo vuelvas a encender.', activo ? 'ok' : 'info');
+  } catch (e) {
+    chk.checked = !activo;
+    avisar('No se pudo cambiar el estado del bot. Intenta de nuevo.', 'error');
+  } finally {
+    chk.disabled = false;
+  }
+}
+
 async function guardarConfiguracionBot() {
   const recordar = document.getElementById('conf-recordatorios-activos');
   if (recordar?.checked && !document.querySelector('input[name="horas-recordatorio"]:checked')) {

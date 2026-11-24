@@ -98,6 +98,19 @@ public class AdminController : ControllerBase
         }
     }
 
+    public record BotActivoDto(bool Activo);
+
+    // Encender / apagar el bot al instante desde el interruptor del panel
+    [HttpPut("bot/activo")]
+    public async Task<IActionResult> CambiarBotActivo([FromBody] BotActivoDto dto)
+    {
+        var barberia = await _context.Barberias.FindAsync(ObtenerBarberiaId());
+        if (barberia == null) return NotFound();
+        barberia.BotActivo = dto.Activo;
+        await _context.SaveChangesAsync();
+        return Ok(new { barberia.BotActivo });
+    }
+
     [HttpPut("perfil")]
     public async Task<IActionResult> ActualizarPerfil([FromBody] UpdateBarberiaDto dto)
     {
