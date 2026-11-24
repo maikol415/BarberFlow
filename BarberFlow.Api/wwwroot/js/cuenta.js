@@ -116,6 +116,7 @@ function mostrarVista(vista) {
 
 function mostrarFormulario(cual) {
   const login = cual === 'login';
+  mostrar('form-recuperar', false);
   mostrar('form-login', login);
   mostrar('form-registro', !login);
   $('tab-login').className = `py-2 rounded-lg text-sm font-bold transition ${login ? 'tab-activa' : 'tab-inactiva'}`;
@@ -174,6 +175,114 @@ async function crearCuenta(e) {
   guardarSesion(data);
   avisar('¡Cuenta creada! 🎉');
   await cargarCuenta();
+}
+
+// ----- Olvidé mi clave: código por WhatsApp -----
+let pasoRecuperacionCliente = 'tel';
+let temporizadorReenvioCliente = null;
+
+function mostrarRecuperacionCliente() {
+  mostrar('auth-error', false);
+  mostrar('form-login', false);
+  mostrar('form-recuperar', true);
+  $('rc-pais').value = $('login-pais').value;
+  $('rc-tel').value = $('login-tel').value;
+  pasoRecuperacionCliente = 'tel';
+  mostrar('rc-paso-tel', true);
+  mostrar('rc-paso-codigo', false);
+  $('btn-recuperar').textContent = 'Enviarme el código';
+}
+
+function volverAIngresar() {
+  mostrar('auth-error', false);
+  mostrar('form-recuperar', false);
+  mostrar('form-login', true);
+}
+
+function telefonoRecuperacion() {
+  return `${$('rc-pais').value}${$('rc-tel').value.replace(/\D/g, '')}`;
+}
+
+function esperarReenvioCliente() {
+  const boton = $('rc-reenviar');
+  let quedan = 60;
+  clearInterval(temporizadorReenvioCliente);
+  boton.disabled = true;
+  boton.textContent = `Reenviar código en ${quedan} s`;
+  temporizadorReenvioCliente = setInterval(() => {
+    quedan--;
+    if (quedan <= 0) { clearInterval(temporizadorReenvioCliente); boton.disabled = false; boton.textContent = 'Reenviar código'; }
+    else boton.textContent = `Reenviar código en ${quedan} s`;
+  }, 1000);
+}
+
+async function solicitarCodigoCliente() {
+  if ($('rc-tel').value.replace(/\D/g, '').length < 7) { mostrarErrorAuth('Escribe tu número de WhatsApp.'); return false; }
+  const { ok, data } = await api('/clientes/recuperar/solicitar', { method: 'POST', body: JSON.stringify({ barberiaSlug: slug, telefono: telefonoRecuperacion() }) });
+  if (!ok) { mostrarErrorAuth(data?.message || 'No se pudo enviar el código.'); return false; }
+  if (data?.porWhatsApp === false) { mostrarErrorAuth(data.message); return false; }
+  $('rc-mensaje').textContent = data?.message || 'Te enviamos un código por WhatsApp.';
+  return true;
+}
+
+async function enviarRecuperacionCliente(e) {
+  e.preventDefault();
+  mostrar('auth-error', false);
+  const boton = $('btn-recuperar');
+  if (pasoRecuperacionCliente === 'tel') {
+    boton.disabled = true; boton.textContent = 'Enviando...';
+    const ok = await solicitarCodigoCliente();
+    boton.disabled = false;
+    if (!ok) { boton.textContent = 'Enviarme el código'; return; }
+    pasoRecuperacionCliente = 'codigo';
+    mostrar('rc-paso-tel', false);
+    mostrar('rc-paso-codigo', true);
+    boton.textContent = 'Cambiar mi clave';
+    esperarReenvioCliente();
+    $('rc-codigo').focus();
+    return;
+  }
+  const codigo = $('rc-codigo').value.replace(/\D/g, '');
+  if (codigo.length !== 6) return mostrarErrorAuth('Escribe los 6 dígitos del código que te llegó por WhatsApp.');
+  if ($('rc-pass').value.length < 4) return mostrarErrorAuth('La clave nueva debe tener al menos 4 caracteres.');
+  boton.disabled = true; boton.textContent = 'Cambiando...';
+  const { ok, data } = await api('/clientes/recuperar/confirmar', {
+    method: 'POST',
+    body: JSON.stringify({ barberiaSlug: slug, telefono: telefonoRecuperacion(), codigo, nuevaClave: $('rc-pass').value })
+  });
+  boton.disabled = false; boton.textContent = 'Cambiar mi clave';
+  if (!ok) return mostrarErrorAuth(data?.message || 'No se pudo cambiar la clave.');
+  // Queda con la sesión abierta
+  guardarSesion(data);
+  avisar('¡Listo! Tu clave quedó cambiada.');
+  await cargarCuenta();
+}
+
+async function reenviarCodigoCliente() {
+  mostrar('auth-error', false);
+  if (await solicitarCodigoCliente()) esperarReenvioCliente();
+}
+
+// Cambiar la clave con la sesión abierta
+function alternarCambioClave() {
+  $('form-cambiar-clave').classList.toggle('oculto');
+  if (!$('form-cambiar-clave').classList.contains('oculto')) $('cc-actual').focus();
+}
+
+async function cambiarClaveCliente(e) {
+  e.preventDefault();
+  if ($('cc-nueva').value.length < 4) return avisar('La clave nueva debe tener al menos 4 caracteres.', 'error');
+  const boton = $('btn-cambiar-clave');
+  boton.disabled = true;
+  const { ok, data } = await api('/clientes/me/cambiar-clave', {
+    method: 'POST',
+    body: JSON.stringify({ claveActual: $('cc-actual').value, nuevaClave: $('cc-nueva').value })
+  });
+  boton.disabled = false;
+  if (!ok) return avisar(data?.message || 'No se pudo cambiar la clave.', 'error');
+  $('form-cambiar-clave').reset();
+  mostrar('form-cambiar-clave', false);
+  avisar('¡Listo! Tu clave quedó cambiada.');
 }
 
 function cerrarSesion() {
@@ -309,6 +418,7 @@ async function cargarCuenta() {
 async function iniciar() {
   llenarPaises('login-pais');
   llenarPaises('reg-pais');
+  llenarPaises('rc-pais');
   const linkReservar = `/index.html?b=${encodeURIComponent(slug)}`;
   ['link-volver', 'btn-nueva-cita', 'link-reservar-sin-cuenta'].forEach(id => { $(id).href = linkReservar; });
 

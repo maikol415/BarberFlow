@@ -1,4 +1,6 @@
+using System.Security.Claims;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using BarberFlow.Api.Data;
@@ -83,8 +85,8 @@ public class AuthController : ControllerBase
         barberia.Servicios.Add(new Servicio { Categoria = "Combos", Nombre = "Combo Corte + Barba", Precio = 40000, DuracionMinutos = 60, Descripcion = "Tratamiento completo", Icono = "crown" });
 
         // Miembro inicial
-        barberia.Miembros.Add(new MiembroEquipo { 
-            Nombre = dto.NombreCompleto.Trim(), 
+        barberia.Miembros.Add(new MiembroEquipo {
+            Nombre = dto.NombreCompleto.Trim(),
             Rol = "Master Barber / Dueño",
             FotoUrl = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><circle cx='12' cy='8' r='4'/><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/></svg>"
         });
@@ -113,6 +115,99 @@ public class AuthController : ControllerBase
         var barberia = barbero.Barberia!;
         var token = _tokens.GenerarTokenBarbero(barbero, barberia);
         return Ok(new AuthResponseDto(token, barbero.NombreCompleto, barbero.Email, barberia.Slug, barberia.Nombre));
+    }
+
+    // ----- Cambiar y recuperar la contraseña del barbero -----
+    public record SolicitarRecuperacionDto(string? Email);
+    public record ConfirmarRecuperacionDto(string? Email, string? Codigo, string? NuevaClave);
+    public record CambiarClaveDto(string? ClaveActual, string? NuevaClave);
+
+    private string IpCliente() =>
+        Request.Headers["X-Forwarded-For"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault()
+        ?? HttpContext.Connection.RemoteIpAddress?.ToString() ?? "?";
+
+    // Paso 1: se envía un código al WhatsApp de la barbería. La respuesta es la misma exista o no el correo
+    // (así nadie puede averiguar qué correos están registrados).
+    [HttpPost("recuperar/solicitar")]
+    public async Task<IActionResult> SolicitarRecuperacion([FromBody] SolicitarRecuperacionDto dto)
+    {
+        const string respuesta = "Si el correo está registrado, te enviamos un código de 6 dígitos al WhatsApp de tu barbería. Vence en 10 minutos.";
+        if (!RecuperacionClave.PermitirIp($"{IpCliente()}|recuperar-barbero", 10))
+            return StatusCode(429, new { message = "Demasiados intentos. Espera un rato e inténtalo de nuevo." });
+
+        var email = (dto.Email ?? "").Trim().ToLowerInvariant();
+        var barbero = await _context.Barberos.Include(u => u.Barberia).FirstOrDefaultAsync(u => u.Email == email);
+        if (barbero?.Barberia == null || string.IsNullOrWhiteSpace(barbero.Barberia.TelefonoWhatsApp)
+            || !RecuperacionClave.PuedeReenviar(barbero.CodigoRecuperacionEnviado))
+            return Ok(new { message = respuesta });
+
+        var codigo = RecuperacionClave.NuevoCodigo();
+        barbero.CodigoRecuperacionHash = BCrypt.Net.BCrypt.HashPassword(codigo);
+        barbero.CodigoRecuperacionVence = DateTime.UtcNow.AddMinutes(RecuperacionClave.MinutosVigencia);
+        barbero.CodigoRecuperacionIntentos = 0;
+        barbero.CodigoRecuperacionEnviado = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        PublicController.NotificarBot("/api/enviar-codigo", barbero.Barberia, new
+        {
+            barberiaSlug = barbero.Barberia.Slug,
+            barberiaNombre = barbero.Barberia.Nombre,
+            telefono = barbero.Barberia.TelefonoWhatsApp,
+            nombre = barbero.NombreCompleto,
+            codigo,
+            para = "barbero"
+        });
+        return Ok(new { message = respuesta });
+    }
+
+    // Paso 2: código + contraseña nueva. Si todo está bien, queda con la sesión abierta.
+    [HttpPost("recuperar/confirmar")]
+    public async Task<IActionResult> ConfirmarRecuperacion([FromBody] ConfirmarRecuperacionDto dto)
+    {
+        if (!RecuperacionClave.PermitirIp($"{IpCliente()}|confirmar-barbero", 30))
+            return StatusCode(429, new { message = "Demasiados intentos. Espera un rato e inténtalo de nuevo." });
+        if ((dto.NuevaClave ?? "").Length < 6)
+            return BadRequest(new { message = "La contraseña nueva debe tener al menos 6 caracteres." });
+
+        var email = (dto.Email ?? "").Trim().ToLowerInvariant();
+        var barbero = await _context.Barberos.Include(u => u.Barberia).FirstOrDefaultAsync(u => u.Email == email);
+        if (barbero?.Barberia == null) return BadRequest(new { message = "El código no es correcto. Revísalo e inténtalo de nuevo." });
+
+        var error = RecuperacionClave.Verificar(dto.Codigo, barbero.CodigoRecuperacionHash, barbero.CodigoRecuperacionVence, barbero.CodigoRecuperacionIntentos);
+        if (error != null)
+        {
+            if (barbero.CodigoRecuperacionHash != null) { barbero.CodigoRecuperacionIntentos++; await _context.SaveChangesAsync(); }
+            return BadRequest(new { message = error });
+        }
+
+        barbero.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NuevaClave);
+        barbero.CodigoRecuperacionHash = null;
+        barbero.CodigoRecuperacionVence = null;
+        barbero.CodigoRecuperacionIntentos = 0;
+        await _context.SaveChangesAsync();
+
+        var token = _tokens.GenerarTokenBarbero(barbero, barbero.Barberia);
+        return Ok(new AuthResponseDto(token, barbero.NombreCompleto, barbero.Email, barbero.Barberia.Slug, barbero.Barberia.Nombre));
+    }
+
+    // Con la sesión abierta: contraseña actual + nueva
+    [Authorize(Policy = PoliticasAuth.Barbero)]
+    [HttpPost("cambiar-clave")]
+    public async Task<IActionResult> CambiarClave([FromBody] CambiarClaveDto dto)
+    {
+        if (!int.TryParse(User.FindFirst(ClaimTypes.NameIdentifier)?.Value, out var id)) return Unauthorized();
+        var barbero = await _context.Barberos.FindAsync(id);
+        if (barbero == null) return Unauthorized();
+        if (!BCrypt.Net.BCrypt.Verify(dto.ClaveActual ?? "", barbero.PasswordHash))
+            return BadRequest(new { message = "La contraseña actual no es correcta." });
+        if ((dto.NuevaClave ?? "").Length < 6)
+            return BadRequest(new { message = "La contraseña nueva debe tener al menos 6 caracteres." });
+        if (dto.NuevaClave == dto.ClaveActual)
+            return BadRequest(new { message = "La contraseña nueva debe ser diferente a la actual." });
+
+        barbero.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NuevaClave);
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Contraseña actualizada." });
     }
 
     private static string GenerarSlug(string phrase)

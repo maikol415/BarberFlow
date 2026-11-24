@@ -1651,6 +1651,28 @@ async function guardarCitaManual(e) {
   }
 }
 
+// Cambiar la contraseña del panel (con la sesión abierta)
+async function cambiarClaveBarbero(e) {
+  e.preventDefault();
+  const actual = document.getElementById('clave-actual').value;
+  const nueva = document.getElementById('clave-nueva').value;
+  if (nueva.length < 6) return avisar('La contraseña nueva debe tener al menos 6 caracteres.', 'error');
+  if (nueva !== document.getElementById('clave-repetir').value) return avisar('Las dos contraseñas nuevas no coinciden.', 'error');
+  const boton = document.getElementById('btn-cambiar-clave');
+  boton.disabled = true;
+  try {
+    const res = await fetch('/api/auth/cambiar-clave', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ claveActual: actual, nuevaClave: nueva }) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return avisar(data.message || 'No se pudo cambiar la contraseña.', 'error');
+    document.getElementById('form-cambiar-clave').reset();
+    avisar('¡Listo! Tu contraseña quedó cambiada.');
+  } catch (err) {
+    avisar('Error al conectar con el servidor.', 'error');
+  } finally {
+    boton.disabled = false;
+  }
+}
+
 async function limpiarDatosPrueba() {
   if (!(await confirmar('⚠️ ¿Deseas limpiar todas las citas y bloqueos de prueba?\n\nTus servicios, precios y barberos permanecerán intactos, pero las estadísticas volverán a $0 para arrancar el lanzamiento oficial.'))) {
     return;

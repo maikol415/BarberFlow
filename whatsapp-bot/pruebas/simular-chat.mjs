@@ -34,6 +34,7 @@ const {
   manejarNotificarImprevisto,
   mensajeImprevisto,
   manejarNotificarCambioHora,
+  manejarEnviarCodigo,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -405,5 +406,15 @@ const telCorrida = `+57304${base}`;
 enviados.length = 0;
 await manejarNotificarCambioHora({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', citas: [{ id: 77, nombreCliente: 'carlos ruiz', telefonoCliente: telCorrida, servicio: 'Corte', fecha: manana, horaAnterior: '05:20pm', horaNueva: '05:50pm', tokenPublico: 'abc123' }] });
 comprobar('Cita corrida: avisa hora anterior, nueva y enlace para reagendar', enviados.map(e => e.texto).join(' | '), ['Hola Carlos', legible(manana), '~05:20pm~', '*05:50pm*', 'reagendar=abc123']);
+// Código de recuperación de clave por WhatsApp
+const telCodigo = `+57305${base}`;
+enviados.length = 0;
+let cod = await manejarEnviarCodigo({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', telefono: telCodigo, nombre: 'sara lopez', codigo: '482913', para: 'cliente' });
+comprobar('Código para el cliente: llega con su nombre, el código y la advertencia', enviados.map(e => e.texto).join(' | '), ['Hola Sara', '*482913*', 'Vence en 10 minutos', 'Si no lo pediste']);
+enviados.length = 0;
+cod = await manejarEnviarCodigo({ barberiaSlug: SLUG, telefono: telCodigo, codigo: '12ab', para: 'cliente' });
+comprobar('Código mal formado: no se envía nada', `${cod.enviado}|${enviados.length}`, ['false|0']);
+cod = await manejarEnviarCodigo({ barberiaSlug: 'otra', telefono: telCodigo, codigo: '123456' });
+comprobar('Código de otra barbería: no se envía', cod.razon || '', ['otra barbería']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

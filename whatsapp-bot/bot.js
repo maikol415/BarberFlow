@@ -369,6 +369,7 @@ const servidorHttp = http.createServer(async (req, res) => {
     '/api/notificar-cancelacion': manejarNotificarCancelacion,
     '/api/notificar-imprevisto': manejarNotificarImprevisto,
     '/api/notificar-cambio-hora': manejarNotificarCambioHora,
+    '/api/enviar-codigo': manejarEnviarCodigo,
     '/api/probar': probarConversacion
   };
   const ruta = req.url.split('?')[0];
@@ -722,6 +723,28 @@ export async function manejarNotificarCambioHora(payload) {
   if (MODO_PRUEBA) return { enviado: true, enviados: await enviarTodos() };
   enviarTodos();
   return { enviado: true, programados: lista.length };
+}
+
+// Código para cambiar la contraseña (barbero) o la clave (cliente). El código nunca se escribe en los registros.
+export function mensajeCodigo({ nombre, codigo, para }, barberiaNombre) {
+  const aviso = `\n\nVence en 10 minutos. Si no lo pediste tú, ignora este mensaje: sin el código nadie puede cambiar la clave.`;
+  if (para === 'barbero') {
+    return `🔐 *Código para cambiar la contraseña de tu panel de BarberFlow*\n\nTu código es: *${codigo}*` + aviso;
+  }
+  return `🔐 ¡Hola ${obtenerPrimerNombre(nombre)}! Tu código para cambiar la clave de tu cuenta en *${barberiaNombre || 'la barbería'}* es: *${codigo}*` + aviso;
+}
+
+export async function manejarEnviarCodigo(payload) {
+  const { barberiaSlug, barberiaNombre, telefono, codigo } = payload || {};
+  if (barberiaSlug && barberiaSlug.toLowerCase() !== BARBERIA_SLUG.toLowerCase()) {
+    return { enviado: false, razon: 'Código de otra barbería' };
+  }
+  if (!telefono || !/^\d{6}$/.test(String(codigo || ''))) return { enviado: false, razon: 'Datos incompletos' };
+  if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return { enviado: false, razon: 'Bot no conectado' };
+  const jid = await resolverJidDestinatario(socketActivo, telefono);
+  const enviado = await enviarMensajeHumano(socketActivo, jid, mensajeCodigo(payload, barberiaNombre));
+  console.log(`[Código de recuperación] ${enviado ? 'Enviado' : 'No se pudo enviar'} (${payload.para || 'cliente'}).`);
+  return { enviado };
 }
 
 export async function manejarNotificarCancelacion(payload) {

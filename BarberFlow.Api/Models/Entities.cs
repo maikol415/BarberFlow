@@ -8,6 +8,12 @@ public class BarberoUser
     public string NombreCompleto { get; set; } = string.Empty;
     public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
 
+    // Recuperación de contraseña por WhatsApp (código de 6 dígitos cifrado)
+    public string? CodigoRecuperacionHash { get; set; }
+    public DateTime? CodigoRecuperacionVence { get; set; }
+    public int CodigoRecuperacionIntentos { get; set; }
+    public DateTime? CodigoRecuperacionEnviado { get; set; }
+
     public Barberia? Barberia { get; set; }
 }
 
@@ -162,4 +168,10 @@ public class ClienteUsuario
     public string Genero { get; set; } = "Hombre"; // Hombre, Mujer, Otro
     public string PasswordHash { get; set; } = string.Empty;
     public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
+
+    // Recuperación de contraseña por WhatsApp (código de 6 dígitos cifrado)
+    public string? CodigoRecuperacionHash { get; set; }
+    public DateTime? CodigoRecuperacionVence { get; set; }
+    public int CodigoRecuperacionIntentos { get; set; }
+    public DateTime? CodigoRecuperacionEnviado { get; set; }
 }

@@ -958,6 +958,94 @@ public class PublicController : ControllerBase
         return Ok(RespuestaSesionCliente(cliente, "Bienvenido de nuevo."));
     }
 
+    // ----- Cambiar y recuperar la clave del cliente -----
+    public record RecuperarClienteDto(string? BarberiaSlug, string? Telefono);
+    public record ConfirmarClienteDto(string? BarberiaSlug, string? Telefono, string? Codigo, string? NuevaClave);
+    public record CambiarClaveClienteDto(string? ClaveActual, string? NuevaClave);
+
+    private string IpVisitante() =>
+        Request.Headers["X-Forwarded-For"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault()
+        ?? HttpContext.Connection.RemoteIpAddress?.ToString() ?? "?";
+
+    [HttpPost("clientes/recuperar/solicitar")]
+    public async Task<IActionResult> SolicitarRecuperacionCliente([FromBody] RecuperarClienteDto dto)
+    {
+        if (!RecuperacionClave.PermitirIp($"{IpVisitante()}|recuperar-cliente", 10))
+            return StatusCode(429, new { message = "Demasiados intentos. Espera un rato e inténtalo de nuevo." });
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == (dto.BarberiaSlug ?? "").ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+        // Sin bot no hay cómo enviar el código (esto depende de la barbería, no de si existe la cuenta)
+        if (!BotAtiende(barberia))
+            return Ok(new { porWhatsApp = false, message = "Esta barbería todavía no envía códigos por WhatsApp. Escríbele al barbero para que te ayude a recuperar tu cuenta." });
+
+        const string respuesta = "Si tu número tiene cuenta, te enviamos un código de 6 dígitos por WhatsApp. Vence en 10 minutos.";
+        var cliente = await BuscarClientePorTelefono(barberia.Id, dto.Telefono ?? "");
+        if (cliente == null || !RecuperacionClave.PuedeReenviar(cliente.CodigoRecuperacionEnviado))
+            return Ok(new { porWhatsApp = true, message = respuesta });
+
+        var codigo = RecuperacionClave.NuevoCodigo();
+        cliente.CodigoRecuperacionHash = BCrypt.Net.BCrypt.HashPassword(codigo);
+        cliente.CodigoRecuperacionVence = DateTime.UtcNow.AddMinutes(RecuperacionClave.MinutosVigencia);
+        cliente.CodigoRecuperacionIntentos = 0;
+        cliente.CodigoRecuperacionEnviado = DateTime.UtcNow;
+        await _context.SaveChangesAsync();
+
+        NotificarBot("/api/enviar-codigo", barberia, new
+        {
+            barberiaSlug = barberia.Slug,
+            barberiaNombre = barberia.Nombre,
+            telefono = cliente.Telefono,
+            nombre = cliente.Nombre,
+            codigo,
+            para = "cliente"
+        });
+        return Ok(new { porWhatsApp = true, message = respuesta });
+    }
+
+    [HttpPost("clientes/recuperar/confirmar")]
+    public async Task<IActionResult> ConfirmarRecuperacionCliente([FromBody] ConfirmarClienteDto dto)
+    {
+        if (!RecuperacionClave.PermitirIp($"{IpVisitante()}|confirmar-cliente", 30))
+            return StatusCode(429, new { message = "Demasiados intentos. Espera un rato e inténtalo de nuevo." });
+        if ((dto.NuevaClave ?? "").Length < 4)
+            return BadRequest(new { message = "La clave nueva debe tener al menos 4 caracteres." });
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == (dto.BarberiaSlug ?? "").ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+        var cliente = await BuscarClientePorTelefono(barberia.Id, dto.Telefono ?? "");
+        if (cliente == null) return BadRequest(new { message = "El código no es correcto. Revísalo e inténtalo de nuevo." });
+
+        var error = RecuperacionClave.Verificar(dto.Codigo, cliente.CodigoRecuperacionHash, cliente.CodigoRecuperacionVence, cliente.CodigoRecuperacionIntentos);
+        if (error != null)
+        {
+            if (cliente.CodigoRecuperacionHash != null) { cliente.CodigoRecuperacionIntentos++; await _context.SaveChangesAsync(); }
+            return BadRequest(new { message = error });
+        }
+
+        cliente.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NuevaClave);
+        cliente.CodigoRecuperacionHash = null;
+        cliente.CodigoRecuperacionVence = null;
+        cliente.CodigoRecuperacionIntentos = 0;
+        await _context.SaveChangesAsync();
+        return Ok(RespuestaSesionCliente(cliente, "¡Listo! Tu clave quedó cambiada."));
+    }
+
+    [Authorize(Policy = PoliticasAuth.Cliente)]
+    [HttpPost("clientes/me/cambiar-clave")]
+    public async Task<IActionResult> CambiarClaveCliente([FromBody] CambiarClaveClienteDto dto)
+    {
+        var cliente = await ObtenerClienteAutenticado();
+        if (cliente == null) return Unauthorized(new { message = "Tu sesión expiró. Inicia sesión de nuevo." });
+        if (!BCrypt.Net.BCrypt.Verify(dto.ClaveActual ?? "", cliente.PasswordHash))
+            return BadRequest(new { message = "La clave actual no es correcta." });
+        if ((dto.NuevaClave ?? "").Length < 4)
+            return BadRequest(new { message = "La clave nueva debe tener al menos 4 caracteres." });
+        if (dto.NuevaClave == dto.ClaveActual)
+            return BadRequest(new { message = "La clave nueva debe ser diferente a la actual." });
+        cliente.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NuevaClave);
+        await _context.SaveChangesAsync();
+        return Ok(new { message = "Clave actualizada." });
+    }
+
     [Authorize(Policy = PoliticasAuth.Cliente)]
     [HttpGet("clientes/me")]
     public async Task<IActionResult> ObtenerPerfilCliente()

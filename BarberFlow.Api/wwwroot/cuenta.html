@@ -6,9 +6,9 @@
   <title>Mi cuenta - BarberFlow Pro</title>
   <meta name="theme-color" content="#0B0F19">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261124k">
-  <link rel="stylesheet" href="/css/tema.css?v=20261124k">
-  <script src="/js/iconos.js?v=20261124k"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261124l">
+  <link rel="stylesheet" href="/css/tema.css?v=20261124l">
+  <script src="/js/iconos.js?v=20261124l"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; }
@@ -79,6 +79,39 @@
             </div>
           </div>
           <button id="btn-login" type="submit" class="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-sm shadow-lg shadow-blue-600/20 transition">Ingresar</button>
+          <button type="button" onclick="mostrarRecuperacionCliente()" class="block mx-auto text-xs font-semibold text-blue-300 hover:text-blue-200">¿Olvidaste tu clave?</button>
+        </form>
+
+        <!-- Recuperar la clave con un código por WhatsApp -->
+        <form id="form-recuperar" onsubmit="enviarRecuperacionCliente(event)" class="space-y-4 oculto">
+          <div>
+            <p class="text-sm font-bold text-white">Recuperar tu clave</p>
+            <p class="text-xs text-gray-400 mt-1">Te enviamos un código de 6 dígitos a tu WhatsApp.</p>
+          </div>
+          <div id="rc-paso-tel">
+            <label class="etiqueta" for="rc-tel">Tu número de WhatsApp</label>
+            <div class="flex gap-2">
+              <select id="rc-pais" class="campo !w-auto flex-shrink-0 cursor-pointer" aria-label="Indicativo del país"></select>
+              <input id="rc-tel" type="tel" inputmode="tel" autocomplete="tel-national" placeholder="300 123 4567" class="campo">
+            </div>
+          </div>
+          <div id="rc-paso-codigo" class="oculto space-y-4">
+            <p id="rc-mensaje" class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-200 text-xs leading-relaxed"></p>
+            <div>
+              <label class="etiqueta" for="rc-codigo">Código de 6 dígitos</label>
+              <input id="rc-codigo" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" class="campo text-center text-lg font-bold tracking-[0.5em]">
+            </div>
+            <div>
+              <label class="etiqueta" for="rc-pass">Clave nueva (contraseña o PIN)</label>
+              <div class="relative">
+                <input id="rc-pass" type="password" autocomplete="new-password" minlength="4" placeholder="Mínimo 4 caracteres" class="campo pr-11">
+                <button type="button" onclick="alternarClave('rc-pass', this)" class="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 text-gray-500 hover:text-gray-300" aria-label="Mostrar contraseña"><i data-lucide="eye" class="w-4 h-4"></i></button>
+              </div>
+            </div>
+            <button type="button" id="rc-reenviar" onclick="reenviarCodigoCliente()" class="text-xs font-semibold text-gray-400 hover:text-white disabled:opacity-50">Reenviar código</button>
+          </div>
+          <button id="btn-recuperar" type="submit" class="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-sm transition">Enviarme el código</button>
+          <button type="button" onclick="volverAIngresar()" class="block mx-auto text-xs font-semibold text-gray-400 hover:text-white">← Volver a ingresar</button>
         </form>
 
         <!-- Crear cuenta -->
@@ -155,6 +188,19 @@
 
       <!-- Zona de cuenta -->
       <div class="mt-12 pt-5 border-t border-gray-800/80 text-center">
+        <button type="button" onclick="alternarCambioClave()" class="text-xs text-gray-300 hover:text-white font-semibold transition">Cambiar mi clave</button>
+        <form id="form-cambiar-clave" onsubmit="cambiarClaveCliente(event)" class="oculto mt-3 mb-6 mx-auto max-w-xs space-y-3 text-left">
+          <div>
+            <label class="etiqueta" for="cc-actual">Clave actual</label>
+            <input id="cc-actual" type="password" autocomplete="current-password" required class="campo">
+          </div>
+          <div>
+            <label class="etiqueta" for="cc-nueva">Clave nueva</label>
+            <input id="cc-nueva" type="password" autocomplete="new-password" minlength="4" required placeholder="Mínimo 4 caracteres" class="campo">
+          </div>
+          <button id="btn-cambiar-clave" type="submit" class="w-full py-2.5 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-sm transition">Guardar clave nueva</button>
+        </form>
+        <div class="my-3"></div>
         <button onclick="pedirEliminarCuenta()" class="text-xs text-gray-500 hover:text-red-400 font-semibold transition">Eliminar mi cuenta</button>
         <p class="text-[11px] text-gray-600 mt-1">Tus citas no se borran; solo pierdes el acceso con esta cuenta.</p>
       </div>
@@ -178,7 +224,7 @@
 
   <footer class="py-6 text-center text-xs text-gray-600">© 2026 BarberFlow Pro</footer>
 
-  <script src="/js/tema.js?v=20261124k"></script>
-  <script src="/js/cuenta.js?v=20261124k"></script>
+  <script src="/js/tema.js?v=20261124l"></script>
+  <script src="/js/cuenta.js?v=20261124l"></script>
 </body>
 </html>

@@ -10,8 +10,8 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261124k">
-  <script src="/js/iconos.js?v=20261124k"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261124l">
+  <script src="/js/iconos.js?v=20261124l"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -335,6 +335,29 @@
         </form>
 
         <div id="lista-miembros" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3"></div>
+      </div>
+
+      <!-- Seguridad: cambiar la contraseña del panel -->
+      <div class="tarjeta p-4 sm:p-6 mb-6">
+        <h3 class="font-bold text-white text-base sm:text-lg mb-1 flex items-center gap-2">
+          <i data-lucide="lock" class="w-5 h-5 text-blue-300"></i> Cambiar contraseña
+        </h3>
+        <p class="text-xs text-gray-400 mb-4">Es la que usas para entrar a este panel. Si algún día la olvidas, en la pantalla de ingreso toca <b class="text-gray-200">"¿Olvidaste tu contraseña?"</b> y te llega un código al WhatsApp de la barbería.</p>
+        <form id="form-cambiar-clave" onsubmit="cambiarClaveBarbero(event)" class="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+          <div>
+            <label class="block text-xs text-gray-400 mb-1 font-semibold" for="clave-actual">Contraseña actual</label>
+            <input type="password" id="clave-actual" autocomplete="current-password" required class="campo">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1 font-semibold" for="clave-nueva">Contraseña nueva</label>
+            <input type="password" id="clave-nueva" autocomplete="new-password" minlength="6" required placeholder="Mínimo 6 caracteres" class="campo">
+          </div>
+          <div>
+            <label class="block text-xs text-gray-400 mb-1 font-semibold" for="clave-repetir">Repite la nueva</label>
+            <input type="password" id="clave-repetir" autocomplete="new-password" minlength="6" required class="campo">
+          </div>
+          <button type="submit" id="btn-cambiar-clave" class="sm:col-span-3 py-2.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 text-sm transition">Guardar contraseña nueva</button>
+        </form>
       </div>
 
       <!-- Modo Lanzamiento: Limpiar Pruebas -->
@@ -1006,10 +1029,10 @@
     </div>
   </div>
 
-  <script src="/js/tema.js?v=20261124k"></script>
-  <script src="/js/avisos.js?v=20261124k"></script>
-  <script src="/js/turnos.js?v=20261124k"></script>
-  <script src="/js/admin.js?v=20261124k"></script>
+  <script src="/js/tema.js?v=20261124l"></script>
+  <script src="/js/avisos.js?v=20261124l"></script>
+  <script src="/js/turnos.js?v=20261124l"></script>
+  <script src="/js/admin.js?v=20261124l"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));
