@@ -318,6 +318,12 @@ async function iniciar() {
       const b = await res.json();
       if (window.aplicarTemaBarberia) aplicarTemaBarberia(b);
       $('header-barberia').textContent = b.nombre;
+      // Logo de la barbería en el encabezado (si tiene uno propio)
+      if (b.logoUrl && !b.logoUrl.startsWith('data:image/svg')) {
+        const logo = $('header-logo');
+        logo.onload = () => { mostrar('header-logo', true); mostrar('header-icono', false); };
+        logo.src = b.logoUrl;
+      }
       $('auth-barberia').textContent = b.nombre;
       document.title = `Mi cuenta · ${b.nombre}`;
     } else {

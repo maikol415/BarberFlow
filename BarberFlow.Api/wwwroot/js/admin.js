@@ -1140,29 +1140,107 @@ async function cerrarRestoDeHoy() {
   cargarPerfil();
 }
 
-// Si el bloqueo cae sobre citas, ofrecer avisarles por WhatsApp (se cancelan y reciben el enlace para reagendar)
+// ----- Citas que quedan dentro de un bloqueo (imprevisto, viaje...) -----
+// Ventana simple con el estilo del panel; devuelve el elemento de fondo para cerrarla
+function abrirVentanaPanel(html) {
+  const fondo = document.createElement('div');
+  fondo.className = 'fixed inset-0 z-[9998] bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-4';
+  fondo.innerHTML = `<div class="w-full max-w-md max-h-[85vh] overflow-y-auto rounded-3xl bg-gray-900 border border-gray-800 p-5 shadow-2xl" role="dialog" aria-modal="true">${html}</div>`;
+  document.body.appendChild(fondo);
+  return fondo;
+}
+
+// "miércoles 25 de noviembre"
+function fechaLarga(iso) {
+  return new Date(iso + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+// El barbero elige a cuáles citas avisar (en una barbería con varios barberos, puede que solo él no atienda)
+function elegirCitasParaAvisar(citas, conBot) {
+  return new Promise(resolve => {
+    const n = citas.length === 1 ? 'una cita' : `${citas.length} citas`;
+    const fondo = abrirVentanaPanel(`
+      <p class="text-base font-bold text-white">Ese horario tiene ${n}</p>
+      <p class="text-xs text-gray-400 mt-1 leading-relaxed">${conBot
+        ? 'Las que marques se cancelan y el bot le escribe a cada cliente con el motivo y un enlace para elegir otra hora.'
+        : 'Las que marques se cancelan. El bot de WhatsApp no está conectado, así que después te damos un botón para escribirle a cada cliente.'}</p>
+      <div class="mt-4 space-y-2">${citas.map(c => `
+        <label class="flex items-start gap-3 p-3 rounded-2xl bg-gray-950 border border-gray-800 cursor-pointer">
+          <input type="checkbox" checked value="${Number(c.id)}" class="mt-1 w-4 h-4 accent-blue-500 flex-shrink-0">
+          <span class="min-w-0">
+            <span class="block text-sm font-bold text-white">${escapeHtml(c.nombreCliente)}</span>
+            <span class="block text-xs text-gray-400">${escapeHtml(tituloDia(c.fecha))}, ${escapeHtml(horaLegible(c.hora))}${c.servicio ? ` · ${escapeHtml(c.servicio)}` : ''}${c.barbero ? ` · con <b class="text-gray-200">${escapeHtml(c.barbero)}</b>` : ''}</span>
+          </span>
+        </label>`).join('')}
+      </div>
+      <div class="grid grid-cols-2 gap-2 mt-5">
+        <button type="button" data-no class="py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700">No cancelar</button>
+        <button type="button" data-si class="py-2.5 rounded-xl text-sm font-bold bg-red-600 text-white hover:bg-red-500"></button>
+      </div>`);
+    const boton = fondo.querySelector('[data-si]');
+    const marcadas = () => [...fondo.querySelectorAll('input[type=checkbox]:checked')].map(i => Number(i.value));
+    const actualizar = () => {
+      const k = marcadas().length;
+      boton.textContent = k ? `Cancelar y avisar (${k})` : 'Marca al menos una';
+      boton.disabled = !k;
+      boton.classList.toggle('opacity-50', !k);
+    };
+    fondo.querySelectorAll('input[type=checkbox]').forEach(i => i.onchange = actualizar);
+    actualizar();
+    const terminar = valor => { fondo.remove(); resolve(valor); };
+    fondo.querySelector('[data-no]').onclick = () => terminar(null);
+    boton.onclick = () => terminar(marcadas());
+    fondo.onclick = e => { if (e.target === fondo) terminar(null); };
+  });
+}
+
+// Mensaje listo para enviar desde el WhatsApp del barbero cuando el bot no está conectado
+function linkWhatsAppImprevisto(c, motivo) {
+  const tel = String(c.telefonoCliente || '').replace(/\D/g, '');
+  const conMotivo = motivo && !/^(imprevisto|descanso.*|almuerzo|pausa.*)$/i.test(motivo.replace(/^[^\p{L}\p{N}]+/u, '').trim());
+  const texto = `Hola ${String(c.nombreCliente || '').split(' ')[0]}, te escribimos de ${barberiaActual?.nombre || 'la barbería'}. ` +
+    `Por un imprevisto${conMotivo ? ` (${motivo})` : ''} no podremos atenderte el ${fechaLarga(c.fecha)} a las ${horaLegible(c.hora).replace(/ /g, ' ')}, ` +
+    `así que tu cita quedó cancelada. Disculpa las molestias 🙏 Puedes elegir otro horario aquí: ${location.origin}/index.html?b=${encodeURIComponent(barberiaActual?.slug || '')}`;
+  return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
+}
+
+function mostrarAvisoManual(clientes, motivo) {
+  const fondo = abrirVentanaPanel(`
+    <p class="text-base font-bold text-white">Avísales tú por WhatsApp</p>
+    <p class="text-xs text-gray-400 mt-1 leading-relaxed">El bot no está conectado en este momento y no pudo escribirles. Toca cada cliente para abrir WhatsApp con el mensaje ya escrito.</p>
+    <div class="mt-4 space-y-2">${(clientes || []).map(c => `
+      <a href="${escapeHtml(linkWhatsAppImprevisto(c, motivo))}" target="_blank" rel="noopener"
+        class="flex items-center justify-between gap-3 p-3 rounded-2xl bg-emerald-600/10 border border-emerald-500/30 hover:bg-emerald-600/20 transition">
+        <span class="min-w-0">
+          <span class="block text-sm font-bold text-white truncate">${escapeHtml(c.nombreCliente)}</span>
+          <span class="block text-xs text-gray-400">${escapeHtml(tituloDia(c.fecha))}, ${escapeHtml(horaLegible(c.hora))}</span>
+        </span>
+        <span class="text-xs font-bold text-emerald-300 flex-shrink-0">Escribirle →</span>
+      </a>`).join('')}
+    </div>
+    <button type="button" data-cerrar class="mt-5 w-full py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700">Listo</button>`);
+  fondo.querySelector('[data-cerrar]').onclick = () => fondo.remove();
+}
+
 async function ofrecerAvisarCitasAfectadas(data, motivo) {
   const citas = data?.citasAfectadas || [];
   if (!citas.length) return;
-  const lista = citas.slice(0, 8).map(c => `• ${c.nombreCliente} – ${tituloDia(c.fecha)}, ${horaLegible(c.hora)}`).join('\n') +
-    (citas.length > 8 ? `\n…y ${citas.length - 8} más` : '');
-  const n = citas.length === 1 ? 'una cita' : `${citas.length} citas`;
-  const pregunta = data.avisoPorWhatsApp
-    ? `Ese horario tenía ${n}:\n${lista}\n\n¿Les avisamos por WhatsApp? Sus citas se cancelan y cada cliente recibe el motivo y un enlace para elegir otra hora.`
-    : `Ese horario tenía ${n}:\n${lista}\n\nEl bot de WhatsApp no está conectado a tu barbería, así que avísales tú. ¿Cancelamos esas citas para liberar los horarios?`;
-  const si = await confirmar(pregunta, { aceptar: data.avisoPorWhatsApp ? 'Sí, avisarles' : 'Sí, cancelarlas', cancelar: 'No, yo me encargo', peligro: false });
-  if (!si) return;
+  const ids = await elegirCitasParaAvisar(citas, !!data.avisoPorWhatsApp);
+  if (!ids || !ids.length) return;
   try {
     const res = await fetch('/api/admin/citas/avisar-imprevisto', {
       method: 'POST',
       headers: getAuthHeaders(),
-      body: JSON.stringify({ citaIds: citas.map(c => c.id), motivo })
+      body: JSON.stringify({ citaIds: ids, motivo })
     });
     const r = await res.json().catch(() => ({}));
     if (!res.ok) return avisar(r.message || 'No se pudo avisar a los clientes.', 'error');
-    avisar(r.avisoPorWhatsApp
-      ? `Listo: se cancelaron ${r.canceladas} cita(s) y el bot les está escribiendo a los clientes.`
-      : `Listo: se cancelaron ${r.canceladas} cita(s). Recuerda avisarles tú.`);
+    if (r.avisoPorWhatsApp) {
+      avisar(`Listo: se cancelaron ${r.canceladas} cita(s) y el bot les está escribiendo a los clientes.`);
+    } else {
+      avisar(`Se cancelaron ${r.canceladas} cita(s). Ahora avísales tú por WhatsApp.`, 'info');
+      if (r.clientes?.length) mostrarAvisoManual(r.clientes, motivo);
+    }
     cargarCitas();
   } catch (err) {
     avisar('Error al conectar con el servidor.', 'error');
@@ -1420,7 +1498,17 @@ async function guardarCitaManual(e) {
 
     const data = await res.json();
     if (res.ok) {
-      avisar(`¡Cita agendada para ${nombre}: ${tituloDia(fecha)} a las ${TurnosBF.minutosATexto(minutos)}${data.barberoNombre ? ` con ${data.barberoNombre}` : ''}! El cliente recibe la confirmación por WhatsApp.`);
+      const resumenCita = `${nombre}: ${tituloDia(fecha)} a las ${TurnosBF.minutosATexto(minutos)}${data.barberoNombre ? ` con ${data.barberoNombre}` : ''}`;
+      if (data.avisoPorWhatsApp) {
+        avisar(`¡Cita agendada para ${resumenCita}! El cliente recibe la confirmación por WhatsApp.`);
+      } else {
+        avisar(`¡Cita agendada para ${resumenCita}!`);
+        // Sin bot para esta barbería: enviarla desde el WhatsApp del barbero
+        const texto = `Hola ${nombre.split(' ')[0]}, tu cita en ${barberiaActual.nombre} quedó agendada: ${fechaLarga(fecha)} a las ${TurnosBF.minutosATexto(minutos)}${data.barberoNombre ? ` con ${data.barberoNombre}` : ''}. Código: ${data.codigoReserva}. ¡Te esperamos!`;
+        if (await confirmar('Tu barbería no tiene el bot de WhatsApp conectado. ¿Quieres enviarle la confirmación al cliente desde tu WhatsApp?', { aceptar: 'Abrir WhatsApp', cancelar: 'No', peligro: false })) {
+          window.open(`https://wa.me/${pais.replace('+', '')}${telefonoLimpio}?text=${encodeURIComponent(texto)}`, '_blank', 'noopener');
+        }
+      }
       cerrarModalCitaManual();
       document.getElementById('form-cita-manual').reset();
       cargarCitas();

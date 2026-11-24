@@ -605,11 +605,12 @@ export async function manejarNotificarCita(payload) {
     barberia: barberiaNombre || barberiaDatos.nombre || '', direccion: barberiaDireccion || barberiaDatos.direccion || '',
     barbero: payload.barbero || '', valor: `${Number(total || 0).toLocaleString('es-CO')}`
   };
+  const creadaPorBarbero = payload.creadaPorBarbero === true;
   const plantilla = (barberiaDatos.plantillaConfirmacion || '').trim();
   let msgPersonalizado = null;
   if (plantilla && !esReagendamiento) {
     msgPersonalizado = aplicarPlantilla(plantilla, variables);
-    if (!mencionaConfirmar(msgPersonalizado)) {
+    if (!creadaPorBarbero && !mencionaConfirmar(msgPersonalizado)) {
       msgPersonalizado += `\n\n👉 Responde *SI* para confirmar tu asistencia, o *CANCELAR* / *REAGENDAR* si no puedes.`;
     }
   }
@@ -626,7 +627,7 @@ export async function manejarNotificarCita(payload) {
     (barberiaDireccion ? `📍 *Dirección:* ${barberiaDireccion}\n` : '') +
     `\n━━━━━━━━━━━━━━━━━━━━\n` +
     `💡 *Gestión rápida de tu cita:*\n` +
-    `• Responde *SI* para confirmar tu asistencia ✅\n` +
+    (creadaPorBarbero ? '' : `• Responde *SI* para confirmar tu asistencia ✅\n`) +
     `• Responde *CANCELAR* si te surge un imprevisto ❌\n` +
     `• Responde *REAGENDAR* si deseas cambiar de horario 🔄\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
@@ -635,8 +636,9 @@ export async function manejarNotificarCita(payload) {
   const enviado = await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
   ultimaInteraccionCliente.set(jid, ahora);
   if (enviado && citaId) confirmacionEnviada.set(citaId, ahora);
-  // Solo si el mensaje salió queda "Por confirmar" (si no, el cliente nunca vería la pregunta)
-  if (enviado && citaId) await cambiarEstadoCita(citaId, 'Pendiente');
+  // Solo si el mensaje salió queda "Por confirmar" (si no, el cliente nunca vería la pregunta).
+  // Si la anotó el barbero en el local, el cliente ya está ahí: queda Confirmada.
+  if (enviado && citaId && !creadaPorBarbero) await cambiarEstadoCita(citaId, 'Pendiente');
 
   const encuesta = agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barberiaNombre, fecha, hora, duracionMinutos);
   return { enviado: true, jid, encuestaEnMinutos: encuesta };
@@ -644,7 +646,9 @@ export async function manejarNotificarCita(payload) {
 
 // El barbero tuvo un imprevisto: a cada cliente afectado se le avisa que su cita quedó cancelada,
 // con el motivo y el enlace para elegir otra hora. Se envían en segundo plano (uno tras otro, con pausa humana).
-export function mensajeImprevisto({ nombreCliente, servicio, fecha, hora }, barberiaNombre, motivo) {
+export function mensajeImprevisto({ nombreCliente, servicio, fecha, hora }, barberiaNombre, motivoOriginal) {
+  const limpio = String(motivoOriginal || '').replace(/^[^\p{L}\p{N}]+/u, '').trim();
+  const motivo = /^(imprevisto|descanso.*|almuerzo|pausa.*|no disponible)$/i.test(limpio) ? '' : limpio;
   return `😔 ¡Hola ${obtenerPrimerNombre(nombreCliente)}! Te escribimos de *${barberiaNombre || 'la barbería'}*.\n\n` +
     `Por un imprevisto${motivo ? ` (${motivo})` : ''} el barbero no podrá atenderte el *${fechaLegible(fecha)}* a las *${hora}*` +
     `${servicio ? ` (${servicio})` : ''}, así que tu cita quedó cancelada. Disculpa las molestias 🙏\n\n` +
@@ -751,6 +755,7 @@ export async function revisarRecordatorios(ahoraMs = Date.now()) {
   if (process.env.RECORDATORIOS_ACTIVOS === '0') return [];
   if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return [];
 
+  for (const [id, cuando] of confirmacionEnviada) if (ahoraMs - cuando > 3 * 24 * 3600 * 1000) confirmacionEnviada.delete(id);
   const barberiaDatos = await obtenerDatosBarberia();
   if (barberiaDatos.recordatoriosActivos === false) return [];
   const listaHoras = horasDeRecordatorio(barberiaDatos);

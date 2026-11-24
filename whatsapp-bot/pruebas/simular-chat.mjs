@@ -390,5 +390,14 @@ enviados.length = 0;
 const imp = await manejarNotificarImprevisto({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', motivo: 'Calamidad', citas: [{ id: 999, nombreCliente: 'lucia gómez', telefonoCliente: telImpre, servicio: 'Corte', fecha: manana, hora: '03:00pm' }] });
 comprobar('Imprevisto: avisa al cliente con motivo, fecha y enlace', enviados.map(e => e.texto).join(' | '), ['Hola Lucia', 'imprevisto (Calamidad)', legible(manana), '03:00pm', 'quedó cancelada', 'index.html?b=', 'se comunicará contigo']);
 comprobar('Imprevisto: no avisa citas de otra barbería', (await manejarNotificarImprevisto({ barberiaSlug: 'otra', citas: [] })).razon || '', ['otra barbería']);
+// Cita anotada por el barbero en el local: confirmación sin pedir SI y la cita sigue Confirmada
+const telLocal = `+57303${base}`;
+const citaLocal = await crearCita(telLocal, 'Cliente Local', pasado, '05:20 PM');
+enviados.length = 0;
+await manejarNotificarCita({ ...payloadBase, citaId: citaLocal.id, codigoReserva: citaLocal.codigoReserva, nombreCliente: 'Cliente Local', telefonoCliente: telLocal, fecha: pasado, hora: citaLocal.hora, creadaPorBarbero: true });
+const estadoLocal = await (await fetch(`${API}/bot/${SLUG}/cita/${citaLocal.id}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY } })).json();
+comprobar('Cita del local: no pide SI y queda Confirmada', `${/Responde *SI*/.test(enviados.map(e => e.texto).join(' ')) ? 'pide SI' : 'sin SI'} | ${estadoLocal.estado}`, ['sin SI', '| Confirmada']);
+comprobar('Imprevisto con motivo genérico no lo repite', mensajeImprevisto({ nombreCliente: 'Ana', fecha: manana, hora: '03:00pm' }, 'X', 'Imprevisto'), ['Por un imprevisto el barbero']);
+comprobar('Imprevisto con emoji de almuerzo no lo repite', mensajeImprevisto({ nombreCliente: 'Ana', fecha: manana, hora: '03:00pm' }, 'X', '🍱 Almuerzo'), ['Por un imprevisto el barbero']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

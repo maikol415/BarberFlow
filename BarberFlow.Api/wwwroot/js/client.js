@@ -211,6 +211,7 @@ function renderEncabezado() {
 
 function abrirModalImagenGrande(src, titulo, subtitulo = '') {
   mostrar('img-grande-reacciones', false);
+  fotoAbierta = null;
   $('modal-foto-grande').firstElementChild.classList.replace('max-w-3xl', 'max-w-md');
   $('img-grande-src').src = src;
   $('img-grande-titulo').textContent = titulo || '';
@@ -220,64 +221,94 @@ function abrirModalImagenGrande(src, titulo, subtitulo = '') {
 
 function cerrarModalFotoGrande() { mostrar('modal-foto-grande', false); }
 
-// ----- Portada: se abre en grande y se le puede reaccionar -----
-const REACCIONES_PORTADA = [['corazon', '❤️', 'Me encanta'], ['fuego', '🔥', 'Está brutal'], ['aplausos', '👏', 'Excelente'], ['wow', '😍', 'Qué belleza']];
+// ----- Portada y foto de perfil (logo): se abren en grande y se les puede reaccionar -----
+const REACCIONES_FOTO = [['corazon', '❤️', 'Me encanta'], ['fuego', '🔥', 'Está brutal'], ['aplausos', '👏', 'Excelente'], ['wow', '😍', 'Qué belleza']];
+
+// Qué fotos aceptan reacciones y de dónde salen sus datos
+const FOTOS_CON_REACCION = {
+  portada: { url: () => barberia.portadaUrl, conteos: 'reaccionesPortada', ancho: 'max-w-3xl', valida: () => portadaEsFoto() },
+  logo: { url: () => barberia.logoUrl, conteos: 'reaccionesLogo', ancho: 'max-w-md', valida: () => !!barberia?.logoUrl && !barberia.logoUrl.startsWith('data:image/svg') }
+};
+let fotoAbierta = null;
 
 function portadaEsFoto() {
   return !!barberia?.portadaUrl && !barberia.portadaUrl.startsWith('preset:');
 }
 
-function claveReaccionPortada() {
-  return `bf_reaccion_portada_${barberia.slug}_${barberia.portadaUrl}`;
+// La reacción de este visitante se recuerda por foto (si la foto cambia, puede reaccionar de nuevo)
+function claveReaccion(foto) {
+  return `bf_reaccion_${foto}_${barberia.slug}_${FOTOS_CON_REACCION[foto].url()}`;
 }
 
-function miReaccionPortada() {
-  try { return localStorage.getItem(claveReaccionPortada()); } catch (e) { return null; }
+function miReaccion(foto) {
+  try { return localStorage.getItem(claveReaccion(foto)); } catch (e) { return null; }
 }
 
-function abrirVisorPortada() {
-  if (!portadaEsFoto()) return;
-  abrirModalImagenGrande(barberia.portadaUrl, barberia.nombre, '¿Te gusta? Déjale una reacción');
-  $('modal-foto-grande').firstElementChild.classList.replace('max-w-md', 'max-w-3xl');
-  pintarReaccionesPortada();
+function abrirVisorConReacciones(foto) {
+  const cfg = FOTOS_CON_REACCION[foto];
+  if (!cfg) return;
+  if (!cfg.valida()) {
+    // Sin foto propia: se muestra el logo por defecto, sin reacciones
+    abrirModalImagenGrande($('barber-logo').src, barberia?.nombre);
+    return;
+  }
+  abrirModalImagenGrande(cfg.url(), barberia.nombre, '¿Te gusta? Déjale una reacción');
+  fotoAbierta = foto; // después de abrir: abrirModalImagenGrande lo reinicia
+  $('modal-foto-grande').firstElementChild.classList.replace('max-w-md', cfg.ancho);
+  pintarReacciones();
   mostrar('img-grande-reacciones', true);
 }
 
-function pintarReaccionesPortada() {
-  const conteos = barberia.reaccionesPortada || {};
-  const mia = miReaccionPortada();
-  $('img-grande-reacciones').innerHTML = REACCIONES_PORTADA.map(([tipo, emoji, nombre]) => {
+function abrirVisorPortada() { abrirVisorConReacciones('portada'); }
+function abrirVisorLogo() { abrirVisorConReacciones('logo'); }
+
+function pintarReacciones() {
+  const foto = fotoAbierta;
+  if (!foto) return;
+  const conteos = barberia[FOTOS_CON_REACCION[foto].conteos] || {};
+  const mia = miReaccion(foto);
+  $('img-grande-reacciones').innerHTML = REACCIONES_FOTO.map(([tipo, emoji, nombre]) => {
     const activa = mia === tipo;
     const n = conteos[tipo] || 0;
-    return `<button type="button" data-reaccion="${tipo}" title="${nombre}" aria-pressed="${activa}"
+    return `<button type="button" data-reaccion="${tipo}" title="${nombre}" aria-label="${nombre}${n ? ` (${n})` : ''}" aria-pressed="${activa}"
       class="min-w-[3.5rem] px-3 py-2 rounded-2xl border text-sm font-bold transition ${activa ? 'bg-blue-600/20 border-blue-500 text-white scale-105' : 'bg-gray-900 border-gray-700 text-gray-200 hover:border-gray-500'}">
       <span class="text-lg leading-none">${emoji}</span>${n ? ` <span class="text-xs">${n}</span>` : ''}
     </button>`;
   }).join('');
-  $('img-grande-reacciones').querySelectorAll('button').forEach(b => b.onclick = () => reaccionarPortada(b.dataset.reaccion));
+  $('img-grande-reacciones').querySelectorAll('button').forEach(b => b.onclick = () => reaccionar(foto, b.dataset.reaccion));
 }
 
-async function reaccionarPortada(tipo) {
-  const anterior = miReaccionPortada();
+async function reaccionar(foto, tipo) {
+  const cfg = FOTOS_CON_REACCION[foto];
+  const anterior = miReaccion(foto);
   const nueva = anterior === tipo ? null : tipo; // tocar la misma la quita
   // Se ve al instante; luego se confirma con lo que guarda el servidor
-  const conteos = { ...(barberia.reaccionesPortada || {}) };
+  const conteosAntes = barberia[cfg.conteos] || {};
+  const conteos = { ...conteosAntes };
   if (anterior) conteos[anterior] = Math.max(0, (conteos[anterior] || 0) - 1);
   if (nueva) conteos[nueva] = (conteos[nueva] || 0) + 1;
-  barberia.reaccionesPortada = conteos;
-  try { nueva ? localStorage.setItem(claveReaccionPortada(), nueva) : localStorage.removeItem(claveReaccionPortada()); } catch (e) {}
-  pintarReaccionesPortada();
+  const guardarMia = valor => { try { valor ? localStorage.setItem(claveReaccion(foto), valor) : localStorage.removeItem(claveReaccion(foto)); } catch (e) {} };
+  barberia[cfg.conteos] = conteos;
+  guardarMia(nueva);
+  pintarReacciones();
+  let ok = false;
   try {
-    const res = await fetch(`/api/public/barberia/${encodeURIComponent(barberia.slug)}/reaccion-portada`, {
+    const res = await fetch(`/api/public/barberia/${encodeURIComponent(barberia.slug)}/reaccion/${foto}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ tipo: nueva, anterior })
     });
     if (res.ok) {
-      barberia.reaccionesPortada = await res.json();
-      pintarReaccionesPortada();
+      barberia[cfg.conteos] = await res.json();
+      ok = true;
     }
   } catch (e) {}
+  // Si el servidor no la guardó, se deshace (así no se descuenta luego una reacción que nunca contó)
+  if (!ok) {
+    barberia[cfg.conteos] = conteosAntes;
+    guardarMia(anterior);
+  }
+  if (fotoAbierta === foto) pintarReacciones();
 }
 
 window.addEventListener('keydown', (e) => {
@@ -684,7 +715,7 @@ function actualizarResumen() {
   $('resumen-precio').textContent = formatearPrecio(serv ? serv.precio : 0);
 
   marcarPaso('num-paso-servicio', !!serv);
-  marcarPaso('num-paso-barbero', !!serv);
+  marcarPaso('num-paso-barbero', hayVariosBarberos() ? reservaActual.barberoId != null : !!serv);
   marcarPaso('num-paso-fecha', !!(fecha && hora));
   marcarPaso('num-paso-datos', !!(serv && fecha && hora && datosCompletos()));
 
@@ -700,6 +731,7 @@ function actualizarResumen() {
 
 function avanzarPaso() {
   if (!servicioActual()) return $('seccion-paso-servicios').scrollIntoView({ behavior: 'smooth' });
+  if (hayVariosBarberos() && reservaActual.barberoId == null) return $('seccion-selector-barbero').scrollIntoView({ behavior: 'smooth', block: 'start' });
   if (!reservaActual.horaSeleccionada) return $('seccion-paso-calendario').scrollIntoView({ behavior: 'smooth' });
   if (!datosCompletos()) {
     $('seccion-datos').scrollIntoView({ behavior: 'smooth' });
@@ -846,6 +878,12 @@ async function verificarParametrosUrl() {
       mostrar('seccion-paso-servicios', false);
       if (info.nombreCliente && !$('cliente-nombre').value) $('cliente-nombre').value = info.nombreCliente;
       reservaActual.fechaSeleccionada = null;
+      if (info.miembroEquipoId && (barberia.miembros || []).some(m => m.id === info.miembroEquipoId)) {
+        reservaActual.barberoId = info.miembroEquipoId;
+        const b = barberia.miembros.find(m => m.id === info.miembroEquipoId);
+        $('resumen-barbero').textContent = b.nombre;
+        if (hayVariosBarberos()) renderBarberos();
+      }
       seleccionarServicio(serv, false);
       setTimeout(() => $('seccion-paso-calendario').scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
     } catch (e) {}

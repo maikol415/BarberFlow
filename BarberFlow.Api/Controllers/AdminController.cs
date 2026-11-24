@@ -126,6 +126,7 @@ public class AdminController : ControllerBase
         barberia.HorarioTexto = dto.HorarioTexto.Trim();
         if (!string.IsNullOrWhiteSpace(dto.LogoUrl))
         {
+            if (barberia.LogoUrl != dto.LogoUrl.Trim()) barberia.ReaccionesLogo = ""; // logo nuevo: reacciones desde cero
             barberia.LogoUrl = dto.LogoUrl.Trim();
         }
 
@@ -529,7 +530,7 @@ public class AdminController : ControllerBase
         {
             if (!DateTime.TryParseExact(dto.FechaHasta, "yyyy-MM-dd", formato, System.Globalization.DateTimeStyles.None, out hasta) || hasta < desde)
                 return BadRequest(new { message = "La fecha final debe ser igual o posterior a la inicial." });
-            if ((hasta - desde).TotalDays > 60)
+            if ((hasta - desde).TotalDays >= 60)
                 return BadRequest(new { message = "Puedes bloquear máximo 60 días seguidos." });
         }
 
@@ -563,7 +564,7 @@ public class AdminController : ControllerBase
         else { ini = EstadosCitas.HoraAMinutos(hora); fin = ini + barberia.IntervaloMinutos; }
 
         var ahora = EstadosCitas.AhoraColombia();
-        var citas = await _context.Citas.Include(c => c.Servicio)
+        var citas = await _context.Citas.Include(c => c.Servicio).Include(c => c.MiembroEquipo)
             .Where(c => c.BarberiaId == barberia.Id && fechas.Contains(c.Fecha)
                         && (c.Estado == EstadosCitas.Pendiente || c.Estado == EstadosCitas.Confirmada))
             .ToListAsync();
@@ -576,7 +577,7 @@ public class AdminController : ControllerBase
                 return ci < fin && cf > ini && inicio != null && inicio.Value > ahora;
             })
             .OrderBy(c => c.Fecha).ThenBy(c => EstadosCitas.HoraAMinutos(c.Hora))
-            .Select(c => new { c.Id, c.NombreCliente, c.Fecha, c.Hora, Servicio = c.Servicio?.Nombre ?? "" })
+            .Select(c => new { c.Id, c.NombreCliente, c.Fecha, c.Hora, Servicio = c.Servicio?.Nombre ?? "", Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "" })
             .ToList();
 
         return Ok(new { bloqueos = creados, citasAfectadas = afectadas, avisoPorWhatsApp = PublicController.BotAtiende(barberia) });
@@ -596,19 +597,21 @@ public class AdminController : ControllerBase
             .Where(c => c.BarberiaId == barberia.Id && ids.Contains(c.Id)
                         && (c.Estado == EstadosCitas.Pendiente || c.Estado == EstadosCitas.Confirmada))
             .ToListAsync();
+        // ¿El bot puede escribirles ahora mismo? (atiende esta barbería y WhatsApp está conectado)
+        var botListo = await BotConectadoAsync(barberia);
         foreach (var c in citas) c.Estado = EstadosCitas.Cancelada;
         await _context.SaveChangesAsync();
 
         var motivo = (dto.Motivo ?? "").Trim();
         if (motivo.Length > 80) motivo = motivo[..80];
-        PublicController.NotificarBot("/api/notificar-imprevisto", barberia, new
+        if (botListo) PublicController.NotificarBot("/api/notificar-imprevisto", barberia, new
         {
             barberiaSlug = barberia.Slug,
             barberiaNombre = barberia.Nombre,
             motivo,
             citas = citas.Select(c => new
             {
-                c.Id,
+                id = c.Id,
                 nombreCliente = c.NombreCliente,
                 telefonoCliente = c.TelefonoCliente,
                 servicio = c.Servicio?.Nombre ?? "",
@@ -617,7 +620,37 @@ public class AdminController : ControllerBase
             })
         });
 
-        return Ok(new { canceladas = citas.Count, avisoPorWhatsApp = PublicController.BotAtiende(barberia) });
+        return Ok(new
+        {
+            canceladas = citas.Count,
+            avisoPorWhatsApp = botListo,
+            // Para avisar a mano si el bot no está conectado
+            clientes = citas.Select(c => new { c.NombreCliente, c.TelefonoCliente, c.Fecha, c.Hora, Servicio = c.Servicio?.Nombre ?? "" })
+        });
+    }
+
+    // El bot atiende esta barbería y su WhatsApp está conectado en este momento
+    private static async Task<bool> BotConectadoAsync(Barberia barberia)
+    {
+        if (!PublicController.BotAtiende(barberia)) return false;
+        var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
+        var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
+        if (string.IsNullOrWhiteSpace(botKey)) return false;
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, $"{botUrl.TrimEnd('/')}/api/status");
+            req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
+            using var resp = await _botHttp.SendAsync(req);
+            if (!resp.IsSuccessStatusCode) return false;
+            using var doc = System.Text.Json.JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            return doc.RootElement.TryGetProperty("conectado", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.True
+                && doc.RootElement.TryGetProperty("barberiaSlug", out var s) && string.Equals(s.GetString(), barberia.Slug, StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Bot estado] No respondió: {ex.Message}");
+            return false;
+        }
     }
 
     [HttpDelete("bloqueos/{id}")]

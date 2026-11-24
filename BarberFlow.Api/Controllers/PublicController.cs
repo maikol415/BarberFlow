@@ -124,7 +124,7 @@ public class PublicController : ControllerBase
         return File(bytes, mime);
     }
 
-    // ----- Reacciones a la foto de portada (❤️ 🔥 👏 😍) -----
+    // ----- Reacciones a la portada y a la foto de perfil (❤️ 🔥 👏 😍) -----
     private static readonly string[] TiposReaccion = { "corazon", "fuego", "aplausos", "wow" };
     private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime Desde, int Cuenta)> _limiteReacciones = new();
     public record ReaccionDto(string? Tipo, string? Anterior);
@@ -137,26 +137,46 @@ public class PublicController : ControllerBase
         return TiposReaccion.ToDictionary(t => t, t => Math.Max(0, guardadas?.GetValueOrDefault(t) ?? 0));
     }
 
-    // Una persona tiene una reacción: "Anterior" se quita y "Tipo" se suma (Tipo null = quitar la suya)
-    [HttpPost("barberia/{slug}/reaccion-portada")]
-    public async Task<IActionResult> ReaccionarPortada(string slug, [FromBody] ReaccionDto dto)
+    // Una persona tiene una reacción por foto: "Anterior" se quita y "Tipo" se suma (Tipo null = quitar la suya)
+    [HttpPost("barberia/{slug}/reaccion/{foto}")]
+    public async Task<IActionResult> Reaccionar(string slug, string foto, [FromBody] ReaccionDto dto)
     {
-        var ip = Request.Headers["X-Forwarded-For"].FirstOrDefault()?.Split(',')[0].Trim()
+        if (foto != "portada" && foto != "logo") return NotFound();
+        var slugN = slug.ToLowerInvariant();
+        // Detrás del proxy de Render la IP real del visitante es el ÚLTIMO valor de X-Forwarded-For
+        // (los anteriores los puede inventar quien hace la petición)
+        var ip = Request.Headers["X-Forwarded-For"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault()
                  ?? HttpContext.Connection.RemoteIpAddress?.ToString() ?? "?";
         var ahoraUtc = DateTime.UtcNow;
-        var uso = _limiteReacciones.AddOrUpdate($"{ip}|{slug}", (ahoraUtc, 1),
+        if (_limiteReacciones.Count > 5000)
+            foreach (var viejo in _limiteReacciones.Where(k => ahoraUtc - k.Value.Desde > TimeSpan.FromHours(1)).Select(k => k.Key).ToList())
+                _limiteReacciones.TryRemove(viejo, out _);
+        var uso = _limiteReacciones.AddOrUpdate($"{ip}|{slugN}", (ahoraUtc, 1),
             (_, v) => ahoraUtc - v.Desde > TimeSpan.FromHours(1) ? (ahoraUtc, 1) : (v.Desde, v.Cuenta + 1));
         if (uso.Cuenta > 30) return StatusCode(429, new { message = "Demasiadas reacciones seguidas. Intenta más tarde." });
 
-        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
-        if (barberia == null || string.IsNullOrEmpty(barberia.PortadaUrl) || barberia.PortadaUrl.StartsWith("preset:"))
-            return NotFound(new { message = "Esta barbería no tiene foto de portada." });
+        // Solo se leen los datos necesarios (no las fotos completas en base64)
+        var esPortada = foto == "portada";
+        var datos = await _context.Barberias.AsNoTracking()
+            .Where(b => b.Slug == slugN)
+            .Select(b => new
+            {
+                b.Id,
+                TieneFoto = esPortada
+                    ? b.PortadaUrl != "" && !b.PortadaUrl.StartsWith("preset:")
+                    : b.LogoUrl != "" && !b.LogoUrl.StartsWith("data:image/svg"), // el avatar por defecto no cuenta
+                Json = esPortada ? b.ReaccionesPortada : b.ReaccionesLogo
+            })
+            .FirstOrDefaultAsync();
+        if (datos == null) return NotFound(new { message = "Barbería no encontrada." });
+        if (!datos.TieneFoto) return NotFound(new { message = "Esta barbería no tiene esa foto." });
 
-        var reacciones = LeerReacciones(barberia.ReaccionesPortada);
+        var reacciones = LeerReacciones(datos.Json);
         if (dto.Anterior != null && reacciones.TryGetValue(dto.Anterior, out var antes) && antes > 0) reacciones[dto.Anterior] = antes - 1;
         if (dto.Tipo != null && reacciones.ContainsKey(dto.Tipo)) reacciones[dto.Tipo]++;
-        barberia.ReaccionesPortada = System.Text.Json.JsonSerializer.Serialize(reacciones);
-        await _context.SaveChangesAsync();
+        var json = System.Text.Json.JsonSerializer.Serialize(reacciones);
+        if (esPortada) await _context.Barberias.Where(b => b.Id == datos.Id).ExecuteUpdateAsync(s => s.SetProperty(b => b.ReaccionesPortada, json));
+        else await _context.Barberias.Where(b => b.Id == datos.Id).ExecuteUpdateAsync(s => s.SetProperty(b => b.ReaccionesLogo, json));
         return Ok(reacciones);
     }
 
@@ -251,6 +271,7 @@ public class PublicController : ControllerBase
                 barberia.ColorPrimario,
                 PortadaUrl = UrlImagen(barberia.PortadaUrl, "portada", barberia.Id),
                 ReaccionesPortada = LeerReacciones(barberia.ReaccionesPortada),
+                ReaccionesLogo = LeerReacciones(barberia.ReaccionesLogo),
                 barberia.PortadaPosicion,
                 barberia.PlantillaConfirmacion,
                 barberia.PlantillaRecordatorio,
@@ -404,7 +425,7 @@ public class PublicController : ControllerBase
 
         var nuevoTurnoInicio = ConvertirHoraAMinutos(dto.Hora);
         var nuevoTurnoFin = nuevoTurnoInicio + servicio.DuracionMinutos;
-        if (nuevoTurnoFin > ConvertirHoraAMinutos(barberia.HoraCierre) + 15)
+        if (!esBarberoDeEstaBarberia && nuevoTurnoFin > ConvertirHoraAMinutos(barberia.HoraCierre) + 15)
         {
             return BadRequest(new { message = "Ese horario termina después del cierre de la barbería. Elige una hora más temprano." });
         }
@@ -496,7 +517,8 @@ public class PublicController : ControllerBase
             hora = cita.Hora,
             total = cita.Total,
             barbero = nombreBarbero,
-            esReagendamiento = citaAnterior != null
+            esReagendamiento = citaAnterior != null,
+            creadaPorBarbero = esBarberoDeEstaBarberia   // anotada en el local: no se le pide confirmar con SI
         });
 
         return Ok(new
@@ -509,7 +531,8 @@ public class PublicController : ControllerBase
             ServicioNombre = servicio.Nombre,
             BarberoNombre = nombreBarbero,
             BarberiaWhatsApp = barberia.TelefonoWhatsApp,
-            BarberiaNombre = barberia.Nombre
+            BarberiaNombre = barberia.Nombre,
+            AvisoPorWhatsApp = BotAtiende(barberia)
         });
     }
 
@@ -602,6 +625,7 @@ public class PublicController : ControllerBase
             cita.Hora,
             cita.Estado,
             Servicio = cita.Servicio?.Nombre ?? "Servicio",
+            cita.MiembroEquipoId,   // al reagendar, se propone el mismo barbero
             BarberiaNombre = barberia.Nombre,
             BarberiaSlug = barberia.Slug,
             YaCalificada = cita.CalificadaUtc != null,

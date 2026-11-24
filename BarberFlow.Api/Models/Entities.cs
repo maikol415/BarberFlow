@@ -26,7 +26,8 @@ public class Barberia
     public string ColorPrimario { get; set; } = "#2563EB"; // Color de marca de la página pública
     public string PortadaUrl { get; set; } = "";           // Imagen de fondo/portada de la página pública
     public string PortadaPosicion { get; set; } = "50 50"; // Encuadre de la foto: "x y" en % (qué parte se ve)
-    public string ReaccionesPortada { get; set; } = "";    // JSON {"corazon":3,"fuego":1,...}; se reinicia al cambiar la portada
+    public string ReaccionesPortada { get; set; } = "";
+    public string ReaccionesLogo { get; set; } = "";       // Igual, para la foto de perfil (logo); se reinicia al cambiar el logo    // JSON {"corazon":3,"fuego":1,...}; se reinicia al cambiar la portada
     public string HorarioTexto { get; set; } = "Lunes a Sábado 9:00 AM - 8:00 PM";
 
     // Horarios laborales base (de qué hora a qué hora trabaja la barbería)

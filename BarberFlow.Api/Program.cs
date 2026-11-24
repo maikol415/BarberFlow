@@ -169,6 +169,7 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MinutosPausaBot"" integer NOT NULL DEFAULT 120;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""ReaccionesPortada"" text NOT NULL DEFAULT '';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PortadaPosicion"" text NOT NULL DEFAULT '50 50';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""ReaccionesLogo"" text NOT NULL DEFAULT '';
             ");
         }
         catch (Exception ex)
@@ -235,7 +236,18 @@ using (var scope = app.Services.CreateScope())
             foreach (var sql in new[]
             {
                 @"ALTER TABLE ""Citas"" ADD COLUMN ""TokenPublico"" TEXT NOT NULL DEFAULT ''",
-                @"ALTER TABLE ""Citas"" ADD COLUMN ""CalificadaUtc"" TEXT NULL"
+                @"ALTER TABLE ""Citas"" ADD COLUMN ""CalificadaUtc"" TEXT NULL",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""MinutosAnticipacion"" INTEGER NOT NULL DEFAULT 30",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""ColorPrimario"" TEXT NOT NULL DEFAULT '#2563EB'",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""PortadaUrl"" TEXT NOT NULL DEFAULT ''",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""RecordatoriosActivos"" INTEGER NOT NULL DEFAULT 1",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorasRecordatorio"" INTEGER NOT NULL DEFAULT 2",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""PedirOpinionActivo"" INTEGER NOT NULL DEFAULT 1",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorasRecordatorios"" TEXT NOT NULL DEFAULT '24,2'",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""MinutosPausaBot"" INTEGER NOT NULL DEFAULT 120",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""ReaccionesPortada"" TEXT NOT NULL DEFAULT ''",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""PortadaPosicion"" TEXT NOT NULL DEFAULT '50 50'",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""ReaccionesLogo"" TEXT NOT NULL DEFAULT ''"
             })
             {
                 try { db.Database.ExecuteSqlRaw(sql); } catch { /* la columna ya existía */ }
