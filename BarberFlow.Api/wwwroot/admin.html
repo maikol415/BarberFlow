@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Panel Barbero - BarberFlow Pro</title>
+  <title>Panel de mi barbería</title>
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#2563EB">
+  <meta name="theme-color" content="#0B0F19">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
@@ -31,141 +31,140 @@
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
     .gold-btn { background: #2563EB; color: white; }
     .gold-btn:hover { background: #1D4ED8; }
+    .tarjeta { background: rgba(17, 24, 39, .8); border: 1px solid #1F2937; border-radius: 1.5rem; }
+    .campo { width: 100%; background: #030712; border: 1px solid #374151; border-radius: 0.75rem; padding: 0.6rem 0.85rem; color: #fff; outline: none; }
+    .campo:focus { border-color: #3B82F6; }
+    .sin-scroll { scrollbar-width: none; }
+    .sin-scroll::-webkit-scrollbar { display: none; }
+    /* Las demás pestañas toman el mismo estilo de tarjetas y campos */
+    #sec-perfil > div, #sec-horarios > div, #sec-bot > div { border-radius: 1.5rem !important; background: rgba(17, 24, 39, .8) !important; border-color: #1F2937 !important; box-shadow: none !important; }
+    main input:not([type=checkbox]):not([type=color]):not([type=file]):not([type=radio]), main select, main textarea { border-radius: .75rem !important; background-color: #030712; border-color: #374151; }
+    main input:focus, main select:focus, main textarea:focus { border-color: #3B82F6 !important; outline: none; }
+    main h3 { letter-spacing: -0.01em; }
     .custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
     .custom-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 99px; }
   </style>
 </head>
-<body class="min-h-screen flex flex-col custom-scroll">
+<body class="min-h-screen flex flex-col">
 
-  <!-- Header Responsive -->
-  <header class="border-b border-gray-800 bg-[#0F172A] sticky top-0 z-50">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <img id="admin-barberia-logo" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/><circle cx='12' cy='8' r='4'/></svg>" class="w-10 h-10 rounded-xl object-cover border border-blue-500/40 shadow-lg bg-gray-900 p-1">
-        <div>
-          <span class="font-extrabold text-base sm:text-lg text-white">Barber<span class="text-blue-500">Flow</span> Admin</span>
-          <p id="admin-barberia-nombre" class="text-xs text-gray-400 truncate max-w-[150px] sm:max-w-xs">Cargando...</p>
+  <!-- Encabezado -->
+  <header class="border-b border-gray-800 bg-[#0F172A]/95 backdrop-blur-md sticky top-0 z-50">
+    <div class="max-w-5xl mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-3 min-w-0">
+        <img id="admin-barberia-logo" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/><circle cx='12' cy='8' r='4'/></svg>" alt="" class="w-10 h-10 rounded-xl object-cover bg-gray-900 border border-gray-800 flex-shrink-0">
+        <div class="min-w-0">
+          <p id="admin-barberia-nombre" class="font-extrabold text-base text-white truncate leading-tight">Cargando...</p>
+          <span class="text-[11px] text-gray-500">Panel de tu barbería</span>
         </div>
       </div>
-
-      <div class="flex items-center gap-3 sm:gap-4">
-        <a id="btn-ver-publica" href="#" target="_blank" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-500/40 text-blue-400 text-xs font-semibold hover:bg-blue-600/10 transition">
-          <i data-lucide="external-link" class="w-3.5 h-3.5"></i> <span class="hidden sm:inline">Ver mi Link Público</span>
+      <div class="flex items-center gap-2 flex-shrink-0">
+        <a id="btn-ver-publica" href="#" target="_blank" title="Ver mi página" class="h-9 px-3 rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-700 text-gray-200 text-xs font-bold flex items-center gap-1.5 transition">
+          <i data-lucide="external-link" class="w-4 h-4 text-blue-400"></i> <span class="hidden sm:inline">Ver mi página</span>
         </a>
-        <button onclick="cerrarSesion()" class="text-xs text-gray-400 hover:text-red-400 flex items-center gap-1">
-          <i data-lucide="log-out" class="w-4 h-4"></i> <span class="hidden sm:inline">Salir</span>
+        <button onclick="cerrarSesion()" title="Salir" class="h-9 w-9 rounded-xl bg-gray-900 border border-gray-800 hover:border-red-500/40 text-gray-400 hover:text-red-300 flex items-center justify-center transition">
+          <i data-lucide="log-out" class="w-4 h-4"></i>
         </button>
       </div>
     </div>
   </header>
 
-  <main class="flex-1 max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-6 space-y-6">
-    
+  <main class="flex-1 max-w-5xl mx-auto w-full px-4 sm:px-6 py-5 space-y-5">
+
     <!-- PESTAÑAS PRINCIPALES -->
-    <div class="flex items-center gap-2 border-b border-gray-800 pb-3 text-xs sm:text-sm overflow-x-auto custom-scroll">
+    <nav class="flex gap-2 overflow-x-auto sin-scroll -mx-4 px-4 sm:mx-0 sm:px-0 text-sm">
       <button id="tab-btn-citas" onclick="mostrarSeccion('citas')" class="px-4 py-2 rounded-xl font-bold bg-blue-600 text-white whitespace-nowrap transition">
-        Agenda de Citas & Estadísticas
+        <span class="inline-flex items-center gap-1.5"><i data-lucide="calendar-days" class="w-4 h-4"></i> Agenda</span>
       </button>
       <button id="tab-btn-perfil" onclick="mostrarSeccion('perfil')" class="px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition">
-        Mi Barbería & Servicios
+        <span class="inline-flex items-center gap-1.5"><i data-lucide="store" class="w-4 h-4"></i> Mi barbería</span>
       </button>
       <button id="tab-btn-horarios" onclick="mostrarSeccion('horarios')" class="px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition">
-        Horarios de Atención & Descansos
+        <span class="inline-flex items-center gap-1.5"><i data-lucide="clock" class="w-4 h-4"></i> Horarios</span>
       </button>
       <button id="tab-btn-bot" onclick="mostrarSeccion('bot')" class="px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition flex items-center gap-1.5">
-        <i data-lucide="bot" class="w-4 h-4 text-emerald-400"></i> Bot de WhatsApp
+        <i data-lucide="bot" class="w-4 h-4"></i> Bot de WhatsApp
       </button>
-    </div>
+    </nav>
 
-    <!-- SECCIÓN 1: AGENDA DE CITAS & ESTADÍSTICAS -->
-    <section id="sec-citas" class="space-y-6">
+    <!-- SECCIÓN 1: AGENDA -->
+    <section id="sec-citas" class="space-y-4">
 
-      <!-- FILTRO DE PERIODO -->
-      <div class="bg-gray-900 p-4 rounded-2xl border border-gray-800 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-        <div class="flex items-center gap-2 flex-wrap text-xs">
-          <span class="text-gray-400 font-semibold mr-1 flex items-center gap-1">
-            <i data-lucide="calendar" class="w-4 h-4 text-blue-400"></i> Periodo:
-          </span>
-          <button onclick="cambiarFiltroPeriodo('todos')" id="filter-todos" class="px-3 py-1.5 rounded-lg border border-blue-500 bg-blue-600/20 text-blue-400 font-bold">Todo</button>
-          <button onclick="cambiarFiltroPeriodo('semana')" id="filter-semana" class="px-3 py-1.5 rounded-lg border border-gray-800 bg-gray-950 text-gray-300 hover:border-gray-700">Esta Semana</button>
-          <button onclick="cambiarFiltroPeriodo('quincena')" id="filter-quincena" class="px-3 py-1.5 rounded-lg border border-gray-800 bg-gray-950 text-gray-300 hover:border-gray-700">Quincena</button>
-          <button onclick="cambiarFiltroPeriodo('mes')" id="filter-mes" class="px-3 py-1.5 rounded-lg border border-gray-800 bg-gray-950 text-gray-300 hover:border-gray-700">Este Mes</button>
-          <button onclick="cambiarFiltroPeriodo('anio')" id="filter-anio" class="px-3 py-1.5 rounded-lg border border-gray-800 bg-gray-950 text-gray-300 hover:border-gray-700">Año</button>
+      <!-- Resumen de hoy -->
+      <div id="resumen-hoy" class="tarjeta p-4 sm:p-5 flex items-center gap-4">
+        <div class="w-12 h-12 rounded-2xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center flex-shrink-0">
+          <i data-lucide="sun" class="w-6 h-6 text-blue-300"></i>
         </div>
-
-        <!-- Rango Personalizado -->
-        <div class="flex items-center gap-2 text-xs w-full md:w-auto">
-          <input type="date" id="filtro-inicio" class="bg-gray-950 border border-gray-700 rounded-lg px-2.5 py-1 text-gray-200">
-          <span class="text-gray-500">a</span>
-          <input type="date" id="filtro-fin" class="bg-gray-950 border border-gray-700 rounded-lg px-2.5 py-1 text-gray-200">
-          <button onclick="aplicarRangoPersonalizado()" class="px-3 py-1 rounded-lg font-bold bg-blue-600/20 text-blue-400 border border-blue-500/40 hover:bg-blue-600/30 transition">
-            Filtrar
-          </button>
-        </div>
-      </div>
-      
-      <!-- KPIs -->
-      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <div class="bg-gray-900 p-4 sm:p-5 rounded-2xl border border-gray-800 shadow-lg">
-          <span class="text-xs text-gray-400 block font-semibold">Citas Pendientes</span>
-          <span id="kpi-pendientes" class="text-xl sm:text-2xl font-extrabold text-amber-400 mt-1 block">0</span>
-        </div>
-        <div class="bg-gray-900 p-4 sm:p-5 rounded-2xl border border-gray-800 shadow-lg">
-          <span class="text-xs text-gray-400 block font-semibold">Citas Atendidas</span>
-          <span id="kpi-completadas" class="text-xl sm:text-2xl font-extrabold text-emerald-400 mt-1 block">0</span>
-        </div>
-        <div class="bg-gray-900 p-4 sm:p-5 rounded-2xl border border-gray-800 shadow-lg">
-          <span class="text-xs text-gray-400 block font-semibold">No Confirmadas / Canc.</span>
-          <span id="kpi-no-confirmadas" class="text-xl sm:text-2xl font-extrabold text-red-400 mt-1 block">0</span>
-        </div>
-        <div class="bg-gray-900 p-4 sm:p-5 rounded-2xl border border-gray-800 shadow-lg">
-          <span class="text-xs text-gray-400 block font-semibold">Ingresos Reales</span>
-          <span id="kpi-ingresos-reales" class="text-xl sm:text-2xl font-extrabold text-blue-400 mt-1 block">$0</span>
+        <div class="min-w-0">
+          <p id="resumen-hoy-titulo" class="font-extrabold text-white">Hoy</p>
+          <p id="resumen-hoy-detalle" class="text-sm text-gray-400">Cargando tu agenda...</p>
         </div>
       </div>
 
-      <!-- SUB-PESTAÑAS DE CITAS -->
-      <div class="bg-gray-900 rounded-2xl border border-gray-800 overflow-hidden shadow-lg">
-        <div class="p-4 border-b border-gray-800 flex items-center justify-between flex-wrap gap-3">
-          <div class="flex items-center gap-2 bg-gray-950 p-1 rounded-xl border border-gray-800 text-xs">
-            <button id="subtab-activas" onclick="cambiarSubTabCitas('activas')" class="px-3 py-1.5 rounded-lg font-bold bg-blue-600 text-white transition">
-              Reservas Activas (<span id="count-activas">0</span>)
+      <!-- Indicadores -->
+      <div class="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div class="tarjeta p-4">
+          <div class="flex items-center gap-2 text-gray-400 text-xs font-semibold"><i data-lucide="calendar-clock" class="w-4 h-4 text-amber-300"></i> Por atender</div>
+          <span id="kpi-pendientes" class="text-2xl font-extrabold text-white mt-1.5 block">0</span>
+        </div>
+        <div class="tarjeta p-4">
+          <div class="flex items-center gap-2 text-gray-400 text-xs font-semibold"><i data-lucide="badge-check" class="w-4 h-4 text-emerald-300"></i> Atendidas</div>
+          <span id="kpi-completadas" class="text-2xl font-extrabold text-white mt-1.5 block">0</span>
+        </div>
+        <div class="tarjeta p-4">
+          <div class="flex items-center gap-2 text-gray-400 text-xs font-semibold"><i data-lucide="user-x" class="w-4 h-4 text-red-300"></i> No vinieron</div>
+          <span id="kpi-no-confirmadas" class="text-2xl font-extrabold text-white mt-1.5 block">0</span>
+        </div>
+        <div class="tarjeta p-4">
+          <div class="flex items-center gap-2 text-gray-400 text-xs font-semibold"><i data-lucide="wallet" class="w-4 h-4 text-blue-300"></i> Ingresos</div>
+          <span id="kpi-ingresos-reales" class="text-2xl font-extrabold text-white mt-1.5 block">$ 0</span>
+        </div>
+      </div>
+
+      <!-- Citas -->
+      <div class="tarjeta overflow-hidden">
+        <div class="p-3 sm:p-4 space-y-3 border-b border-gray-800">
+          <div class="grid grid-cols-3 gap-1 p-1 rounded-xl bg-gray-950 border border-gray-800">
+            <button id="subtab-activas" onclick="cambiarSubTabCitas('activas')" class="py-2 rounded-lg text-xs sm:text-sm font-bold bg-gray-800 text-white transition">
+              Próximas <span id="count-activas" class="text-gray-400">0</span>
             </button>
-            <button id="subtab-completadas" onclick="cambiarSubTabCitas('completadas')" class="px-3 py-1.5 rounded-lg font-medium text-gray-400 hover:text-white transition">
-              Historial Completadas (<span id="count-completadas">0</span>)
+            <button id="subtab-completadas" onclick="cambiarSubTabCitas('completadas')" class="py-2 rounded-lg text-xs sm:text-sm font-semibold text-gray-400 transition">
+              Atendidas <span id="count-completadas" class="text-gray-500">0</span>
             </button>
-            <button id="subtab-noconfirmadas" onclick="cambiarSubTabCitas('noconfirmadas')" class="px-3 py-1.5 rounded-lg font-medium text-gray-400 hover:text-white transition">
-              No Confirmadas (<span id="count-noconfirmadas">0</span>)
+            <button id="subtab-noconfirmadas" onclick="cambiarSubTabCitas('noconfirmadas')" class="py-2 rounded-lg text-xs sm:text-sm font-semibold text-gray-400 transition">
+              No vinieron <span id="count-noconfirmadas" class="text-gray-500">0</span>
             </button>
           </div>
 
           <div class="flex items-center gap-2">
-            <button onclick="abrirModalCitaManual()" class="px-3.5 py-1.5 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-xs flex items-center gap-1.5 shadow-md shadow-blue-500/20 transition">
-              <i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> Agendar en Local
+            <div class="relative flex-1 min-w-0">
+              <i data-lucide="calendar" class="w-4 h-4 text-gray-500 absolute left-3 top-1/2 transform -translate-y-1/2 pointer-events-none"></i>
+              <select id="filtro-periodo" onchange="cambiarPeriodoAgenda(this.value)" class="campo pl-9 py-2 text-sm cursor-pointer">
+                <option value="todos">Todo</option>
+                <option value="semana">Esta semana</option>
+                <option value="quincena">Quincena</option>
+                <option value="mes">Este mes</option>
+                <option value="anio">Este año</option>
+                <option value="rango">Elegir fechas…</option>
+              </select>
+            </div>
+            <button onclick="cargarCitas()" title="Actualizar" class="h-10 w-10 rounded-xl bg-gray-950 border border-gray-800 text-gray-300 hover:text-white flex items-center justify-center flex-shrink-0">
+              <i data-lucide="refresh-cw" class="w-4 h-4"></i>
             </button>
-            <button onclick="cargarCitas()" class="text-xs text-blue-400 hover:underline flex items-center gap-1">
-              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Actualizar
+            <button onclick="abrirModalCitaManual()" class="h-10 px-3 sm:px-4 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-sm flex items-center gap-1.5 flex-shrink-0 transition">
+              <i data-lucide="plus" class="w-4 h-4"></i> <span class="hidden sm:inline">Agendar en local</span><span class="sm:hidden">Agendar</span>
             </button>
+          </div>
+
+          <div id="fila-rango" class="hidden flex items-center gap-2">
+            <input type="date" id="filtro-inicio" class="campo py-2 text-sm">
+            <span class="text-gray-500 text-xs">a</span>
+            <input type="date" id="filtro-fin" class="campo py-2 text-sm">
+            <button onclick="aplicarRangoPersonalizado()" class="h-10 px-3 rounded-xl font-bold bg-blue-600/20 text-blue-300 border border-blue-500/40 text-sm flex-shrink-0">Ver</button>
           </div>
         </div>
 
-        <div class="overflow-x-auto">
-          <table class="w-full text-left text-xs sm:text-sm text-gray-300">
-            <thead class="text-[11px] uppercase bg-gray-950 text-gray-400 border-b border-gray-800 font-semibold">
-              <tr>
-                <th class="px-3 sm:px-4 py-3">Código</th>
-                <th class="px-3 sm:px-4 py-3">Cliente</th>
-                <th class="px-3 sm:px-4 py-3">Servicio</th>
-                <th class="px-3 sm:px-4 py-3">Fecha y Hora</th>
-                <th class="px-3 sm:px-4 py-3">Total</th>
-                <th class="px-3 sm:px-4 py-3">Recordatorios WhatsApp</th>
-                <th class="px-3 sm:px-4 py-3 text-right">Acción</th>
-              </tr>
-            </thead>
-            <tbody id="citas-tbody" class="divide-y divide-gray-800/60">
-              <tr><td colspan="7" class="p-4 text-center text-gray-400">Cargando citas...</td></tr>
-            </tbody>
-          </table>
+        <div id="citas-tbody" class="p-3 sm:p-5 space-y-6">
+          <p class="p-4 text-center text-gray-400 text-sm">Cargando citas...</p>
         </div>
       </div>
 
@@ -173,11 +172,11 @@
 
     <!-- SECCIÓN 2: CONFIGURACIÓN DE LA BARBERÍA & SERVICIOS -->
     <section id="sec-perfil" class="space-y-6 hidden">
-      
+
       <!-- Info General & Selector de Barbero -->
       <div class="bg-gray-900 p-4 sm:p-6 rounded-2xl border border-gray-800 shadow-lg">
         <h3 class="font-bold text-white text-base sm:text-lg mb-4">Información del Negocio & Logo</h3>
-        
+
         <div class="flex flex-col sm:flex-row items-center gap-4 mb-6 p-4 rounded-xl bg-gray-950 border border-gray-800">
           <img id="preview-logo-barberia" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/><circle cx='12' cy='8' r='4'/></svg>" class="w-20 h-20 rounded-2xl object-cover border-2 border-blue-500/40 shadow-lg bg-gray-900 p-1">
           <div class="space-y-2 text-center sm:text-left">
@@ -189,6 +188,28 @@
               </label>
               <input type="text" id="conf-logo" placeholder="O pega una URL https://..." class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-1.5 text-xs text-white w-60">
             </div>
+          </div>
+        </div>
+
+        <!-- Apariencia de la página pública -->
+        <div class="mb-6 p-4 rounded-xl bg-gray-950 border border-gray-800">
+          <h4 class="text-sm font-bold text-white">Apariencia de tu página</h4>
+          <p class="text-xs text-gray-400 mb-4">Así verán tus clientes tu página de reservas. Los cambios se guardan con el botón de abajo.</p>
+
+          <label class="block text-xs font-semibold text-gray-400 mb-2">Color de tu marca</label>
+          <div class="flex items-center gap-2 flex-wrap mb-5" id="paleta-colores">
+            <input type="color" id="conf-color" value="#2563EB" class="w-10 h-10 rounded-lg bg-transparent border border-gray-700 cursor-pointer" title="Elegir otro color">
+          </div>
+
+          <label class="block text-xs font-semibold text-gray-400 mb-2">Foto de portada (fondo de tu página)</label>
+          <div id="preview-portada" class="h-28 rounded-xl border border-gray-800 bg-gray-900 bg-cover bg-center flex items-center justify-center text-xs text-gray-500">Sin portada: se usa un degradado con tu color</div>
+          <div class="flex items-center gap-2 mt-2 flex-wrap">
+            <label class="py-1.5 px-3 rounded-lg bg-gray-800 border border-gray-700 text-xs text-gray-200 cursor-pointer hover:border-blue-400 transition flex items-center gap-1.5">
+              <i data-lucide="image" class="w-3.5 h-3.5 text-blue-400"></i> Subir portada
+              <input type="file" id="input-file-portada" accept="image/*" class="hidden" onchange="subirPortadaBarberia(event)">
+            </label>
+            <button type="button" onclick="quitarPortadaBarberia()" class="py-1.5 px-3 rounded-lg text-xs text-gray-400 hover:text-red-300">Quitar portada</button>
+            <span class="text-[11px] text-gray-500">Recomendado: foto horizontal del local o de tus cortes.</span>
           </div>
         </div>
 
@@ -279,7 +300,7 @@
       <!-- Equipo de Barberos (Solo necesario si tiene más de un barbero) -->
       <div class="bg-gray-900 p-4 sm:p-6 rounded-2xl border border-gray-800 shadow-lg">
         <h3 class="font-bold text-white text-base sm:text-lg mb-4">Equipo de Barberos</h3>
-        
+
         <form id="form-nuevo-miembro" onsubmit="agregarMiembro(event)" class="space-y-4 mb-6 p-4 rounded-xl bg-gray-950 border border-gray-800">
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
@@ -341,7 +362,7 @@
 
     <!-- SECCIÓN 3: CONTROL DE HORARIOS DE ATENCIÓN & DESCANSOS -->
     <section id="sec-horarios" class="space-y-6 hidden">
-      
+
       <!-- Configuración de Horario Laboral Base (de qué hora a qué hora trabaja) -->
       <div class="bg-gray-900 p-4 sm:p-6 rounded-2xl border border-gray-800 shadow-lg">
         <h3 class="font-bold text-white text-base sm:text-lg mb-2">Configuración de Horario Laboral de la Barbería</h3>
@@ -366,6 +387,18 @@
               <option value="45">Cada 45 minutos</option>
               <option value="60">Cada 1 hora</option>
             </select>
+          </div>
+          <div>
+            <label class="block text-xs font-semibold text-gray-400 mb-1">Anticipación mínima para reservar</label>
+            <select id="conf-anticipacion" class="w-full bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+              <option value="0">Sin anticipación (si el puesto está libre)</option>
+              <option value="15">15 minutos antes</option>
+              <option value="30" selected>30 minutos antes</option>
+              <option value="60">1 hora antes</option>
+              <option value="120">2 horas antes</option>
+              <option value="1440">1 día antes</option>
+            </select>
+            <p class="text-[11px] text-gray-500 mt-1">Los clientes ven turnos de hoy desde la hora actual más este margen.</p>
           </div>
           <div class="sm:col-span-3">
             <label class="block text-xs font-semibold text-gray-400 mb-2">Días que labora la barbería en la semana:</label>
@@ -830,7 +863,7 @@
     </div>
   </div>
 
-  <script src="/js/admin.js?v=20261123b"></script>
+  <script src="/js/admin.js?v=20261124b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

@@ -17,6 +17,9 @@ if (!/^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(API)) {
 
 const {
   procesarMensajeEntrante,
+  armarAnuncioMatutino,
+  revisarAnuncioMatutino,
+  iconoCategoria,
   manejarNotificarCita,
   manejarNotificarCancelacion,
   revisarRecordatorios,
@@ -108,6 +111,7 @@ let rechazoPasada = '';
 try { await crearCita(telVieja, 'Vieja Prueba', fechaColombia(-3), '09:00 AM'); } catch (e) { rechazoPasada = e.message; }
 
 const dig = t => t.replace(/\D/g, '');
+const legible = iso => new Date(iso + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
 const ana = { remoteJid: '88001122334455@lid', senderPn: `${dig(telAna)}@s.whatsapp.net` };
 const bob = { remoteJid: `${dig(telBob)}@s.whatsapp.net` };
 const vieja = { remoteJid: `${dig(telVieja)}@s.whatsapp.net` };
@@ -116,7 +120,7 @@ const anonimo = { remoteJid: '99887766554433@lid' };
 let r;
 
 r = await cliente(ana, 'Hola, quiero cancelar mi cita');
-comprobar('Chat @lid: encuentra la cita usando senderPn', r, ['encontramos tu cita', manana, citaAnaManana.hora]);
+comprobar('Chat @lid: encuentra la cita usando senderPn', r, ['encontramos tu cita', legible(manana), citaAnaManana.hora]);
 
 r = await cliente(ana, 'a qué hora abren?');
 comprobar('Respuesta ambigua: vuelve a preguntar 1 o 2', r, ['responde *1*', '*2*']);
@@ -125,16 +129,16 @@ r = await cliente(ana, 'no, no quiero cancelar');
 comprobar('"no, no quiero cancelar" mantiene la cita', r, ['sigue firme']);
 
 r = await cliente(ana, 'sí');
-comprobar('Un "sí" después NO cancela (estado cerrado)', r, ['reconfirmado']);
+comprobar('Un "sí" después NO cancela: confirma la asistencia', r, ['confirmada']);
 
 r = await cliente({ remoteJid: ana.remoteJid }, 'cancelar');
-comprobar('Mismo @lid sin senderPn: recuerda el número', r, ['encontramos tu cita', manana]);
+comprobar('Mismo @lid sin senderPn: recuerda el número', r, ['encontramos tu cita', legible(manana)]);
 
 r = await cliente(ana, '1️⃣');
 comprobar('Responder 1️⃣ cancela la cita', r, ['cancelada correctamente', manana]);
 
 r = await cliente(ana, 'cancelar');
-comprobar('Luego ofrece la siguiente cita pendiente', r, ['encontramos tu cita', pasado, citaAnaPasado.hora]);
+comprobar('Luego ofrece la siguiente cita pendiente', r, ['encontramos tu cita', legible(pasado), citaAnaPasado.hora]);
 await cliente(ana, '2');
 
 r = await cliente(bob, 'cancelar');
@@ -154,6 +158,36 @@ comprobar('Ignora mensajes de historial (append)', r === '' ? 'ignorado' : r, ['
 r = await cliente(ana, 'reagendar');
 comprobar('Reagendar: link con la cita', r, ['reagendar=']);
 
+r = await cliente(bob, '1');
+comprobar('Opción 1 envía el enlace de reserva (no repite el menú)', r, ['Reserva tu cita en línea', 'index.html?b=']);
+
+const nuevo2 = { remoteJid: `5730088${base}@s.whatsapp.net` };
+r = await cliente(nuevo2, 'cuánto vale el corte?');
+comprobar('Primer mensaje con intención clara: saludo corto + respuesta directa', r, ['¡Hola! 👋', 'Servicios y precios']);
+const nuevo3 = { remoteJid: `5730099${base}@s.whatsapp.net` };
+r = await cliente(nuevo3, 'tienen parqueadero?');
+comprobar('Primer mensaje que no entiende: bienvenida + menú + aviso del barbero', r, ['Bienvenid', 'el barbero te responderá']);
+
+r = await cliente(bob, 'hola');
+comprobar('Saludo con menú principal', r, ['*1.*', 'Servicios y precios', 'CANCELAR']);
+
+r = await cliente(bob, '2');
+comprobar('Menú de servicios con íconos por categoría', r, ['Servicios y precios', '✂️ Cortes']);
+
+const nuevo = { remoteJid: `5730077${base}@s.whatsapp.net` };
+r = await cliente(nuevo, '4');
+comprobar('Conversación que empieza con "4": primero saluda con el menú', r, ['Bienvenid', '*4.*']);
+r = await cliente(nuevo, '4');
+comprobar('Ya en la conversación, "4" muestra las formas de pago', r, ['Formas de pago']);
+r = await cliente(nuevo, 'a las 3 tienen cupo?');
+comprobar('"a las 3..." no abre la opción 3 por error', /Dónde estamos/.test(r) ? 'abrió ubicación' : 'ok', ['ok']);
+r = await cliente(nuevo, 'a qué hora abren?');
+comprobar('"a qué hora abren" responde horario y ubicación', r, ['Dónde estamos']);
+
+comprobar('Ícono de uñas para servicios de uñas', iconoCategoria('Arreglo de uñas'), ['💅']);
+comprobar('Ícono de barba', iconoCategoria('Diseño de Barba'), ['🧔']);
+comprobar('Ícono facial', iconoCategoria('Limpieza facial profunda'), ['✨']);
+
 // ---------- Webhooks de la API y tareas automáticas ----------
 __usarSocketDePrueba(sockFalso);
 const todo = () => enviados.map(e => `[${e.jid}] ${e.texto}`).join('\n---\n');
@@ -172,6 +206,9 @@ comprobar('Ignora reservas de otra barbería', w.enviado === false && enviados.l
 
 enviados.length = 0;
 w = await manejarNotificarCita(payloadBase);
+const estadoTrasAviso = await (await fetch(`${API}/bot/${SLUG}/cita/${citaCarla.id}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY } })).json();
+comprobar('Tras pedir confirmación la cita queda "Por confirmar"', estadoTrasAviso.estado, ['Pendiente']);
+comprobar('El aviso pide responder SI', todo(), ['Responde *SI* para confirmar']);
 comprobar('Confirmación de reserva con fecha legible', todo(), ['Detalles de tu Cita', 'Código', citaCarla.codigoReserva]);
 const minutosEsperados = (Date.UTC(...manana.split('-').map((n, i) => i === 1 ? n - 1 : +n), 0, minCarla) + 5 * 3600e3 - Date.now()) / 60000 + 100;
 comprobar('Reseña programada 1 h después de terminar la cita (no 2 h después de reservar)',
@@ -185,12 +222,30 @@ enviados.length = 0;
 await manejarNotificarCancelacion({ barberiaSlug: SLUG, nombreCliente: 'Carla Prueba', servicio: 'Corte', fecha: manana, hora: citaCarla.hora });
 comprobar('Avisa al barbero cuando el cliente cancela en la web', todo(), ['canceló desde la web', 'Carla Prueba']);
 
+// Recordatorio de una cita por confirmar: pide SI
+const telCarlaJid = { remoteJid: `${dig(telCarla)}@s.whatsapp.net` };
 // Recordatorio: simular que faltan 2 horas para la cita de Carla
 const [ma, mm, md] = manana.split('-').map(Number);
 const mediodia = Date.UTC(ma, mm - 1, md, 5, minCarla - 120);
 enviados.length = 0;
 let recordados = await revisarRecordatorios(mediodia);
-comprobar('Recordatorio 2 h antes de la cita', recordados.includes(citaCarla.id) ? todo() : 'no enviado', ['Te recordamos tu cita', citaCarla.hora]);
+comprobar('Recordatorio 2 h antes de la cita (pide confirmar si falta)', recordados.includes(citaCarla.id) ? todo() : 'no enviado', ['Te recordamos tu cita', citaCarla.hora, 'Responde *SI*']);
+
+r = await cliente(telCarlaJid, 'Si');
+const estadoTrasSi = await (await fetch(`${API}/bot/${SLUG}/cita/${citaCarla.id}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY } })).json();
+comprobar('El cliente responde SI: la cita pasa a Confirmada', `${r} | ${estadoTrasSi.estado}`, ['quedó *confirmada*', '| Confirmada']);
+r = await cliente(telCarlaJid, 'sí');
+comprobar('Un segundo SI avisa que ya estaba confirmada', r, ['ya estaba confirmada']);
+
+// Anuncio matutino
+const anuncio = armarAnuncioMatutino({ nombre: 'Barbería X', fecha: manana, citas: [
+  { hora: '09:00am', nombreCliente: 'Ana', servicio: 'Corte', estado: 'Confirmada', total: 20000 },
+  { hora: '10:00am', nombreCliente: 'Luis', servicio: 'Arreglo de uñas', estado: 'Pendiente', total: 35000 },
+  { hora: '11:00am', nombreCliente: 'Nadie', servicio: 'Corte', estado: 'No Confirmada', total: 20000 }
+] });
+comprobar('Anuncio matutino: cuenta, estados, íconos y total', anuncio, ['2 citas hoy', '1 por confirmar', '⏳ *10:00am* · Luis', '💅 Arreglo de uñas', '55.000']);
+comprobar('Anuncio matutino sin citas no confirmadas', anuncio.includes('Nadie') ? 'incluida' : 'ok', ['ok']);
+comprobar('Anuncio matutino sin citas', armarAnuncioMatutino({ nombre: 'X', fecha: manana, citas: [] }), ['no tienes citas']);
 recordados = await revisarRecordatorios(mediodia + 5 * 60000);
 comprobar('No repite el recordatorio', recordados.includes(citaCarla.id) ? 'repetido' : 'ok', ['ok']);
 recordados = await revisarRecordatorios(Date.UTC(ma, mm - 1, md, 5, minCarla - 300));

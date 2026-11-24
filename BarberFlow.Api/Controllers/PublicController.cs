@@ -76,6 +76,14 @@ public class PublicController : ControllerBase
             return "Esa hora está fuera del horario de atención.";
         if (fecha == hoy && inicio <= MinutosAhoraColombia())
             return "Esa hora ya pasó. Elige un horario más tarde.";
+        // Anticipación mínima configurada por la barbería (5 min de tolerancia por el tiempo que tarda el cliente en confirmar)
+        var anticipacion = Math.Max(0, barberia.MinutosAnticipacion);
+        var minutosHastaCita = (dia - DateTime.ParseExact(hoy, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)).TotalMinutes
+                               + inicio - MinutosAhoraColombia();
+        if (minutosHastaCita < anticipacion - 5)
+            return anticipacion >= 60
+                ? $"Esta barbería recibe reservas con al menos {anticipacion / 60} hora(s) de anticipación. Elige un horario más tarde."
+                : $"Esta barbería recibe reservas con al menos {anticipacion} minutos de anticipación. Elige un horario más tarde.";
         return null;
     }
 
@@ -106,6 +114,7 @@ public class PublicController : ControllerBase
                 .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
                 .Select(c => new 
                 { 
+                    c.Id,
                     c.Fecha, 
                     c.Hora, 
                     c.MiembroEquipoId,
@@ -155,10 +164,15 @@ public class PublicController : ControllerBase
                 barberia.Direccion,
                 barberia.TelefonoWhatsApp,
                 barberia.LogoUrl,
+                barberia.ColorPrimario,
+                barberia.PortadaUrl,
+                barberia.PlantillaConfirmacion,
+                barberia.PlantillaRecordatorio,
                 barberia.HorarioTexto,
                 barberia.HoraApertura,
                 barberia.HoraCierre,
                 barberia.IntervaloMinutos,
+                barberia.MinutosAnticipacion,
                 barberia.DiasLaborales,
                 barberia.MostrarSelectorBarbero,
                 barberia.DatosPago,
@@ -238,21 +252,44 @@ public class PublicController : ControllerBase
         }
 
         var bloqueoDia = barberia.Bloqueos.Any(b => b.Fecha == dto.Fecha && (string.IsNullOrEmpty(b.Hora) || b.Hora == "TODO_EL_DIA"));
-        if (bloqueoDia)
+        if (bloqueoDia && !esBarberoDeEstaBarberia)
         {
             return BadRequest(new { message = "El profesional o la barbería no tiene horarios disponibles para este día. Intenta otro día." });
-        }
-
-        var bloqueoHora = barberia.Bloqueos.Any(b => b.Fecha == dto.Fecha && b.Hora == dto.Hora);
-        if (bloqueoHora)
-        {
-            return BadRequest(new { message = "Este horario ha sido bloqueado por la barbería." });
         }
 
         var servicio = barberia.Servicios.FirstOrDefault(s => s.Id == dto.ServicioId && s.Activo);
         if (servicio == null)
         {
             return BadRequest(new { message = "Servicio no válido." });
+        }
+
+        // Descansos y pausas: rango "14:00-15:30" o una hora suelta (dura un turno)
+        if (!esBarberoDeEstaBarberia)
+        {
+            var inicioNuevo = ConvertirHoraAMinutos(dto.Hora);
+            var finNuevo = inicioNuevo + servicio.DuracionMinutos;
+            var chocaConDescanso = barberia.Bloqueos
+                .Where(b => b.Fecha == dto.Fecha && !string.IsNullOrWhiteSpace(b.Hora) && b.Hora != "TODO_EL_DIA")
+                .Any(b =>
+                {
+                    int desde, hasta;
+                    if (b.Hora!.Contains('-'))
+                    {
+                        var partes = b.Hora.Split('-');
+                        desde = ConvertirHoraAMinutos(partes[0]);
+                        hasta = ConvertirHoraAMinutos(partes[1]);
+                    }
+                    else
+                    {
+                        desde = ConvertirHoraAMinutos(b.Hora);
+                        hasta = desde + barberia.IntervaloMinutos;
+                    }
+                    return inicioNuevo < hasta && finNuevo > desde;
+                });
+            if (chocaConDescanso)
+            {
+                return BadRequest(new { message = "Ese horario coincide con un descanso de la barbería. Elige otro." });
+            }
         }
 
         // Validación matemática de traslape con citas existentes según duración del servicio
@@ -352,11 +389,23 @@ public class PublicController : ControllerBase
         });
     }
 
+    [Authorize(Policy = PoliticasAuth.Cliente)]
     [HttpPost("valoraciones")]
     public async Task<IActionResult> EnviarValoracion([FromBody] ValoracionDto dto)
     {
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
+        // Solo opinan clientes de esta barbería que ya fueron atendidos (evita reseñas falsas)
+        var cliente = await ObtenerClienteAutenticado();
+        if (cliente == null || cliente.BarberiaId != barberia.Id)
+            return Unauthorized(new { message = "Inicia sesión con tu cuenta de esta barbería para opinar." });
+        var fueAtendido = (await CitasDelCliente(cliente)).Any(c => c.Estado == EstadosCitas.Completada);
+        if (!fueAtendido)
+            return BadRequest(new { message = "Podrás opinar después de tu primera cita atendida en esta barbería." });
+        var hace30Dias = DateTime.UtcNow.AddDays(-30);
+        if (await _context.Valoraciones.AnyAsync(v => v.BarberiaId == barberia.Id && v.NombreCliente == cliente.Nombre && v.FechaUtc > hace30Dias))
+            return BadRequest(new { message = "Ya dejaste tu opinión este mes. ¡Gracias!" });
 
         if (dto.Estrellas < 1 || dto.Estrellas > 5)
         {
@@ -370,9 +419,10 @@ public class PublicController : ControllerBase
         var val = new Valoracion
         {
             BarberiaId = barberia.Id,
-            NombreCliente = string.IsNullOrWhiteSpace(dto.NombreCliente) ? "Cliente" : dto.NombreCliente.Trim(),
+            NombreCliente = cliente.Nombre,
             Estrellas = dto.Estrellas,
-            Comentario = dto.Comentario?.Trim() ?? string.Empty
+            Comentario = dto.Comentario?.Trim() ?? string.Empty,
+            FechaUtc = DateTime.UtcNow
         };
 
         _context.Valoraciones.Add(val);
@@ -445,10 +495,11 @@ public class PublicController : ControllerBase
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
+        await EstadosCitas.AplicarAsync(_context, barberia.Id);
         var citasActivas = await _context.Citas
             .Include(c => c.Servicio)
             .Include(c => c.MiembroEquipo)
-            .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "Completada")
+            .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "Completada" && c.Estado != "No Confirmada")
             .ToListAsync();
 
         // La próxima cita pendiente (hoy o futura) de este teléfono
@@ -471,6 +522,7 @@ public class PublicController : ControllerBase
             cita.Fecha,
             cita.Hora,
             cita.Total,
+            cita.Estado,
             Servicio = cita.Servicio?.Nombre ?? "Servicio",
             Barbero = cita.MiembroEquipo?.Nombre ?? "Master Barber"
         });
@@ -519,6 +571,33 @@ public class PublicController : ControllerBase
         return Ok(new { cita.Id, cita.Estado, cita.Fecha, cita.Hora });
     }
 
+    public record CambioEstadoBotDto(string Estado);
+
+    [RequiereBotKey]
+    [HttpPost("bot/{slug}/cita/{id}/estado")]
+    public async Task<IActionResult> CambiarEstadoCitaBot(string slug, int id, [FromBody] CambioEstadoBotDto dto)
+    {
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+        var cita = await _context.Citas.FirstOrDefaultAsync(c => c.Id == id && c.BarberiaId == barberia.Id);
+        if (cita == null) return NotFound(new { message = "Cita no encontrada." });
+
+        var inicio = EstadosCitas.InicioCita(cita.Fecha, cita.Hora);
+        var esFutura = inicio != null && inicio.Value > EstadosCitas.AhoraColombia();
+
+        switch (dto.Estado)
+        {
+            case EstadosCitas.Pendiente when cita.Estado == EstadosCitas.Confirmada && esFutura:
+            case EstadosCitas.Confirmada when (cita.Estado == EstadosCitas.Pendiente || cita.Estado == EstadosCitas.NoConfirmada) && esFutura:
+                cita.Estado = dto.Estado;
+                await _context.SaveChangesAsync();
+                return Ok(new { cita.Id, cita.Estado });
+            default:
+                if (cita.Estado == dto.Estado) return Ok(new { cita.Id, cita.Estado });
+                return BadRequest(new { message = $"No se puede pasar de '{cita.Estado}' a '{dto.Estado}'.", cita.Estado });
+        }
+    }
+
     [RequiereBotKey]
     [HttpGet("bot/resumen-diario/{slug}")]
     public async Task<IActionResult> ObtenerResumenDiario(string slug, [FromQuery] string? fecha)
@@ -526,8 +605,9 @@ public class PublicController : ControllerBase
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
+        await EstadosCitas.AplicarAsync(_context, barberia.Id);
         var fechaFiltro = string.IsNullOrWhiteSpace(fecha)
-            ? DateTime.UtcNow.ToString("yyyy-MM-dd")
+            ? FechaHoyColombia()
             : fecha;
 
         var citas = await _context.Citas
@@ -665,7 +745,7 @@ public class PublicController : ControllerBase
     // Una cita es "próxima" si no está cancelada ni completada y su hora aún no ha pasado (hora Colombia)
     private static bool EsCitaProxima(Cita c)
     {
-        if (c.Estado == "Cancelada" || c.Estado == "Completada") return false;
+        if (c.Estado == "Cancelada" || c.Estado == "Completada" || c.Estado == "No Confirmada") return false;
         var hoy = FechaHoyColombia();
         var cmp = string.CompareOrdinal(c.Fecha, hoy);
         if (cmp > 0) return true;

@@ -117,10 +117,20 @@ async function resolverJidDestinatario(sock, telefono) {
 }
 
 // Función auxiliar para responder de forma natural (escribiendo... entre 2.5s y 4s según longitud)
+// Clientes que acaban de iniciar conversación: a su primera respuesta se le antepone un saludo
+const saludoPendiente = new Set();
+
 const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
   try {
     if (!sock || (!estaConectado && !MODO_PRUEBA)) return false;
-    
+
+    if (saludoPendiente.has(remitente)) {
+      saludoPendiente.delete(remitente);
+      if (!/^\s*(¡?hola|💈|☀️|¡?buen|👋)/i.test(textoRespuesta || '')) {
+        textoRespuesta = `¡Hola! 👋\n\n${textoRespuesta}`;
+      }
+    }
+
     // Simular tiempo de lectura/escritura más creíble y humano:
     // Mínimo 2.5 segundos, y un poquito más si el texto es largo, con variación aleatoria humana (jitter)
     const delayBase = 2500;
@@ -246,6 +256,54 @@ if (!MODO_PRUEBA) {
   });
 }
 
+// ----------------- TEXTOS DEL BOT -----------------
+
+// Ícono según la categoría o el nombre del servicio (uñas 💅, barba 🧔, facial ✨, etc.)
+export function iconoCategoria(texto) {
+  const t = String(texto || '').toLowerCase();
+  if (/uña|manicur|pedicur|nail|acrílic|acrilic|semipermanente/.test(t)) return '💅';
+  if (/facial|limpieza|piel|exfolia|mascarilla|skin/.test(t)) return '✨';
+  if (/barba|afeitad|bigote|perfilad/.test(t)) return '🧔';
+  if (/ceja|pestaña/.test(t)) return '👁️';
+  if (/tinte|color|mechas|decolora|rayitos|tintura/.test(t)) return '🎨';
+  if (/masaje|spa|relaja/.test(t)) return '💆';
+  if (/depila|cera/.test(t)) return '🪒';
+  if (/trenza|peinad|keratina|alisad|cepillad/.test(t)) return '💇';
+  if (/niñ|infantil|kids/.test(t)) return '🧒';
+  if (/combo|pack|promo|paquete/.test(t)) return '👑';
+  if (/corte|cabello|fade|pelo|degradad|cortes/.test(t)) return '✂️';
+  return '💈';
+}
+
+// Reemplaza {cliente}, {servicio}, {fecha}... en las plantillas que el barbero edita en el panel
+function aplicarPlantilla(plantilla, datos) {
+  return String(plantilla).replace(/\{(\w+)\}/g, (todo, clave) => (datos[clave] ?? todo));
+}
+
+function mencionaConfirmar(texto) { return /\bSI\b|\bSÍ\b|CONFIRM/i.test(texto); }
+
+function linkReservas() { return `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`; }
+
+function menuPrincipal(barberia, saludo, nombreCliente) {
+  // La bienvenida del barbero se usa como saludo; sus líneas numeradas se quitan porque el bot
+  // siempre muestra su menú completo (así no se pierden opciones como pagos o CANCELAR)
+  const bienvenida = (barberia.mensajeBienvenidaBot || '')
+    .split('\n')
+    .filter(linea => !/^\s*(\d️?⃣|\d[.)-])/.test(linea))
+    .join('\n')
+    .trim();
+  const encabezado = bienvenida
+    ? aplicarPlantilla(bienvenida, { barberia: barberia.nombre, cliente: nombreCliente || '' })
+    : `${saludo}\n\n¿En qué te podemos ayudar?`;
+  return `${encabezado}\n\n` +
+    `*1.* 📅 Reservar una cita\n` +
+    `*2.* 💲 Servicios y precios\n` +
+    `*3.* 📍 Ubicación y horario\n` +
+    `*4.* 💳 Formas de pago\n\n` +
+    `También puedes escribir *CANCELAR* o *REAGENDAR* si ya tienes una cita.\n` +
+    `_Responde con el número de la opción._`;
+}
+
 // ----------------- SEGUIMIENTO DE CITAS (confirmación, reseña, recordatorio) -----------------
 
 // Minutos desde medianoche de una hora tipo "10:20am", "3:00 PM" o "15:00"
@@ -271,6 +329,20 @@ function fechaLegible(fechaIso) {
   const [a, m, d] = String(fechaIso || '').split('-').map(Number);
   if (!a) return fechaIso || '';
   return new Date(Date.UTC(a, m - 1, d, 12)).toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+async function cambiarEstadoCita(citaId, estado) {
+  try {
+    const res = await apiBotFetch(`/bot/${BARBERIA_SLUG}/cita/${citaId}/estado`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ estado })
+    });
+    return res.ok;
+  } catch (e) {
+    console.error('[Estado cita] Error:', e.message);
+    return false;
+  }
 }
 
 // Consulta si la cita sigue vigente antes de escribirle al cliente
@@ -310,7 +382,22 @@ export async function manejarNotificarCita(payload) {
       ? `¡Listo ${primerNombre}! ✅ Tu turno ha quedado agendado en el sistema 💈`
       : `¡Hola ${primerNombre}! 👋 Gracias por reservar en *${barberiaNombre || 'la barbería'}* 💈✂️`;
 
-  const msgConfirmacion =
+  const barberiaDatos = await obtenerDatosBarberia();
+  const variables = {
+    cliente: primerNombre, servicio, fecha: fechaLegible(fecha), hora, codigo: codigoReserva || '',
+    barberia: barberiaNombre || barberiaDatos.nombre || '', direccion: barberiaDireccion || barberiaDatos.direccion || '',
+    barbero: payload.barbero || '', valor: `${Number(total || 0).toLocaleString('es-CO')}`
+  };
+  const plantilla = (barberiaDatos.plantillaConfirmacion || '').trim();
+  let msgPersonalizado = null;
+  if (plantilla && !esReagendamiento) {
+    msgPersonalizado = aplicarPlantilla(plantilla, variables);
+    if (!mencionaConfirmar(msgPersonalizado)) {
+      msgPersonalizado += `\n\n👉 Responde *SI* para confirmar tu asistencia, o *CANCELAR* / *REAGENDAR* si no puedes.`;
+    }
+  }
+
+  const msgConfirmacion = msgPersonalizado ||
     `${saludoInicial}\n\n` +
     `📋 *Detalles de tu Cita:*\n` +
     `✂️ *Servicio:* ${servicio}\n` +
@@ -321,14 +408,16 @@ export async function manejarNotificarCita(payload) {
     (barberiaDireccion ? `📍 *Dirección:* ${barberiaDireccion}\n` : '') +
     `\n━━━━━━━━━━━━━━━━━━━━\n` +
     `💡 *Gestión rápida de tu cita:*\n` +
-    `• Responde *SI* para reconfirmar que asistirás ✅\n` +
+    `• Responde *SI* para confirmar tu asistencia ✅\n` +
     `• Responde *CANCELAR* si te surge un imprevisto ❌\n` +
     `• Responde *REAGENDAR* si deseas cambiar de horario 🔄\n` +
     `━━━━━━━━━━━━━━━━━━━━\n` +
     `¡Te esperamos con la mejor atención! 💈✨`;
 
-  await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
+  const enviado = await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
   ultimaInteraccionCliente.set(jid, ahora);
+  // Solo si el mensaje salió queda "Por confirmar" (si no, el cliente nunca vería la pregunta)
+  if (enviado && citaId) await cambiarEstadoCita(citaId, 'Pendiente');
 
   const encuesta = agendarEncuestaPostCita(jid, primerNombre, citaId, barberiaNombre, fecha, hora, duracionMinutos);
   return { enviado: true, jid, encuestaEnMinutos: encuesta };
@@ -397,7 +486,7 @@ export async function revisarRecordatorios(ahoraMs = Date.now()) {
   const enviados = [];
 
   for (const c of data.citas || []) {
-    if (c.estado !== 'Confirmada' || !c.telefonoCliente || recordatoriosEnviados.has(c.id)) continue;
+    if (!['Confirmada', 'Pendiente'].includes(c.estado) || !c.telefonoCliente || recordatoriosEnviados.has(c.id)) continue;
     const inicio = instanteCita(fechaIso, c.hora);
     if (!inicio) continue;
     const minutosFaltan = (inicio - ahoraMs) / 60000;
@@ -405,13 +494,27 @@ export async function revisarRecordatorios(ahoraMs = Date.now()) {
 
     recordatoriosEnviados.add(c.id);
     const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
+    const barberiaDatos = await obtenerDatosBarberia();
+    const plantillaRec = (barberiaDatos.plantillaRecordatorio || '').trim();
+    if (plantillaRec) {
+      let texto = aplicarPlantilla(plantillaRec, {
+        cliente: obtenerPrimerNombre(c.nombreCliente), servicio: c.servicio, fecha: fechaLegible(fechaIso), hora: c.hora,
+        codigo: c.codigoReserva || '', barberia: data.nombre || '', direccion: barberiaDatos.direccion || '', barbero: c.barbero || ''
+      });
+      if (c.estado === 'Pendiente' && !mencionaConfirmar(texto)) texto += `\n\n👉 Responde *SI* para confirmar que vienes.`;
+      await enviarMensajeHumano(socketActivo, jid, texto);
+      enviados.push(c.id);
+      continue;
+    }
     await enviarMensajeHumano(
       socketActivo,
       jid,
       `⏰ ¡Hola ${obtenerPrimerNombre(c.nombreCliente)}! Te recordamos tu cita de hoy en *${data.nombre || 'la barbería'}*:\n\n` +
       `✂️ *Servicio:* ${c.servicio}\n` +
       `🕒 *Hora:* ${c.hora}\n\n` +
-      `Por favor llega 5 minutos antes. Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*. 💈`
+      (c.estado === 'Pendiente'
+        ? `👉 Responde *SI* para confirmar que vienes, o *CANCELAR* / *REAGENDAR* si no puedes. 💈`
+        : `Por favor llega 5 minutos antes. Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*. 💈`)
     );
     enviados.push(c.id);
   }
@@ -446,7 +549,7 @@ async function iniciarBot() {
       const statusCode = (lastDisconnect?.error)?.output?.statusCode;
       const shouldReconnect = statusCode !== DisconnectReason.loggedOut;
       console.log(`[Conexión cerrada] StatusCode: ${statusCode} | shouldReconnect: ${shouldReconnect}`);
-      
+
       if (shouldReconnect) {
         estadoConexion = 'Reconectando automáticamente...';
         setTimeout(iniciarBot, 3000);
@@ -495,8 +598,17 @@ export async function procesarMensajeEntrante(sock, m) {
       if (!texto) return;
 
       const ahora = Date.now();
+      // ¿Empieza una conversación? (primer mensaje, o más de 6 horas sin escribir)
+      const esInicioConversacion = ahora - (ultimaInteraccionCliente.get(remitente) || 0) > 6 * 60 * 60 * 1000;
       ultimaInteraccionCliente.set(remitente, ahora);
-      const soloNumeros = texto.replace(/[^0-9]/g, '');
+      if (esInicioConversacion) {
+        estadoCliente.delete(remitente);   // no arrastrar menús viejos
+        saludoPendiente.add(remitente);    // la primera respuesta arranca con un saludo
+      }
+      // Una opción de menú solo cuenta si el mensaje es únicamente el número ("4", "4.", "4️⃣").
+      // Así "a las 3 tienen cupo?" no abre por error la opción 3.
+      const coincideOpcion = texto.match(/^\s*(\d{1,2})\s*(️?⃣)?\s*[.)]?\s*$/);
+      const soloNumeros = coincideOpcion ? coincideOpcion[1] : '';
 
       const barberia = await obtenerDatosBarberia();
       if (barberia.botActivo === false) return;
@@ -512,6 +624,31 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
+
+      // Saludo de bienvenida con el menú (personalizado si ya es cliente)
+      const saludarConMenu = async (notaFinal = '') => {
+        estadoCliente.set(remitente, { nivel: 'INICIO' });
+        let saludoPersonalizado = `💈 *¡Hola! Bienvenido a ${barberia.nombre || 'la barbería'}*`;
+        let nombreConocido = '';
+        if (telBusqueda) try {
+          const resCli = await apiBotFetch(`/bot/${BARBERIA_SLUG}/citas-cliente/${telBusqueda}`);
+          if (resCli.ok) {
+            const datosCita = await resCli.json();
+            if (datosCita && datosCita.nombreCliente) {
+              nombreConocido = obtenerPrimerNombre(datosCita.nombreCliente);
+              saludoPersonalizado = `💈 *¡Hola ${nombreConocido}! Qué gusto verte de nuevo en ${barberia.nombre || 'la barbería'}*`;
+            }
+          }
+        } catch (e) {}
+        const menu = menuPrincipal(barberia, saludoPersonalizado, nombreConocido);
+        await enviarMensajeHumano(sock, remitente, notaFinal ? `${menu}\n\n${notaFinal}` : menu);
+      };
+
+      // Si la conversación empieza con solo un número ("4"), primero se saluda y se muestran las opciones
+      if (esInicioConversacion && soloNumeros) {
+        await saludarConMenu();
+        return;
+      }
 
       // ----------------- FLUJO DE CANCELACIÓN CON CONFIRMACIÓN SEGURA -----------------
       if (estado.nivel === 'CONFIRMAR_CANCELACION') {
@@ -632,16 +769,15 @@ export async function procesarMensajeEntrante(sock, m) {
               citaNombre: primerNombre
             });
 
-            const msjConfirmacion = 
-              `Hola ${primerNombre}, encontramos tu cita agendada:\n\n` +
-              `✂️ *Servicio:* ${cita.servicio}\n` +
-              `📅 *Fecha:* ${cita.fecha}\n` +
-              `⏰ *Hora:* ${cita.hora}\n` +
-              `🔖 *Código:* ${cita.codigoReserva}\n\n` +
-              `¿Deseas confirmar la cancelación de este turno?\n\n` +
-              `*1*️⃣ Sí, cancelar mi cita ❌\n` +
-              `*2*️⃣ No, mantener mi turno ✅\n\n` +
-              `_Responde con el número *1* o *2*._`;
+            const msjConfirmacion =
+              `Hola ${primerNombre}, encontramos tu cita:\n\n` +
+              `${iconoCategoria(cita.servicio)} *${cita.servicio}*\n` +
+              `📅 ${fechaLegible(cita.fecha)}\n` +
+              `⏰ ${cita.hora}\n` +
+              `🔖 ${cita.codigoReserva}\n\n` +
+              `¿Seguro que quieres cancelarla?\n\n` +
+              `*1.* Sí, cancelar ❌\n` +
+              `*2.* No, mantener mi cita ✅`;
 
             await enviarMensajeHumano(sock, remitente, msjConfirmacion);
             return;
@@ -674,27 +810,36 @@ export async function procesarMensajeEntrante(sock, m) {
 
           if (cita) {
             urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${cita.id}`;
-            detalle = ` de tu cita activa (*${cita.servicio}* para el *${cita.fecha} a las ${cita.hora}*)`;
+            detalle = ` de tu cita (*${cita.servicio}*, ${fechaLegible(cita.fecha)} a las ${cita.hora})`;
           }
 
-          const msjReagendar = 
-            `🔄 *Reagendar Turno — ${barberia.nombre || 'la barbería'}*\n\n` +
-            `Para cambiar el día y hora${detalle}, ingresa a nuestro calendario visual aquí:\n\n` +
+          const msjReagendar =
+            `🔄 *Cambiar tu cita*\n\n` +
+            `Para elegir un nuevo día y hora${detalle}, entra aquí:\n` +
             `👉 ${urlReagendar}\n\n` +
-            `_Al seleccionar tu nuevo horario, tu turno anterior se actualizará automáticamente._ ✨`;
+            `_Cuando elijas el nuevo horario, tu cita anterior se libera sola._`;
 
           await enviarMensajeHumano(sock, remitente, msjReagendar);
           return;
         } catch (e) {}
       }
 
-      // 3. RESPUESTAS A CONFIRMACIÓN ("si", "confirmo", "asistiré", "confirmado")
-      if (texto === 'si' || texto === 'sí' || texto === 'confirmo' || texto === 'confirmar' || texto === 'confirmado' || texto === 'asistire' || texto === 'asistiré') {
-        await enviarMensajeHumano(
-          sock,
-          remitente,
-          `¡Excelente! ✅ Tu turno ha sido reconfirmado. Tu barbero tendrá tu estación lista y limpia a tu llegada. ¡Nos vemos pronto! 💈✂️`
-        );
+      // 3. CONFIRMACIÓN DE ASISTENCIA ("si", "confirmo", "asistiré"...): la cita pasa a Confirmada
+      const palabrasSi = ['si', 'sí', 'confirmo', 'confirmar', 'confirmado', 'asistire', 'asistiré', 'si confirmo', 'sí confirmo', 'si señor', 'sí señor', 'claro'];
+      if (palabrasSi.includes(texto.replace(/[.!¡]/g, '').trim())) {
+        const cita = await buscarCitaClienteAsync();
+        if (!cita) {
+          await enviarMensajeHumano(sock, remitente,
+            `No encontramos una cita pendiente con este número. Si quieres reservar, entra aquí:\n👉 ${linkReservas()}`);
+          return;
+        }
+        const nombre = obtenerPrimerNombre(cita.nombreCliente);
+        const yaConfirmada = cita.estado === 'Confirmada';
+        if (!yaConfirmada) await cambiarEstadoCita(cita.id, 'Confirmada');
+        await enviarMensajeHumano(sock, remitente,
+          `${yaConfirmada ? `¡Tu cita ya estaba confirmada, ${nombre}!` : `¡Listo ${nombre}! Tu cita quedó *confirmada* ✅`}\n\n` +
+          `${iconoCategoria(cita.servicio)} ${cita.servicio}\n📅 ${fechaLegible(cita.fecha)} a las ${cita.hora}\n\n` +
+          `¡Te esperamos! 💈`);
         return;
       }
 
@@ -702,7 +847,7 @@ export async function procesarMensajeEntrante(sock, m) {
       const serviciosLista = barberia.servicios || [];
       const categoriasMap = new Map();
       serviciosLista.forEach(s => {
-        const cat = s.categoria || 'Servicios Generales';
+        const cat = (s.categoria || '').trim() || 'Servicios';
         if (!categoriasMap.has(cat)) categoriasMap.set(cat, []);
         categoriasMap.get(cat).push(s);
       });
@@ -721,15 +866,7 @@ export async function procesarMensajeEntrante(sock, m) {
       // Regresar al menú principal con 0 o inicio
       if (soloNumeros === '0' || texto === 'menu' || texto === 'menú' || texto === 'volver' || texto === 'inicio') {
         estadoCliente.set(remitente, { nivel: 'INICIO' });
-        const msj = `💈 *Bienvenido a ${barberia.nombre || 'la barbería'}*\n\n` +
-          `¿En qué te podemos colaborar hoy?\n\n` +
-          `1️⃣ 📅 *Agendar tu cita en línea:*\n` +
-          `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
-          `2️⃣ ✂️ *Ver servicios y precios por categorías*\n\n` +
-          `3️⃣ 📍 *Ubicación y Horarios*\n\n` +
-          `4️⃣ 💳 *Métodos de Pago (Nequi / Bancolombia)*\n\n` +
-          `_Responde con el número de tu opción (1, 2, 3 o 4) o escribe tu duda._ ✨`;
-        await enviarMensajeHumano(sock, remitente, msj);
+        await enviarMensajeHumano(sock, remitente, menuPrincipal(barberia, `💈 *${barberia.nombre || 'Bienvenido'}*`));
         return;
       }
 
@@ -740,17 +877,15 @@ export async function procesarMensajeEntrante(sock, m) {
           const catSeleccionada = categoriasNombres[opcionCatIndex];
           const serviciosCat = categoriasMap.get(catSeleccionada) || [];
 
-          let lista = `💈 *${catSeleccionada} — ${barberia.nombre || 'la barbería'}*\n`;
-          lista += `─────────────────────────\n\n`;
-
+          let lista = `${iconoCategoria(catSeleccionada)} *${catSeleccionada}*\n\n`;
           serviciosCat.forEach(s => {
-            lista += `✂️ *${s.nombre}*\n`;
-            lista += `   💵 $ ${Number(s.precio).toLocaleString('es-CO')}  ·  ⏱️ ${s.duracionMinutos || 30} min\n\n`;
+            lista += `${iconoCategoria(s.nombre + ' ' + catSeleccionada)} *${s.nombre}*\n`;
+            lista += `     $ ${Number(s.precio).toLocaleString('es-CO')} · ${s.duracionMinutos || 30} min\n`;
+            if (s.descripcion) lista += `     _${String(s.descripcion).slice(0, 80)}_\n`;
+            lista += `\n`;
           });
-
-          lista += `─────────────────────────\n`;
-          lista += `📅 *Reserva tu turno aquí:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n`;
-          lista += `_Responde *0* para volver al menú principal._`;
+          lista += `📅 Reserva aquí: ${linkReservas()}\n\n`;
+          lista += `_Responde otro número para ver otra categoría, o *0* para el menú._`;
 
           await enviarMensajeHumano(sock, remitente, lista);
           return;
@@ -761,93 +896,73 @@ export async function procesarMensajeEntrante(sock, m) {
       if (
         soloNumeros === '2' ||
         texto === '2' ||
-        texto.includes('precio') || 
-        texto.includes('servicios') || 
-        texto.includes('servicio') || 
-        texto.includes('cuanto vale') || 
-        texto.includes('cuánto vale') || 
-        texto.includes('costo') || 
-        texto.includes('cortes') || 
+        texto.includes('precio') ||
+        texto.includes('servicios') ||
+        texto.includes('servicio') ||
+        texto.includes('cuanto vale') ||
+        texto.includes('cuánto vale') ||
+        texto.includes('costo') ||
+        texto.includes('cortes') ||
         texto.includes('corte')
       ) {
         estadoCliente.set(remitente, { nivel: 'SERVICIOS' });
 
-        let menuServicios = `💈 *Catálogo de Servicios — ${barberia.nombre || 'la barbería'}*\n`;
-        menuServicios += `Elige la categoría que deseas consultar:\n\n`;
-
+        if (!categoriasNombres.length) {
+          await enviarMensajeHumano(sock, remitente, `Puedes ver todos nuestros servicios y precios aquí:\n👉 ${linkReservas()}`);
+          return;
+        }
+        let menuServicios = `💲 *Servicios y precios*\n\nElige una categoría:\n\n`;
         categoriasNombres.forEach((cat, index) => {
-          let icono = '✂️';
-          if (cat.toLowerCase().includes('facial') || cat.toLowerCase().includes('limpieza')) icono = '✨';
-          else if (cat.toLowerCase().includes('uña') || cat.toLowerCase().includes('manos')) icono = '💅';
-          else if (cat.toLowerCase().includes('barba')) icono = '🧔';
-          else if (cat.toLowerCase().includes('tinte') || cat.toLowerCase().includes('color')) icono = '🎨';
-
-          menuServicios += `*${index + 1}*️⃣ ${icono} *${cat}*\n`;
+          menuServicios += `*${index + 1}.* ${iconoCategoria(cat)} ${cat}\n`;
         });
-
-        menuServicios += `\n*0*️⃣ 🔙 *Volver al menú principal*\n\n`;
-        menuServicios += `_Responde con el número de la categoría para ver sus precios._`;
+        menuServicios += `\n*0.* Volver al menú`;
 
         await enviarMensajeHumano(sock, remitente, menuServicios);
         return;
       }
 
+      // 6a. Opción 1: reservar (enlace directo, sin repetir el menú)
+      if (soloNumeros === '1' || texto === '1' || /\b(reservar|agendar|separar|cita nueva|pedir cita)\b/.test(texto)) {
+        estadoCliente.set(remitente, { nivel: 'INICIO' });
+        await enviarMensajeHumano(sock, remitente,
+          `📅 *Reserva tu cita en línea*\n\nElige servicio, día y hora aquí (toma menos de un minuto):\n👉 ${linkReservas()}\n\n` +
+          `Te llegará la confirmación por este chat. ✅`);
+        return;
+      }
+
       // 6. Saludos / Menú principal
       if (
-        soloNumeros === '1' ||
-        texto === '1' ||
-        texto.includes('hola') || 
-        texto.includes('buenas') || 
-        texto.includes('buenos dias') || 
-        texto.includes('buenos días') || 
-        texto.includes('buenas tardes') || 
-        texto.includes('buenas noches') || 
+        texto.includes('hola') ||
+        texto.includes('buenas') ||
+        texto.includes('buenos dias') ||
+        texto.includes('buenos días') ||
+        texto.includes('buenas tardes') ||
+        texto.includes('buenas noches') ||
         texto.includes('info')
       ) {
-        estadoCliente.set(remitente, { nivel: 'INICIO' });
-
-        // Intentar consultar si ya es un cliente conocido en el sistema
-        let saludoPersonalizado = `💈 *Bienvenido a ${barberia.nombre || 'la barbería'}*`;
-        if (telBusqueda) try {
-          const resCli = await apiBotFetch(`/bot/${BARBERIA_SLUG}/citas-cliente/${telBusqueda}`);
-          if (resCli.ok) {
-            const datosCita = await resCli.json();
-            if (datosCita && datosCita.nombreCliente) {
-              const primer = obtenerPrimerNombre(datosCita.nombreCliente);
-              saludoPersonalizado = `💈 *¡Hola ${primer}! Qué gusto tenerte de vuelta en ${barberia.nombre || 'la barbería'}*`;
-            }
-          }
-        } catch (e) {}
-
-        const msj = `${saludoPersonalizado}\n\n` +
-          `¿En qué te podemos colaborar hoy?\n\n` +
-          `1️⃣ 📅 *Agendar tu cita en línea:*\n` +
-          `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
-          `2️⃣ ✂️ *Ver servicios y precios por categorías*\n\n` +
-          `3️⃣ 📍 *Ubicación y Horarios*\n\n` +
-          `4️⃣ 💳 *Métodos de Pago (Nequi / Bancolombia)*\n\n` +
-          `_Responde con el número de tu opción (1, 2, 3 o 4) o escribe tu duda._ ✨`;
-
-        await enviarMensajeHumano(sock, remitente, msj);
+        await saludarConMenu();
         return;
       }
 
       // 7. Ubicación / Dónde quedan
       if (
         soloNumeros === '3' ||
-        texto === '3' ||
-        texto.includes('donde') || 
-        texto.includes('dónde') || 
-        texto.includes('direccion') || 
-        texto.includes('dirección') || 
-        texto.includes('ubicacion') || 
+        /\b(horario|abren|cierran|atienden|abierto)\b/.test(texto) ||
+        texto.includes('donde') ||
+        texto.includes('dónde') ||
+        texto.includes('direccion') ||
+        texto.includes('dirección') ||
+        texto.includes('ubicacion') ||
         texto.includes('ubicación')
       ) {
-        const ubi = `📍 *Ubicación y Horario de Atención:*\n\n` +
-          `🏠 *Dirección:* ${barberia.direccion || 'Pregúntanos por este chat 📲'}\n` +
-          `⏰ *Horario:* ${barberia.horarioTexto || 'Lunes a Sábado 9:00 AM - 8:00 PM'}\n\n` +
-          `📅 *Reserva tu cita aquí para no hacer fila:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n` +
-          `_Responde *0* para volver al menú principal._ 🔙`;
+        const mapa = barberia.direccion
+          ? `\n🗺️ https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${barberia.nombre} ${barberia.direccion}`)}`
+          : '';
+        const ubi = `📍 *Dónde estamos*\n\n` +
+          `${barberia.direccion || 'Escríbenos y te compartimos la ubicación.'}${mapa}\n\n` +
+          (barberia.horarioTexto ? `🕘 *Horario:* ${barberia.horarioTexto}\n\n` : '') +
+          `📅 Reserva y evita la fila: ${linkReservas()}\n\n` +
+          `_Responde *0* para volver al menú._`;
         await enviarMensajeHumano(sock, remitente, ubi);
         return;
       }
@@ -856,17 +971,16 @@ export async function procesarMensajeEntrante(sock, m) {
       if (
         soloNumeros === '4' ||
         texto === '4' ||
-        texto.includes('pago') || 
-        texto.includes('pagar') || 
-        texto.includes('nequi') || 
-        texto.includes('bancolombia') || 
-        texto.includes('transferencia') || 
+        texto.includes('pago') ||
+        texto.includes('pagar') ||
+        texto.includes('nequi') ||
+        texto.includes('bancolombia') ||
+        texto.includes('transferencia') ||
         texto.includes('efectivo')
       ) {
-        let msgPago = `💳 *Métodos de Pago — ${barberia.nombre || 'la barbería'}*\n`;
-        msgPago += `─────────────────────────\n\n`;
-        msgPago += `💵 *Efectivo:* Recibimos en el local al finalizar tu servicio.\n\n`;
-        
+        let msgPago = `💳 *Formas de pago*\n\n`;
+        msgPago += `💵 *Efectivo:* en el local al terminar tu servicio.\n`;
+
         if (barberia.numeroNequi) {
           msgPago += `📱 *Nequi:* ${barberia.numeroNequi}\n`;
         }
@@ -883,9 +997,8 @@ export async function procesarMensajeEntrante(sock, m) {
           msgPago += `\nℹ️ _${barberia.datosPago}_\n`;
         }
 
-        msgPago += `\n─────────────────────────\n`;
-        msgPago += `📅 *Reserva tu cita aquí:* \n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}\n\n`;
-        msgPago += `_Responde *0* para volver al menú principal._ 🔙`;
+        msgPago += `\n📅 Reserva aquí: ${linkReservas()}\n\n`;
+        msgPago += `_Responde *0* para volver al menú._`;
 
         await enviarMensajeHumano(sock, remitente, msgPago);
         return;
@@ -894,13 +1007,21 @@ export async function procesarMensajeEntrante(sock, m) {
       // 9. FILTRO INTELIGENTE DE MENSAJES CASUALES / DESPEDIDAS / RISAS
       // Si el mensaje es una reacción informal, despedida o risa, el bot guarda silencio como un humano
       const frasesCasual = [
-        'jaja', 'jeje', 'jojo', 'gracias', 'muchas gracias', 'vale', 'dale', 'ok', 'okay', 
-        'listo', 'lista', 'esta bien', 'está bien', 'asi es', 'así es', 'de una', 'perfecto', 
+        'jaja', 'jeje', 'jojo', 'gracias', 'muchas gracias', 'vale', 'dale', 'ok', 'okay',
+        'listo', 'lista', 'esta bien', 'está bien', 'asi es', 'así es', 'de una', 'perfecto',
         'bueno', 'bien', 'chimba', 'genial', 'excelente', 'uy', 'ah bueno', 'entendido'
       ];
       const esMensajeCasual = frasesCasual.some(frase => texto === frase || texto.startsWith(frase + ' ') || texto.endsWith(' ' + frase));
       if (esMensajeCasual || texto.length <= 3) {
-        // Guardar silencio ante charlas casuales para no incomodar
+        // Al empezar la conversación se saluda; en medio de ella, silencio ante charlas casuales
+        if (esInicioConversacion) await saludarConMenu();
+        return;
+      }
+
+      // Primer mensaje que el bot no entiende: saludo con opciones y aviso de que el barbero responderá
+      if (esInicioConversacion) {
+        ultimaDerivacionMap.set(remitente, ahora);
+        await saludarConMenu('Si tu consulta es otra, el barbero te responderá personalmente por aquí apenas pueda. 🙌');
         return;
       }
 
@@ -911,95 +1032,87 @@ export async function procesarMensajeEntrante(sock, m) {
 
       if (ahora - ultimaVezDerivado > mediaHoraMs) {
         ultimaDerivacionMap.set(remitente, ahora);
-        const derivacion = barberia.mensajeDerivacionHumana || 
+        const derivacion = barberia.mensajeDerivacionHumana ||
           'He tomado nota de tu consulta. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno te responderá personalmente por este chat.';
-        
+
         await enviarMensajeHumano(sock, remitente, derivacion);
       }
 
     } catch (e) {
       console.error('Error procesando mensaje en bot:', e);
+    } finally {
+      // Si no hubo respuesta (silencio), que el saludo pendiente no se cuele en un aviso posterior
+      const jid = m?.messages?.[0]?.key?.remoteJid;
+      if (jid) saludoPendiente.delete(jid);
     }
 }
 
-// ----------------- CRON: ANUNCIO MATUTINO DIARIO CONFIGURABLE -----------------
-const cronAnuncioMatutino = setInterval(async () => {
-  try {
-    if (!socketActivo || !estaConectado) return;
+// ----------------- ANUNCIO MATUTINO DIARIO PARA EL BARBERO -----------------
+// Se envía a partir de la hora configurada (y hasta 3 horas después, por si el bot estaba reiniciando).
+export function armarAnuncioMatutino(data) {
+  const citas = (data.citas || []).filter(c => c.estado === 'Confirmada' || c.estado === 'Pendiente');
+  let texto = `☀️ *Buenos días, ${data.nombre}*\n${capitalizar(fechaLegible(data.fecha))}\n\n`;
 
-    // Obtener hora actual en zona horaria local de Colombia (UTC-5)
-    const fechaActual = new Date();
-    const formatterHora = new Intl.DateTimeFormat('es-CO', {
-      timeZone: 'America/Bogota',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    });
-    const formatterDiaSemana = new Intl.DateTimeFormat('es-CO', {
-      timeZone: 'America/Bogota',
-      weekday: 'short'
-    });
-    const formatterFechaIso = new Intl.DateTimeFormat('es-CO', {
-      timeZone: 'America/Bogota',
-      year: 'numeric',
-      month: '2-digit',
-      day: '2-digit'
-    });
-
-    const horaMinutoActual = formatterHora.format(fechaActual); // ej: "08:00"
-    const diaSemana = formatterDiaSemana.format(fechaActual).toLowerCase(); // lun, mar, mié, jue, vie, sáb, dom
-    const fechaIso = formatterFechaIso.format(fechaActual).split('/').reverse().join('-'); // YYYY-MM-DD
-
-    // Evitar disparar más de una vez por día
-    if (ultimoDiaAnuncioEnviado === fechaIso) return;
-
-    const barberia = await obtenerDatosBarberia();
-    if (!barberia.anuncioMatutinoActivo) return;
-
-    // Determinar la hora configurada por el barbero según el día
-    let horaObjetivo = barberia.horaAnuncioSemana || '08:00';
-    if (diaSemana.includes('sáb') || diaSemana.includes('sab')) {
-      horaObjetivo = barberia.horaAnuncioSabado || '08:00';
-    } else if (diaSemana.includes('dom')) {
-      horaObjetivo = barberia.horaAnuncioDomingo || '09:00';
-    }
-
-    if (horaMinutoActual === horaObjetivo) {
-      // Disparar anuncio matutino a la barbería
-      const res = await apiBotFetch(`/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
-      if (res.ok) {
-        const data = await res.json();
-        const telefonoBarbero = data.telefonoWhatsApp;
-        const jidBarbero = formatearJidWhatsApp(telefonoBarbero);
-
-        if (jidBarbero) {
-          let briefing = `🌅 *¡Buenos días, equipo de ${data.nombre}!* ☕💈\n`;
-          briefing += `Aquí tienes tu programación y agenda para hoy *(${data.fecha})*:\n\n`;
-
-          if (!data.citas || data.citas.length === 0) {
-            briefing += `📅 *Sin citas agendadas por ahora.* ¡Un excelente día para recibir clientes directos y promocionar tu link de reservas! ✂️\n`;
-          } else {
-            briefing += `📌 *Total de citas programadas:* ${data.totalCitas}\n`;
-            briefing += `💰 *Proyección estimada del día:* $${Number(data.totalIngresosEstimados).toLocaleString('es-CO')}\n\n`;
-            briefing += `⏰ *Horarios reservados:*\n`;
-
-            data.citas.forEach((c, idx) => {
-              briefing += `${idx + 1}. 🕒 *${c.hora}* · ${c.nombreCliente} (${c.servicio})\n`;
-            });
-
-            briefing += `\n_Para ver o editar tu agenda en vivo:_\n👉 ${BASE_WEB_URL}/admin.html`;
-          }
-
-          await enviarMensajeHumano(socketActivo, jidBarbero, briefing);
-          ultimoDiaAnuncioEnviado = fechaIso;
-          console.log(`[Anuncio Matutino Enviado] Fecha: ${fechaIso} | Hora: ${horaMinutoActual}`);
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error en Cron de Anuncio Matutino:', err.message);
+  if (!citas.length) {
+    texto += `Hoy no tienes citas reservadas por ahora.\n\n` +
+      `Comparte tu enlace para llenar la agenda:\n👉 ${linkReservas()}`;
+    return texto;
   }
-}, 30000); // Revisar cada 30 segundos
+
+  const porConfirmar = citas.filter(c => c.estado === 'Pendiente').length;
+  const total = citas.reduce((suma, c) => suma + Number(c.total || 0), 0);
+  texto += `📋 *${citas.length} cita${citas.length === 1 ? '' : 's'} hoy*` +
+    (porConfirmar ? ` (${porConfirmar} por confirmar)` : '') + `\n\n`;
+
+  citas.forEach(c => {
+    texto += `${c.estado === 'Pendiente' ? '⏳' : '✅'} *${c.hora}* · ${c.nombreCliente}\n` +
+      `      ${iconoCategoria(c.servicio)} ${c.servicio}\n`;
+  });
+
+  texto += `\n💰 Ingreso estimado: *$ ${total.toLocaleString('es-CO')}*\n`;
+  if (porConfirmar) texto += `⏳ = el cliente aún no confirma; si no lo hace antes de la hora, la cita se libera sola.\n`;
+  texto += `\n📲 Tu agenda: ${BASE_WEB_URL}/admin.html`;
+  return texto;
+}
+
+function capitalizar(t) { return t ? t.charAt(0).toUpperCase() + t.slice(1) : t; }
+
+export async function revisarAnuncioMatutino(ahoraMs = Date.now()) {
+  if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return null;
+
+  const fecha = new Date(ahoraMs);
+  const fechaIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(fecha);
+  if (ultimoDiaAnuncioEnviado === fechaIso) return null;
+
+  const barberia = await obtenerDatosBarberia();
+  if (!barberia.anuncioMatutinoActivo) return null;
+
+  const partes = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: false, weekday: 'short'
+  }).formatToParts(fecha).map(p => [p.type, p.value]));
+  const minutosAhora = (Number(partes.hour) % 24) * 60 + Number(partes.minute);
+  const objetivo = partes.weekday === 'Sat' ? (barberia.horaAnuncioSabado || '08:00')
+    : partes.weekday === 'Sun' ? (barberia.horaAnuncioDomingo || '09:00')
+    : (barberia.horaAnuncioSemana || '08:00');
+  const minutosObjetivo = horaAMinutos(objetivo);
+  if (minutosObjetivo === null || minutosAhora < minutosObjetivo || minutosAhora > minutosObjetivo + 180) return null;
+
+  const res = await apiBotFetch(`/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  const jidBarbero = formatearJidWhatsApp(data.telefonoWhatsApp);
+  if (!jidBarbero) return null;
+
+  const texto = armarAnuncioMatutino(data);
+  await enviarMensajeHumano(socketActivo, jidBarbero, texto);
+  ultimoDiaAnuncioEnviado = fechaIso;
+  console.log(`[Anuncio Matutino Enviado] ${fechaIso}`);
+  return texto;
+}
+
+const cronAnuncioMatutino = setInterval(() => {
+  revisarAnuncioMatutino().catch(err => console.error('Error en anuncio matutino:', err.message));
+}, 60 * 1000);
 
 // ----------------- CRON: RECORDATORIOS ANTES DE LA CITA -----------------
 const cronRecordatorios = setInterval(() => {

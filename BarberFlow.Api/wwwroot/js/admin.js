@@ -64,12 +64,15 @@ async function cargarPerfil() {
     document.getElementById('conf-dir').value = barberiaActual.direccion || '';
     document.getElementById('conf-horario').value = barberiaActual.horarioTexto || '';
     document.getElementById('conf-desc').value = barberiaActual.descripcion || '';
+    pintarApariencia();
     document.getElementById('conf-mostrar-barberos').checked = barberiaActual.mostrarSelectorBarbero || false;
 
     // Horarios laborales base
     document.getElementById('conf-hora-apertura').value = barberiaActual.horaApertura || '09:00';
     document.getElementById('conf-hora-cierre').value = barberiaActual.horaCierre || '20:00';
     document.getElementById('conf-intervalo').value = (barberiaActual.intervaloMinutos || 40).toString();
+    const selAnticipacion = document.getElementById('conf-anticipacion');
+    if (selAnticipacion) selAnticipacion.value = String(barberiaActual.minutosAnticipacion ?? 30);
 
     // Días laborales
     const dias = (barberiaActual.diasLaborales || "1,2,3,4,5,6").split(',');
@@ -93,41 +96,23 @@ async function cargarPerfil() {
     if (txtDerivacion) txtDerivacion.value = barberiaActual.mensajeDerivacionHumana || 'He recibido tu mensaje. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno, te responderá personalmente por este chat. ¡Muchas gracias por tu paciencia!';
 
     const txtConfirmacion = document.getElementById('conf-bot-confirmacion');
-    if (txtConfirmacion) txtConfirmacion.value = barberiaActual.plantillaConfirmacion || 
-      `💈 *{barberia}* 💈\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Hola {cliente}! 👋\n` +
-      `Tu cita ha sido *CONFIRMADA* con éxito 🎉\n\n` +
-      `📋 *Detalles de tu turno:*\n` +
+    if (txtConfirmacion) txtConfirmacion.value = barberiaActual.plantillaConfirmacion ||
+      `¡Hola {cliente}! 👋 Tu cita en *{barberia}* quedó agendada.\n\n` +
       `✂️ *Servicio:* {servicio}\n` +
-      `💈 *Profesional:* {barbero}\n` +
       `📅 *Fecha:* {fecha}\n` +
       `⏰ *Hora:* {hora}\n` +
       `🔖 *Código:* {codigo}\n` +
-      `📍 *Ubicación:* {direccion}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¿Necesitas gestionar tu turno?\n` +
-      `• Responde *SI* para reconfirmar asistencia ✅\n` +
-      `• Responde *CANCELAR* si se te presentó un imprevisto ❌\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Te esperamos con la mejor energía! ✂️🔥`;
+      `📍 *Dirección:* {direccion}\n\n` +
+      `👉 Responde *SI* para confirmar tu asistencia.\n` +
+      `Si no puedes venir, responde *CANCELAR* o *REAGENDAR*.`;
 
     const txtRecordatorio = document.getElementById('conf-bot-recordatorio');
-    if (txtRecordatorio) txtRecordatorio.value = barberiaActual.plantillaRecordatorio || 
-      `💈 *{barberia}* 💈\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Hola {cliente}! ⏳\n` +
-      `Te recordamos que tienes una cita programada:\n\n` +
+    if (txtRecordatorio) txtRecordatorio.value = barberiaActual.plantillaRecordatorio ||
+      `⏰ ¡Hola {cliente}! Te recordamos tu cita de hoy en *{barberia}*:\n\n` +
       `✂️ *Servicio:* {servicio}\n` +
-      `💈 *Profesional:* {barbero}\n` +
-      `📅 *Fecha:* {fecha}\n` +
-      `⏰ *Hora:* {hora}\n` +
+      `🕒 *Hora:* {hora}\n` +
       `📍 *Dirección:* {direccion}\n\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `Por favor procura llegar 5 minutos antes ⏰\n` +
-      `¿Confirmas tu asistencia para tener tu silla lista? Responde *CONFIRMO* ✅\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Nos vemos pronto! 💈✂️`;
+      `Por favor llega 5 minutos antes. Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*.`;
 
     // Horarios de Anuncio Matutino
     const chkAnuncio = document.getElementById('conf-anuncio-activo');
@@ -184,7 +169,7 @@ function comprimirImagen(file, maxWidth = 500, maxHeight = 500, quality = 0.8) {
         canvas.height = height;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
-        
+
         // Exportar como JPEG comprimido
         const dataUrl = canvas.toDataURL('image/jpeg', quality);
         resolve(dataUrl);
@@ -193,6 +178,65 @@ function comprimirImagen(file, maxWidth = 500, maxHeight = 500, quality = 0.8) {
     };
     reader.onerror = (err) => reject(err);
   });
+}
+
+// ----- Apariencia: color de marca y portada -----
+const PALETA_MARCA = [
+  ['#2563EB', 'Azul'], ['#D4A017', 'Dorado'], ['#DC2626', 'Rojo'], ['#059669', 'Verde'],
+  ['#7C3AED', 'Morado'], ['#DB2777', 'Rosa'], ['#EA580C', 'Naranja'], ['#64748B', 'Gris']
+];
+
+function pintarApariencia() {
+  const color = (barberiaActual.colorPrimario || '#2563EB').toUpperCase();
+  const input = document.getElementById('conf-color');
+  if (!input) return;
+  input.value = color;
+  input.oninput = () => pintarPaleta(input.value.toUpperCase());
+  pintarPaleta(color);
+  pintarPreviewPortada();
+}
+
+function pintarPaleta(seleccionado) {
+  const cont = document.getElementById('paleta-colores');
+  cont.querySelectorAll('button').forEach(b => b.remove());
+  PALETA_MARCA.forEach(([hex, nombre]) => {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.title = nombre;
+    b.style.background = hex;
+    b.className = `w-10 h-10 rounded-lg border-2 transition ${seleccionado === hex ? 'border-white scale-110' : 'border-transparent'}`;
+    b.onclick = () => { document.getElementById('conf-color').value = hex; pintarPaleta(hex); };
+    cont.insertBefore(b, document.getElementById('conf-color'));
+  });
+}
+
+function pintarPreviewPortada() {
+  const prev = document.getElementById('preview-portada');
+  if (!prev) return;
+  if (barberiaActual.portadaUrl) {
+    prev.style.backgroundImage = `url("${barberiaActual.portadaUrl}")`;
+    prev.textContent = '';
+  } else {
+    prev.style.backgroundImage = '';
+    prev.textContent = 'Sin portada: se usa un degradado con tu color';
+  }
+}
+
+async function subirPortadaBarberia(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    barberiaActual.portadaUrl = await comprimirImagen(file, 1400, 600, 0.72);
+    pintarPreviewPortada();
+    alert('Portada lista. Haz clic en "Guardar Cambios de la Barbería" para publicarla.');
+  } catch (err) {
+    alert('No se pudo procesar la imagen de portada.');
+  }
+}
+
+function quitarPortadaBarberia() {
+  barberiaActual.portadaUrl = '';
+  pintarPreviewPortada();
 }
 
 // Subir logo barbería
@@ -276,6 +320,18 @@ function cambiarFiltroPeriodo(periodo) {
   cargarCitas(`filtro=${periodo}`);
 }
 
+function cambiarPeriodoAgenda(valor) {
+  const fila = document.getElementById('fila-rango');
+  if (valor === 'rango') {
+    fila.classList.remove('hidden');
+    fila.classList.add('flex');
+    return;
+  }
+  fila.classList.add('hidden');
+  fila.classList.remove('flex');
+  cambiarFiltroPeriodo(valor);
+}
+
 function aplicarRangoPersonalizado() {
   const start = document.getElementById('filtro-inicio').value;
   const end = document.getElementById('filtro-fin').value;
@@ -291,11 +347,9 @@ function cambiarSubTabCitas(subtab) {
   ['activas', 'completadas', 'noconfirmadas'].forEach(t => {
     const btn = document.getElementById(`subtab-${t}`);
     if (btn) {
-      if (t === subtab) {
-        btn.className = 'px-3 py-1.5 rounded-lg font-bold bg-blue-600 text-white transition';
-      } else {
-        btn.className = 'px-3 py-1.5 rounded-lg font-medium text-gray-400 hover:text-white transition';
-      }
+      btn.className = t === subtab
+        ? 'py-2 rounded-lg text-xs sm:text-sm font-bold bg-gray-800 text-white transition'
+        : 'py-2 rounded-lg text-xs sm:text-sm font-semibold text-gray-400 hover:text-white transition';
     }
   });
   renderTablaCitas();
@@ -309,7 +363,7 @@ function actualizarEstadisticasYTablas() {
   let ingresosCompletados = 0;
 
   todasLasCitas.forEach(c => {
-    if (c.estado === 'Confirmada') {
+    if (c.estado === 'Confirmada' || c.estado === 'Pendiente') {
       pendientes++;
     } else if (c.estado === 'Completada') {
       completadas++;
@@ -322,7 +376,8 @@ function actualizarEstadisticasYTablas() {
   document.getElementById('kpi-pendientes').innerText = pendientes;
   document.getElementById('kpi-completadas').innerText = completadas;
   document.getElementById('kpi-no-confirmadas').innerText = noConfirmadas;
-  document.getElementById('kpi-ingresos-reales').innerText = `$ ${Number(ingresosCompletados).toLocaleString()}`;
+  document.getElementById('kpi-ingresos-reales').innerText = `$ ${Number(ingresosCompletados).toLocaleString('es-CO')}`;
+  actualizarResumenHoy();
 
   document.getElementById('count-activas').innerText = pendientes;
   document.getElementById('count-completadas').innerText = completadas;
@@ -331,13 +386,75 @@ function actualizarEstadisticasYTablas() {
   renderTablaCitas();
 }
 
+// ----- Resumen de hoy -----
+function actualizarResumenHoy() {
+  const titulo = document.getElementById('resumen-hoy-titulo');
+  const detalle = document.getElementById('resumen-hoy-detalle');
+  if (!titulo) return;
+  const hoy = hoyBogotaIso();
+  const fechaTexto = new Date(hoy + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+  titulo.textContent = `Hoy, ${fechaTexto}`;
+
+  const ahora = new Intl.DateTimeFormat('en-US', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hour12: false }).format(new Date());
+  const [hh, mm] = ahora.split(':').map(Number);
+  const minutosAhora = (hh % 24) * 60 + mm;
+  const deHoy = todasLasCitas.filter(c => c.fecha === hoy && (c.estado === 'Confirmada' || c.estado === 'Pendiente'))
+    .sort((a, b) => minutosDeHora(a.hora) - minutosDeHora(b.hora));
+  const siguiente = deHoy.find(c => minutosDeHora(c.hora) >= minutosAhora - 15);
+  const porConfirmar = deHoy.filter(c => c.estado === 'Pendiente').length;
+
+  if (!deHoy.length) {
+    detalle.textContent = 'No tienes más citas hoy.';
+  } else {
+    detalle.innerHTML = `${deHoy.length} cita${deHoy.length === 1 ? '' : 's'} pendiente${deHoy.length === 1 ? '' : 's'}` +
+      (siguiente ? ` · próxima <strong class="text-white">${horaLegible(siguiente.hora)}</strong> con ${escapeHtml(siguiente.nombreCliente.split(' ')[0])}` : '') +
+      (porConfirmar ? ` · <span class="text-amber-300">${porConfirmar} por confirmar</span>` : '');
+  }
+}
+
+// ----- Agenda: lista agrupada por día -----
+const ESTADOS_CITA = {
+  'Pendiente': ['Por confirmar', 'bg-amber-500/10 text-amber-300 border-amber-500/30', 'hourglass'],
+  'Confirmada': ['Confirmada', 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30', 'check-check'],
+  'Completada': ['Atendida', 'bg-blue-500/10 text-blue-300 border-blue-500/30', 'badge-check'],
+  'No Confirmada': ['No confirmó', 'bg-gray-700/40 text-gray-300 border-gray-600/40', 'clock-alert'],
+  'Cancelada': ['Cancelada', 'bg-red-500/10 text-red-300 border-red-500/30', 'x-circle']
+};
+
+function minutosDeHora(hora) {
+  const t = String(hora || '').toLowerCase();
+  const m = t.match(/(\d{1,2}):(\d{2})/);
+  if (!m) return 0;
+  let h = Number(m[1]);
+  if (t.includes('pm') && h < 12) h += 12;
+  if (t.includes('am') && h === 12) h = 0;
+  return h * 60 + Number(m[2]);
+}
+
+function horaLegible(hora) {
+  const min = minutosDeHora(hora), h = Math.floor(min / 60);
+  return `${h % 12 || 12}:${String(min % 60).padStart(2, '0')}\u00a0${h < 12 ? 'a.\u00a0m.' : 'p.\u00a0m.'}`;
+}
+
+function hoyBogotaIso(desplazarDias = 0) {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date());
+  return new Date(Date.parse(hoy + 'T12:00:00Z') + desplazarDias * 86400000).toISOString().slice(0, 10);
+}
+
+function tituloDia(fechaIso) {
+  if (fechaIso === hoyBogotaIso()) return 'Hoy';
+  if (fechaIso === hoyBogotaIso(1)) return 'Mañana';
+  if (fechaIso === hoyBogotaIso(-1)) return 'Ayer';
+  const t = new Date(fechaIso + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
+  return t.charAt(0).toUpperCase() + t.slice(1);
+}
+
 function renderTablaCitas() {
-  const tbody = document.getElementById('citas-tbody');
-  tbody.innerHTML = '';
+  const cont = document.getElementById('citas-tbody');
 
   let citasFiltradas = [];
   if (subTabActual === 'activas') {
-    citasFiltradas = todasLasCitas.filter(c => c.estado === 'Confirmada');
+    citasFiltradas = todasLasCitas.filter(c => c.estado === 'Confirmada' || c.estado === 'Pendiente');
   } else if (subTabActual === 'completadas') {
     citasFiltradas = todasLasCitas.filter(c => c.estado === 'Completada');
   } else if (subTabActual === 'noconfirmadas') {
@@ -345,108 +462,81 @@ function renderTablaCitas() {
   }
 
   if (citasFiltradas.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="7" class="p-6 text-center text-gray-500">No hay citas en este apartado.</td></tr>`;
+    const vacio = {
+      activas: ['calendar-check', 'No tienes citas próximas', 'Cuando un cliente reserve aparecerá aquí.'],
+      completadas: ['badge-check', 'Aún no hay citas atendidas', 'Las citas se marcan como atendidas solas al terminar.'],
+      noconfirmadas: ['circle-off', 'Nada por aquí', 'Aquí verás las citas canceladas o que el cliente no confirmó.']
+    }[subTabActual];
+    cont.innerHTML = `<div class="py-10 text-center"><i data-lucide="${vacio[0]}" class="w-8 h-8 text-gray-600 mx-auto"></i>
+      <p class="text-sm font-bold text-gray-300 mt-3">${vacio[1]}</p><p class="text-xs text-gray-500 mt-1">${vacio[2]}</p></div>`;
+    lucide.createIcons();
     return;
   }
 
-  citasFiltradas.forEach(c => {
-    const tr = document.createElement('tr');
-    tr.className = 'hover:bg-white/[0.02] transition';
-
-    const phoneClean = c.telefonoCliente.replace(/[^0-9]/g, '');
-    const nomBarberia = (barberiaActual?.nombre || 'BARBERÍA').toUpperCase();
-    const dirBarberia = barberiaActual?.direccion || 'En nuestro local';
-    
-    const msgConfirmada = encodeURIComponent(
-      `💈 *${nomBarberia}* 💈\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Hola ${c.nombreCliente}! 👋\n` +
-      `Tu cita ha sido *CONFIRMADA* con éxito.\n\n` +
-      `📋 *Detalles de tu turno:*\n` +
-      `✂️ *Servicio:* ${c.servicio}\n` +
-      `💈 *Profesional:* ${c.barbero || 'Master Barber'}\n` +
-      `📅 *Fecha:* ${c.fecha}\n` +
-      `⏰ *Hora:* ${c.hora}\n` +
-      `🔖 *Código:* #${c.codigoReserva}\n\n` +
-      `📍 *Ubicación:* ${dirBarberia}\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Te esperamos puntual para darte la mejor atención! ✂️🔥`
-    );
-
-    const msgRecordatorio = encodeURIComponent(
-      `💈 *${nomBarberia}* 💈\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Hola ${c.nombreCliente}! ⏳\n` +
-      `Te recordamos que tienes una cita programada:\n\n` +
-      `✂️ *Servicio:* ${c.servicio}\n` +
-      `💈 *Profesional:* ${c.barbero || 'Master Barber'}\n` +
-      `📅 *Fecha:* ${c.fecha}\n` +
-      `⏰ *Hora:* ${c.hora}\n` +
-      `📍 *Dirección:* ${dirBarberia}\n\n` +
-      `Por favor procura llegar 5 minutos antes.\n` +
-      `━━━━━━━━━━━━━━━━━━━━\n` +
-      `¡Tu silla ya está lista! ✂️🚀`
-    );
-
-    const enlaceWhatsAppConfirm = `https://wa.me/${phoneClean}?text=${msgConfirmada}`;
-    const enlaceWhatsAppRecordatorio = `https://wa.me/${phoneClean}?text=${msgRecordatorio}`;
-
-    tr.innerHTML = `
-      <td class="px-3 sm:px-4 py-3 font-mono font-bold text-blue-400 text-xs">${escapeHtml(c.codigoReserva)}</td>
-      <td class="px-3 sm:px-4 py-3">
-        <div class="font-bold text-white text-xs sm:text-sm">${escapeHtml(c.nombreCliente)}</div>
-        <a href="https://wa.me/${phoneClean}" target="_blank" class="text-[11px] text-gray-400 hover:text-emerald-400 flex items-center gap-1 mt-0.5">
-          <i data-lucide="phone" class="w-3 h-3 text-emerald-400"></i> ${escapeHtml(c.telefonoCliente)}
-        </a>
-      </td>
-      <td class="px-3 sm:px-4 py-3">
-        <div class="text-white text-xs">${escapeHtml(c.servicio)}</div>
-        <div class="text-[11px] text-gray-400">${escapeHtml(c.barbero)}</div>
-      </td>
-      <td class="px-3 sm:px-4 py-3 text-xs text-blue-300 whitespace-nowrap font-semibold">
-        ${escapeHtml(c.fecha)}<br><span class="text-gray-400 font-normal">${escapeHtml(c.hora)}</span>
-      </td>
-      <td class="px-3 sm:px-4 py-3 font-bold text-white text-xs sm:text-sm">$ ${Number(c.total).toLocaleString()}</td>
-      <td class="px-3 sm:px-4 py-3">
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <a href="${enlaceWhatsAppConfirm}" target="_blank" title="Avisar confirmación al cliente" class="px-2 py-1 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-[11px] font-semibold flex items-center gap-1 hover:bg-emerald-500/20 transition">
-            <i data-lucide="check-check" class="w-3 h-3"></i> Confirmar
-          </a>
-          <a href="${enlaceWhatsAppRecordatorio}" target="_blank" title="Enviar recordatorio al cliente" class="px-2 py-1 rounded-md bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[11px] font-semibold flex items-center gap-1 hover:bg-amber-500/20 transition">
-            <i data-lucide="bell" class="w-3 h-3"></i> Recordar
-          </a>
-        </div>
-      </td>
-      <td class="px-3 sm:px-4 py-3 text-right">
-        ${
-          subTabActual === 'activas' ? `
-            <div class="flex items-center justify-end gap-1.5">
-              <button onclick="marcarCompletada(${c.id})" title="Marcar como atendida" class="py-1 px-2.5 rounded-lg bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30 transition text-xs flex items-center gap-1 font-semibold">
-                <i data-lucide="check" class="w-3.5 h-3.5"></i> Completar
-              </button>
-              <button onclick="eliminarOMoverNoConfirmada(${c.id})" title="Mover a no confirmadas" class="p-1.5 rounded-lg bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition text-xs">
-                <i data-lucide="x" class="w-3.5 h-3.5"></i>
-              </button>
-            </div>
-          ` : subTabActual === 'noconfirmadas' ? `
-            <div class="flex items-center justify-end gap-1.5">
-              <button onclick="reactivarCita(${c.id})" title="Reactivar cita" class="text-xs px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-400 border border-blue-500/30 font-semibold">
-                Reactivar
-              </button>
-              <button onclick="eliminarPermanente(${c.id})" title="Borrar del sistema" class="text-xs px-2.5 py-1 rounded-lg bg-red-500/20 text-red-300 font-semibold">
-                Borrar
-              </button>
-            </div>
-          ` : `
-            <span class="text-xs text-emerald-400 font-semibold flex items-center justify-end gap-1">
-              <i data-lucide="badge-check" class="w-4 h-4"></i> Atendida
-            </span>
-          `
-        }
-      </td>
-    `;
-    tbody.appendChild(tr);
+  // Próximas: de la más cercana a la más lejana. Historial: de la más reciente a la más antigua
+  const asc = subTabActual === 'activas';
+  citasFiltradas.sort((a, b) => {
+    const cmp = a.fecha === b.fecha ? minutosDeHora(a.hora) - minutosDeHora(b.hora) : a.fecha.localeCompare(b.fecha);
+    return asc ? cmp : -cmp;
   });
+
+  const grupos = [];
+  citasFiltradas.forEach(c => {
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.fecha === c.fecha) ultimo.citas.push(c);
+    else grupos.push({ fecha: c.fecha, citas: [c] });
+  });
+
+  cont.innerHTML = grupos.map(g => {
+    const total = g.citas.reduce((s, c) => s + Number(c.total || 0), 0);
+    return `
+      <div>
+        <div class="flex items-baseline justify-between mb-2 px-1">
+          <h4 class="font-extrabold text-white text-sm">${escapeHtml(tituloDia(g.fecha))}</h4>
+          <span class="text-[11px] text-gray-500">${g.citas.length} cita${g.citas.length === 1 ? '' : 's'} · $ ${total.toLocaleString('es-CO')}</span>
+        </div>
+        <div class="space-y-2">${g.citas.map(tarjetaCitaAdmin).join('')}</div>
+      </div>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+function tarjetaCitaAdmin(c) {
+  const phoneClean = String(c.telefonoCliente || '').replace(/[^0-9]/g, '');
+  const [textoEstado, claseEstado, iconoEstado] = ESTADOS_CITA[c.estado] || [c.estado, ESTADOS_CITA.Confirmada[1], 'circle'];
+  const acciones = subTabActual === 'activas'
+    ? `<button onclick="eliminarOMoverNoConfirmada(${c.id})" title="No vino / quitar de la agenda" class="p-2 rounded-lg text-gray-500 hover:text-red-300 hover:bg-red-500/10 transition"><i data-lucide="x" class="w-4 h-4"></i></button>`
+    : subTabActual === 'noconfirmadas'
+      ? `<div class="flex flex-col sm:flex-row gap-1.5">
+          <button onclick="reactivarCita(${c.id})" class="text-xs px-2.5 py-1.5 rounded-lg bg-blue-600/20 text-blue-300 border border-blue-500/30 font-semibold">Reactivar</button>
+          <button onclick="eliminarPermanente(${c.id})" class="text-xs px-2.5 py-1.5 rounded-lg text-gray-400 hover:text-red-300 font-semibold">Borrar</button>
+        </div>`
+      : '';
+
+  return `
+    <div class="flex items-center gap-3 p-3 sm:p-4 rounded-2xl bg-gray-950/60 border border-gray-800">
+      <div class="w-[4.5rem] flex-shrink-0 text-center">
+        <div class="text-sm font-extrabold text-white whitespace-nowrap">${horaLegible(c.hora)}</div>
+        <div class="text-[10px] text-gray-500 font-mono mt-0.5">${escapeHtml(c.codigoReserva)}</div>
+      </div>
+      <div class="w-px self-stretch bg-gray-800"></div>
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-2 flex-wrap">
+          <span class="font-bold text-white text-sm truncate">${escapeHtml(c.nombreCliente)}</span>
+          <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md border text-[10px] font-semibold whitespace-nowrap ${claseEstado}">
+            <i data-lucide="${iconoEstado}" class="w-3 h-3"></i> ${escapeHtml(textoEstado)}
+          </span>
+        </div>
+        <p class="text-xs text-gray-300 mt-0.5 truncate">${escapeHtml(c.servicio)}<span class="text-gray-500"> · ${escapeHtml(c.barbero)}</span></p>
+        <div class="flex items-center gap-3 mt-1 text-[11px]">
+          <a href="https://wa.me/${phoneClean}" target="_blank" rel="noopener" class="text-gray-400 hover:text-emerald-300 inline-flex items-center gap-1">
+            <i data-lucide="message-circle" class="w-3 h-3 text-emerald-400"></i> ${escapeHtml(c.telefonoCliente)}
+          </a>
+          <span class="font-bold text-white whitespace-nowrap">$ ${Number(c.total || 0).toLocaleString('es-CO')}</span>
+        </div>
+      </div>
+      ${acciones}
+    </div>`;
 }
 
 async function marcarCompletada(id) {
@@ -463,7 +553,7 @@ async function marcarCompletada(id) {
 }
 
 async function eliminarOMoverNoConfirmada(id) {
-  if (!confirm('¿Mover esta cita a "No Confirmadas" para que no estorbe en la agenda?')) return;
+  if (!confirm('¿El cliente no vino o quieres quitar esta cita de la agenda? Se moverá a "No confirmadas".')) return;
   try {
     const res = await fetch(`/api/admin/citas/${id}?marcarNoConfirmada=true`, {
       method: 'DELETE',
@@ -615,6 +705,8 @@ async function guardarPerfilBarberia(e) {
     horarioTexto: document.getElementById('conf-horario').value.trim(),
     descripcion: document.getElementById('conf-desc').value.trim(),
     logoUrl: document.getElementById('conf-logo').value.trim() || barberiaActual.logoUrl,
+    colorPrimario: document.getElementById('conf-color').value,
+    portadaUrl: barberiaActual.portadaUrl || '',
     mostrarSelectorBarbero: document.getElementById('conf-mostrar-barberos').checked,
     horaApertura: barberiaActual.horaApertura || '09:00',
     horaCierre: barberiaActual.horaCierre || '20:00',
@@ -657,6 +749,7 @@ async function guardarHorariosBase(e) {
     horaApertura: document.getElementById('conf-hora-apertura').value,
     horaCierre: document.getElementById('conf-hora-cierre').value,
     intervaloMinutos: parseInt(document.getElementById('conf-intervalo').value),
+    minutosAnticipacion: parseInt(document.getElementById('conf-anticipacion')?.value ?? '30'),
     diasLaborales: diasSeleccionados.join(',')
   };
 
@@ -852,10 +945,10 @@ async function bloquearPausaRapida(tipo) {
   let motivo = '';
 
   if (tipo === 'almuerzo') {
-    horas = ['12:30pm', '01:00pm', '01:30pm'];
+    horas = ['12:30-14:00'];
     motivo = '🍱 Almuerzo';
   } else if (tipo === 'tarde') {
-    horas = ['04:30pm', '05:00pm', '05:30pm'];
+    horas = ['16:30-17:30'];
     motivo = '☕ Pausa de la Tarde';
   }
 
@@ -957,13 +1050,13 @@ function abrirModalCitaManual() {
 
   // Llenar selectores con servicios y barberos actuales
   const servSelect = document.getElementById('manual-servicio');
-  servSelect.innerHTML = (barberiaActual?.servicios || []).map(s => 
+  servSelect.innerHTML = (barberiaActual?.servicios || []).map(s =>
     `<option value="${s.id}">${s.nombre} ($${Number(s.precio).toLocaleString()} - ${s.duracionMinutos}m)</option>`
   ).join('');
 
   const barbSelect = document.getElementById('manual-barbero');
   const miembros = barberiaActual?.miembros || [];
-  barbSelect.innerHTML = miembros.map(m => 
+  barbSelect.innerHTML = miembros.map(m =>
     `<option value="${m.id}">${m.nombre} (${m.rol})</option>`
   ).join('');
 

@@ -60,10 +60,13 @@ public class AdminController : ControllerBase
                 barberia.Direccion,
                 barberia.TelefonoWhatsApp,
                 barberia.LogoUrl,
+                barberia.ColorPrimario,
+                barberia.PortadaUrl,
                 barberia.HorarioTexto,
                 barberia.HoraApertura,
                 barberia.HoraCierre,
                 barberia.IntervaloMinutos,
+                barberia.MinutosAnticipacion,
                 barberia.DiasLaborales,
                 barberia.MostrarSelectorBarbero,
                 barberia.DatosPago,
@@ -111,6 +114,18 @@ public class AdminController : ControllerBase
         if (!string.IsNullOrWhiteSpace(dto.HoraApertura)) barberia.HoraApertura = dto.HoraApertura;
         if (!string.IsNullOrWhiteSpace(dto.HoraCierre)) barberia.HoraCierre = dto.HoraCierre;
         if (dto.IntervaloMinutos >= 15) barberia.IntervaloMinutos = dto.IntervaloMinutos;
+        if (dto.MinutosAnticipacion is >= 0 and <= 2880) barberia.MinutosAnticipacion = dto.MinutosAnticipacion.Value;
+        if (dto.ColorPrimario != null && System.Text.RegularExpressions.Regex.IsMatch(dto.ColorPrimario, "^#[0-9a-fA-F]{6}$"))
+            barberia.ColorPrimario = dto.ColorPrimario.ToUpperInvariant();
+        if (dto.PortadaUrl != null)
+        {
+            var portada = dto.PortadaUrl.Trim();
+            var valida = portada == "" || portada.Length <= 900_000 &&
+                (portada.StartsWith("data:image/jpeg;base64,") || portada.StartsWith("data:image/png;base64,") ||
+                 portada.StartsWith("data:image/webp;base64,") || portada.StartsWith("https://") || portada.StartsWith("/uploads/"));
+            if (!valida) return BadRequest(new { message = "La imagen de portada no es válida o es demasiado grande." });
+            barberia.PortadaUrl = portada;
+        }
         if (!string.IsNullOrWhiteSpace(dto.DiasLaborales)) barberia.DiasLaborales = dto.DiasLaborales;
         barberia.MostrarSelectorBarbero = dto.MostrarSelectorBarbero;
 
@@ -235,6 +250,7 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> ObtenerCitas([FromQuery] string? filtro, [FromQuery] string? fechaInicio, [FromQuery] string? fechaFin)
     {
         var barberiaId = ObtenerBarberiaId();
+        await EstadosCitas.AplicarAsync(_context, barberiaId);
         var query = _context.Citas
             .Include(c => c.Servicio)
             .Include(c => c.MiembroEquipo)

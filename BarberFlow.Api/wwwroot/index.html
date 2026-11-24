@@ -3,414 +3,270 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Reservar Cita - BarberFlow Pro</title>
+  <title>Reservar cita</title>
   <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#2563EB">
+  <meta name="theme-color" content="#0B0F19">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <!-- CSS local preempaquetado para que nunca falle sin internet/CDN -->
   <link rel="stylesheet" href="/css/tailwind.min.css">
+  <link rel="stylesheet" href="/css/tema.css?v=20261124">
   <script src="/js/tailwind.cdn.js"></script>
   <script src="/js/lucide.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="/js/confetti.browser.min.js"></script>
-  <script>
-    if (window.tailwind) {
-      tailwind.config = {
-        theme: {
-          extend: {
-            colors: {
-              brand: {
-                gold: '#3B82F6',
-                goldHover: '#2563EB',
-                dark: '#0B0F19',
-                card: '#111827',
-                border: '#1F2937',
-                accent: '#60A5FA',
-              }
-            },
-            fontFamily: { sans: ['"Plus Jakarta Sans"', 'sans-serif'] }
-          }
-        }
-      }
-    }
-  </script>
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; }
-    #barber-logo {
-      width: 96px !important;
-      height: 96px !important;
-      max-width: 96px !important;
-      max-height: 96px !important;
-      min-width: 96px !important;
-      min-height: 96px !important;
-      border-radius: 9999px !important;
-      object-fit: cover !important;
-      display: block !important;
-      margin-left: auto !important;
-      margin-right: auto !important;
-    }
-    @media (min-width: 640px) {
-      #barber-logo {
-        width: 112px !important;
-        height: 112px !important;
-        max-width: 112px !important;
-        max-height: 112px !important;
-        min-width: 112px !important;
-        min-height: 112px !important;
-      }
-    }
-    .custom-scroll::-webkit-scrollbar { width: 5px; height: 5px; }
-    .custom-scroll::-webkit-scrollbar-thumb { background: #374151; border-radius: 99px; }
-    .avatar-zoom { transition: transform 0.25s ease; cursor: pointer; }
-    .avatar-zoom:hover { transform: scale(1.06); }
-
-    /* CSS Fallback para asegurar renderizado perfecto en cualquier navegador móvil */
-    img { max-width: 100%; height: auto; }
-    .card-box { background-color: #111827; border: 1px solid #1F2937; border-radius: 1.5rem; }
-    .btn-brand { background-color: #2563EB; color: #ffffff; font-weight: bold; }
-    .star-rating-btn { cursor: pointer; font-size: 1.5rem; color: #4B5563; transition: color 0.15s; }
-    .star-rating-btn.active, .star-rating-btn:hover { color: #FBBF24; }
+    .campo { width: 100%; background: #030712; border: 1px solid #374151; border-radius: 0.75rem; padding: 0.7rem 0.9rem; font-size: 0.9rem; color: #fff; outline: none; transition: border-color .15s; }
+    .campo:focus { border-color: #3B82F6; }
+    .etiqueta { display: block; font-size: 0.75rem; font-weight: 600; color: #9CA3AF; margin-bottom: 0.35rem; }
+    .tarjeta { background: rgba(17, 24, 39, .8); border: 1px solid #1F2937; border-radius: 1.5rem; }
+    .paso-num { width: 1.75rem; height: 1.75rem; border-radius: .6rem; display: inline-flex; align-items: center; justify-content: center; font-size: .8rem; font-weight: 800; background: rgba(37, 99, 235, .15); color: #93C5FD; border: 1px solid rgba(59, 130, 246, .35); flex-shrink: 0; }
+    .paso-num.listo { background: #059669; color: #fff; border-color: #059669; }
+    .sin-scroll { scrollbar-width: none; }
+    .sin-scroll::-webkit-scrollbar { display: none; }
+    .oculto { display: none !important; }
+    @keyframes aparecer { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+    .aparecer { animation: aparecer .25s ease both; }
+    .estrella { cursor: pointer; font-size: 2rem; line-height: 1; color: #374151; transition: color .15s, transform .15s; background: none; border: 0; }
+    .estrella.activa { color: #FBBF24; }
+    .estrella:hover { transform: scale(1.1); }
   </style>
 </head>
-<body class="min-h-screen flex flex-col selection:bg-blue-500 selection:text-white custom-scroll">
+<body class="min-h-screen flex flex-col pb-28">
 
-  <!-- Header Limpio -->
-  <header class="border-b border-gray-800 bg-[#0F172A]/90 backdrop-blur-md sticky top-0 z-50">
-    <div class="max-w-4xl mx-auto px-4 h-16 flex items-center justify-between">
-      <div class="flex items-center gap-3">
-        <div class="w-9 h-9 rounded-xl bg-blue-600 flex items-center justify-center text-white font-extrabold text-lg shadow-md shadow-blue-500/20">
-          ✂️
-        </div>
-        <div>
-          <span class="font-extrabold text-base tracking-tight text-white">Barber<span class="text-blue-500">Flow</span></span>
-        </div>
+  <!-- Encabezado con la marca de la barbería -->
+  <header class="border-b border-gray-800 bg-[#0F172A]/90 backdrop-blur-md sticky top-0 z-40">
+    <div class="max-w-3xl mx-auto px-4 h-16 flex items-center justify-between gap-3">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <img id="header-logo" src="/icons/icon-192.png" alt="" class="w-9 h-9 rounded-xl object-cover bg-gray-900 border border-gray-800 flex-shrink-0">
+        <span id="header-nombre" class="font-extrabold text-sm sm:text-base text-white truncate">Cargando...</span>
       </div>
-      <div class="flex items-center gap-2">
-        <span id="badge-abierto" class="hidden inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 text-xs font-semibold">
-          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span> Abierto
-        </span>
-        <!-- Botón Portal Clientes -->
-        <a id="btn-portal-cliente" href="/cuenta.html" class="ml-1 py-1.5 px-3 rounded-xl bg-blue-600/20 hover:bg-blue-600/30 border border-blue-500/40 text-blue-300 text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap">
-          <i data-lucide="user" class="w-3.5 h-3.5"></i> <span id="txt-btn-cliente">Mis citas</span>
-        </a>
-      </div>
+      <a id="btn-portal-cliente" href="/cuenta.html" class="py-2 px-3 rounded-xl bg-gray-900 border border-gray-800 hover:border-gray-700 text-gray-200 text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap flex-shrink-0">
+        <i data-lucide="calendar-check" class="w-3.5 h-3.5 text-blue-400"></i> <span id="txt-btn-cliente">Mis citas</span>
+      </a>
     </div>
   </header>
 
-  <main class="flex-1 max-w-4xl mx-auto w-full px-4 py-8">
+  <main class="flex-1 max-w-3xl mx-auto w-full px-4 py-6 space-y-5">
 
-    <!-- Banner Reagendar Cita -->
-    <div id="banner-reagendar-aviso" class="hidden mb-6 p-4 rounded-2xl bg-blue-900/40 border border-blue-500/50 text-blue-200 text-xs sm:text-sm flex items-center justify-between gap-3 shadow-lg">
-      <div class="flex items-center gap-3">
-        <span class="text-2xl">🔄</span>
+    <!-- Aviso de reagendamiento -->
+    <div id="banner-reagendar-aviso" class="oculto p-4 rounded-2xl bg-blue-950/60 border border-blue-500/40 flex items-start gap-3 aparecer">
+      <div class="w-9 h-9 rounded-xl bg-blue-600/20 flex items-center justify-center flex-shrink-0"><i data-lucide="calendar-sync" class="w-5 h-5 text-blue-300"></i></div>
+      <div class="text-sm">
+        <p class="font-bold text-white">Estás reagendando tu cita</p>
+        <p class="text-blue-200/80 text-xs mt-0.5">Mantienes el servicio <strong id="reagendar-nombre-servicio" class="text-white">--</strong>. Elige el nuevo día y hora; tu cita anterior se cancela sola.</p>
+      </div>
+    </div>
+
+    <!-- Presentación de la barbería -->
+    <section class="tarjeta overflow-hidden">
+      <div id="portada-barberia" class="h-20 sm:h-24"></div>
+      <div class="px-5 sm:px-7 pb-6 -mt-10 sm:-mt-12">
+        <div class="flex items-end justify-between gap-3">
+          <button type="button" onclick="abrirModalImagenGrande(document.getElementById('barber-logo').src, barberia?.nombre)" class="rounded-2xl ring-4 ring-[#111827] flex-shrink-0" aria-label="Ver logo en grande">
+            <img id="barber-logo" src="/icons/icon-192.png" alt="" class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-cover bg-gray-900">
+          </button>
+          <div class="flex gap-2 pb-1">
+            <a id="link-whatsapp-direct" href="#" target="_blank" rel="noopener" class="oculto w-10 h-10 rounded-xl bg-emerald-600/15 border border-emerald-500/30 text-emerald-300 flex items-center justify-center hover:bg-emerald-600/25 transition" aria-label="Escribir por WhatsApp">
+              <i data-lucide="message-circle" class="w-5 h-5"></i>
+            </a>
+            <a id="link-mapa" href="#" target="_blank" rel="noopener" class="oculto w-10 h-10 rounded-xl bg-gray-800 border border-gray-700 text-gray-200 flex items-center justify-center hover:border-gray-600 transition" aria-label="Cómo llegar">
+              <i data-lucide="map-pin" class="w-5 h-5"></i>
+            </a>
+          </div>
+        </div>
+
+        <h1 id="barber-name" class="text-2xl sm:text-3xl font-extrabold text-white mt-3 leading-tight">Cargando...</h1>
+        <p id="barber-desc" class="text-sm text-gray-400 mt-1"></p>
+
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 text-xs sm:text-sm">
+          <span id="estado-apertura" class="inline-flex items-center gap-1.5 font-semibold text-gray-400"></span>
+          <span class="inline-flex items-center gap-1 text-gray-300"><span class="text-amber-400">★</span> <strong id="barber-stars" class="text-white">5.0</strong> <span id="barber-reviews" class="text-gray-500">(0)</span></span>
+        </div>
+        <p id="barber-address" class="oculto text-xs text-gray-500 mt-2 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i> <span></span></p>
+      </div>
+    </section>
+
+    <!-- PASO 1: SERVICIO -->
+    <section id="seccion-paso-servicios" class="tarjeta p-5 sm:p-6">
+      <div class="flex items-center gap-2.5 mb-4">
+        <span id="num-paso-servicio" class="paso-num">1</span>
         <div>
-          <span class="font-bold text-white block text-sm">Modo Reagendar Turno</span>
-          <span class="text-blue-300">Mantendrás tu mismo servicio (<strong id="reagendar-nombre-servicio" class="text-white">--</strong>). Solo elige abajo el nuevo día y la hora que prefieras.</span>
-        </div>
-      </div>
-    </div>
-    
-    <!-- Encabezado de la Barbería con Imagen Ampliable estilo Instagram -->
-    <div class="text-center mb-8">
-      <p class="text-blue-500 font-semibold text-sm sm:text-base mb-3">Vas a hacer tu reserva con</p>
-      
-      <div class="flex flex-col items-center">
-        <!-- Foto con clic para ampliar estilo Instagram -->
-        <div class="relative group cursor-pointer" onclick="abrirModalImagenGrande(document.getElementById('barber-logo').src, document.getElementById('barber-name').innerText)">
-          <img id="barber-logo" src="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><path d='M4 20c0-4 4-6 8-6s8 2 8 6'/></svg>" class="avatar-zoom w-24 h-24 sm:w-28 sm:h-28 rounded-full object-cover border-2 border-blue-500/60 shadow-xl bg-gray-900 mb-2 p-1">
-          <div class="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition text-white text-xs font-bold">
-            <i data-lucide="zoom-in" class="w-5 h-5"></i>
-          </div>
-        </div>
-        
-        <h1 id="barber-name" class="text-2xl sm:text-3xl font-extrabold text-white mt-1">Cargando barbería...</h1>
-        
-        <div class="flex items-center gap-2 mt-1.5 text-xs text-gray-300">
-          <span class="text-amber-400 font-bold flex items-center gap-1" id="barber-stars">★ 5.0</span>
-          <span class="text-gray-400" id="barber-reviews">(0 valoraciones)</span>
-          <span class="text-gray-500">•</span>
-          <span class="text-gray-300 font-medium" id="barber-appointments">0 agendamientos</span>
-        </div>
-
-        <p id="barber-address" class="text-xs sm:text-sm text-gray-400 mt-2 max-w-md">
-          Dirección física de la barbería
-        </p>
-        <p id="barber-desc" class="text-xs text-gray-400 mt-0.5">
-          Barbería & Cuidado personal
-        </p>
-
-        <a id="link-whatsapp-direct" href="#" target="_blank" class="mt-3 inline-flex items-center gap-1.5 text-blue-400 hover:text-blue-300 text-xs font-semibold">
-          <i data-lucide="message-circle" class="w-3.5 h-3.5"></i> Contactar por WhatsApp
-        </a>
-      </div>
-    </div>
-
-    <!-- PASO 1: SERVICIOS CON BUSCADOR Y CATEGORÍAS PERSONALIZADAS -->
-    <div id="seccion-paso-servicios" class="bg-gray-900/80 rounded-3xl p-5 sm:p-7 border border-gray-800 shadow-xl mb-8">
-      
-      <h2 class="text-center text-blue-500 font-bold text-base sm:text-lg mb-4">
-        Elige o busca el servicio que deseas reservar
-      </h2>
-
-      <!-- Buscador -->
-      <div class="relative max-w-md mx-auto mb-6">
-        <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute left-3.5 top-3.5"></i>
-        <input type="text" id="input-buscar-servicio" oninput="filtrarServiciosPorTexto(this.value)" placeholder="Buscar servicio por nombre..." class="w-full bg-gray-950/80 border border-gray-700/80 rounded-full pl-10 pr-4 py-2.5 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500 shadow-inner">
-      </div>
-
-      <!-- Categorías Circulares (Solo las que existan en la barbería) -->
-      <div class="flex items-center justify-center gap-4 sm:gap-6 mb-6 overflow-x-auto pt-3 pb-3 custom-scroll" id="categorias-container">
-        <!-- Dinámico -->
-      </div>
-
-      <!-- Título de Categoría Activa -->
-      <h3 id="titulo-categoria-activa" class="text-center font-extrabold text-blue-400 text-lg mb-4">Cortes</h3>
-
-      <!-- Grid de Tarjetas de Servicios -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3.5" id="services-cards-grid">
-        <!-- Tarjetas dinámicas -->
-      </div>
-    </div>
-
-    <!-- PASO 2: ELIGE EL BARBERO (Solo si la barbería activó la opción) -->
-    <div id="seccion-selector-barbero" class="bg-gray-900/80 rounded-3xl p-5 sm:p-7 border border-gray-800 shadow-xl mb-8 hidden">
-      <h2 class="text-base sm:text-lg font-bold text-white flex items-center gap-2 mb-4">
-        <span class="w-7 h-7 rounded-xl bg-blue-600/20 text-blue-400 border border-blue-500/40 flex items-center justify-center text-sm font-extrabold">2</span>
-        Elige el Profesional
-      </h2>
-      <div class="grid grid-cols-2 sm:grid-cols-3 gap-3" id="barbers-container">
-        <!-- Dinámico -->
-      </div>
-    </div>
-
-    <!-- PASO 3: CALENDARIO INTERACTIVO CON BOTÓN "VER CALENDARIO POR DÍAS / COMPLETO" -->
-    <div id="seccion-paso-calendario" class="bg-gray-900/80 rounded-3xl p-5 sm:p-7 border border-gray-800 shadow-xl mb-8">
-      
-      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h2 class="text-base font-bold text-white flex items-center gap-2">
-          <span class="w-6 h-6 rounded-lg bg-blue-600/20 text-blue-400 border border-blue-500/40 flex items-center justify-center text-xs font-extrabold">📅</span>
-          Elige una fecha
-        </h2>
-        
-        <!-- Botón para alternar la vista del calendario (idéntico a la imagen) -->
-        <button type="button" onclick="alternarModoCalendario()" id="btn-toggle-modo-cal" class="text-xs sm:text-sm font-bold text-blue-400 hover:text-blue-300 flex items-center gap-1.5 transition">
-          <i data-lucide="calendar" class="w-4 h-4"></i> <span id="label-modo-cal">Ver calendario completo</span>
-        </button>
-      </div>
-
-      <div class="grid grid-cols-1 md:grid-cols-12 gap-6 sm:gap-8">
-        
-        <!-- Columna Izquierda: Vista Calendario (Modo 1: Cuadrícula Mensual | Modo 2: Matriz Tradicional de Mes) -->
-        <div class="md:col-span-7">
-          <div class="flex items-center justify-between mb-3 px-1">
-            <span id="mes-anio-label" class="text-xs text-blue-400 font-bold uppercase tracking-wider">Noviembre 2026</span>
-            <div class="flex items-center gap-1">
-              <button onclick="cambiarMesRelativo(-1)" class="p-1 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition">
-                <i data-lucide="chevron-left" class="w-4 h-4"></i>
-              </button>
-              <button onclick="cambiarMesRelativo(1)" class="p-1 rounded-lg hover:bg-gray-800 text-gray-400 hover:text-white transition">
-                <i data-lucide="chevron-right" class="w-4 h-4"></i>
-              </button>
-            </div>
-          </div>
-
-          <!-- Contenedor del Calendario -->
-          <div id="grid-calendario-mes" class="grid grid-cols-7 gap-1.5 sm:gap-2 text-center">
-            <!-- Días generados dinámicamente -->
-          </div>
-        </div>
-
-        <!-- Columna Derecha: Lista de Horarios Disponibles con Scroll Completo Sin Cortar -->
-        <div class="md:col-span-5 flex flex-col justify-start">
-          <h3 class="text-sm sm:text-base font-bold text-white mb-3">Lista de horarios disponibles:</h3>
-
-          <div id="lista-horas-container" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5 max-h-[360px] overflow-y-auto p-1.5 pb-12 custom-scroll">
-            <!-- Horas dinámicas -->
-          </div>
-        </div>
-
-      </div>
-    </div>
-
-    <!-- RESUMEN FINAL & CONFIRMACIÓN -->
-    <div class="bg-gray-900 rounded-3xl p-6 sm:p-8 border border-gray-800 shadow-2xl">
-      <h3 class="text-lg font-bold text-white border-b border-gray-800 pb-3 flex items-center gap-2">
-        <i data-lucide="receipt" class="w-5 h-5 text-blue-400"></i> Resumen de tu Reserva
-      </h3>
-
-      <div class="grid grid-cols-1 sm:grid-cols-3 md:grid-cols-4 gap-4 my-5 text-sm" id="grid-resumen">
-        <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800">
-          <span class="text-xs text-gray-400 block font-medium">Servicio Seleccionado</span>
-          <span id="resumen-servicio" class="font-bold text-white text-base mt-1 block">--</span>
-          <span id="resumen-duracion" class="text-xs text-blue-400">-- min</span>
-        </div>
-        <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800 hidden" id="resumen-box-barbero">
-          <span class="text-xs text-gray-400 block font-medium">Profesional / Barbero</span>
-          <span id="resumen-barbero" class="font-bold text-white text-base mt-1 block">Cualquiera</span>
-          <span class="text-xs text-blue-400">Asignación rápida</span>
-        </div>
-        <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800">
-          <span class="text-xs text-gray-400 block font-medium">Fecha & Horario</span>
-          <span id="resumen-fecha-hora" class="font-bold text-emerald-400 text-base mt-1 block">Selecciona horario</span>
-        </div>
-        <div class="p-3.5 rounded-2xl bg-gray-950/70 border border-gray-800">
-          <span class="text-xs text-gray-400 block font-medium">Precio Total</span>
-          <span id="resumen-precio" class="font-extrabold text-blue-400 text-2xl mt-0.5 block">$ 0</span>
+          <h2 class="font-extrabold text-white text-base">Elige tu servicio</h2>
+          <p class="text-xs text-gray-500">Toca un servicio para seleccionarlo</p>
         </div>
       </div>
 
-      <form id="form-cliente-reserva" onsubmit="confirmarReservaFinal(event)" class="space-y-4 pt-4 border-t border-gray-800/80">
-        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div class="relative mb-3">
+        <i data-lucide="search" class="w-4 h-4 text-gray-500 absolute left-3.5 top-1/2 transform -translate-y-1/2"></i>
+        <input type="search" id="input-buscar-servicio" oninput="filtrarServiciosPorTexto(this.value)" placeholder="Buscar servicio..." class="campo pl-10">
+      </div>
+
+      <div id="categorias-container" class="flex items-start justify-center gap-4 sm:gap-6 overflow-x-auto sin-scroll pt-3 pb-2 mb-2" role="tablist"></div>
+      <h3 id="titulo-categoria-activa" class="text-center font-extrabold text-blue-400 text-lg mb-3"></h3>
+      <div id="services-cards-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+    </section>
+
+    <!-- PASO 2: PROFESIONAL (opcional) -->
+    <section id="seccion-selector-barbero" class="tarjeta p-5 sm:p-6 oculto">
+      <div class="flex items-center gap-2.5 mb-4">
+        <span id="num-paso-barbero" class="paso-num">2</span>
+        <div>
+          <h2 class="font-extrabold text-white text-base">¿Con quién?</h2>
+          <p class="text-xs text-gray-500">Elige tu profesional o el primero disponible</p>
+        </div>
+      </div>
+      <div id="barbers-container" class="flex gap-2.5 overflow-x-auto sin-scroll pb-1"></div>
+    </section>
+
+    <!-- PASO 3: DÍA Y HORA -->
+    <section id="seccion-paso-calendario" class="tarjeta p-5 sm:p-6">
+      <div class="flex items-center justify-between gap-2 mb-4">
+        <div class="flex items-center gap-2.5">
+          <span id="num-paso-fecha" class="paso-num">2</span>
           <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1">Tu Nombre *</label>
-            <input type="text" id="cliente-nombre" required placeholder="Ej: Juan Pérez" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
-          </div>
-          <div>
-            <label class="block text-xs font-semibold text-gray-400 mb-1">Teléfono o WhatsApp *</label>
-            <div class="flex items-center gap-1.5">
-              <select id="cliente-pais" class="bg-gray-950 border border-gray-700 rounded-xl px-2.5 py-2.5 text-xs text-white focus:outline-none focus:border-blue-500 cursor-pointer flex-shrink-0">
-                <option value="+57" selected>🇨🇴 +57</option>
-                <option value="+1">🇺🇸 +1</option>
-                <option value="+34">🇪🇸 +34</option>
-                <option value="+52">🇲🇽 +52</option>
-                <option value="+54">🇦🇷 +54</option>
-                <option value="+56">🇨🇱 +56</option>
-                <option value="+51">🇵🇪 +51</option>
-                <option value="+58">🇻🇪 +58</option>
-                <option value="+593">🇪🇨 +593</option>
-                <option value="+507">🇵🇦 +507</option>
-              </select>
-              <input type="tel" id="cliente-telefono" required placeholder="Ej: 300 123 4567" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500">
-            </div>
+            <h2 class="font-extrabold text-white text-base">Día y hora</h2>
+            <p id="mes-anio-label" class="text-xs text-gray-500"></p>
           </div>
         </div>
+        <div class="flex gap-1">
+          <button type="button" onclick="desplazarDias(-1)" class="w-8 h-8 rounded-lg bg-gray-800/80 text-gray-300 hover:text-white flex items-center justify-center" aria-label="Días anteriores"><i data-lucide="chevron-left" class="w-4 h-4"></i></button>
+          <button type="button" onclick="desplazarDias(1)" class="w-8 h-8 rounded-lg bg-gray-800/80 text-gray-300 hover:text-white flex items-center justify-center" aria-label="Más días"><i data-lucide="chevron-right" class="w-4 h-4"></i></button>
+        </div>
+      </div>
 
-        <button type="submit" id="btn-confirmar-final" class="w-full py-4 rounded-2xl font-extrabold text-white bg-blue-600 hover:bg-blue-500 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/30 text-base transition transform active:scale-95">
-          <i data-lucide="check-circle" class="w-5 h-5"></i> Confirmar Cita Ahora
+      <div id="tira-dias" class="flex gap-2 overflow-x-auto sin-scroll pb-1 scroll-smooth"></div>
+
+      <div id="lista-horas-container" class="mt-5"></div>
+    </section>
+
+    <!-- PASO 4: DATOS Y CONFIRMACIÓN -->
+    <section id="seccion-datos" class="tarjeta p-5 sm:p-6">
+      <div class="flex items-center gap-2.5 mb-4">
+        <span id="num-paso-datos" class="paso-num">3</span>
+        <div>
+          <h2 class="font-extrabold text-white text-base">Tus datos</h2>
+          <p class="text-xs text-gray-500">Te enviamos la confirmación por WhatsApp</p>
+        </div>
+      </div>
+
+      <div id="resumen-reserva" class="mb-4 p-4 rounded-2xl bg-gray-950/70 border border-gray-800 text-sm space-y-2">
+        <div class="flex justify-between gap-3"><span class="text-gray-500">Servicio</span><span id="resumen-servicio" class="font-semibold text-white text-right">Sin elegir</span></div>
+        <div id="resumen-box-barbero" class="flex justify-between gap-3 oculto"><span class="text-gray-500">Profesional</span><span id="resumen-barbero" class="font-semibold text-white text-right">Cualquiera</span></div>
+        <div class="flex justify-between gap-3"><span class="text-gray-500">Fecha</span><span id="resumen-fecha-hora" class="font-semibold text-white text-right first-letter:uppercase">Sin elegir</span></div>
+        <div class="flex justify-between gap-3 pt-2 border-t border-gray-800"><span class="text-gray-500">Total</span><span id="resumen-precio" class="font-extrabold text-white">$ 0</span></div>
+      </div>
+
+      <form id="form-cliente-reserva" onsubmit="confirmarReservaFinal(event)" class="space-y-4">
+        <div>
+          <label class="etiqueta" for="cliente-nombre">Tu nombre</label>
+          <input type="text" id="cliente-nombre" autocomplete="name" required maxlength="60" placeholder="Ej: Juan Pérez" class="campo">
+        </div>
+        <div>
+          <label class="etiqueta" for="cliente-telefono">Tu WhatsApp</label>
+          <div class="flex gap-2">
+            <select id="cliente-pais" class="campo flex-shrink-0 cursor-pointer" style="width:auto" aria-label="Indicativo del país"></select>
+            <input type="tel" id="cliente-telefono" inputmode="tel" autocomplete="tel-national" required placeholder="300 123 4567" class="campo">
+          </div>
+        </div>
+        <p id="error-reserva" class="oculto p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-medium"></p>
+        <button type="submit" id="btn-confirmar-final" class="w-full py-3.5 rounded-2xl font-extrabold text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 text-base transition">
+          <i data-lucide="check-circle" class="w-5 h-5"></i> <span>Confirmar cita</span>
         </button>
       </form>
-    </div>
+    </section>
 
-    <!-- SECCIÓN DE OPINIONES Y VALORACIONES DE CLIENTES -->
-    <div id="seccion-opiniones" class="mt-8 bg-gray-900/60 rounded-3xl p-6 sm:p-7 border border-gray-800 shadow-xl hidden">
-      <div class="flex items-center justify-between mb-4 flex-wrap gap-2">
-        <h3 class="font-bold text-white text-base sm:text-lg flex items-center gap-2">
-          <span class="text-amber-400">⭐</span> Opiniones de Clientes
-        </h3>
-        <button type="button" onclick="abrirModalValoracion()" class="text-xs px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-400 hover:bg-amber-500/20 font-bold transition flex items-center gap-1.5">
-          <i data-lucide="star" class="w-3.5 h-3.5"></i> Dejar mi opinión
-        </button>
+    <!-- OPINIONES -->
+    <section id="seccion-opiniones" class="tarjeta p-5 sm:p-6">
+      <div class="flex items-center justify-between gap-2 mb-4">
+        <h2 class="font-extrabold text-white text-base flex items-center gap-2"><span class="text-amber-400">★</span> Opiniones</h2>
+        <button type="button" onclick="abrirModalValoracion()" class="text-xs px-3 py-1.5 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 hover:bg-amber-500/20 font-bold transition">Dejar mi opinión</button>
       </div>
-      <div id="lista-opiniones-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <!-- Tarjetas dinámicas de opiniones -->
-      </div>
-    </div>
-
+      <div id="lista-opiniones-cards" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
+    </section>
   </main>
 
-  <!-- MODAL VALORACIÓN DE CLIENTES -->
-  <div id="modal-valoracion" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-gray-900 border border-gray-800 max-w-sm sm:max-w-md w-full rounded-3xl p-6 sm:p-7 shadow-2xl relative">
-      <button onclick="cerrarModalValoracion()" class="absolute top-4 right-4 text-gray-400 hover:text-white transition">
-        <i data-lucide="x" class="w-6 h-6"></i>
-      </button>
-
-      <div class="text-center mb-5">
-        <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto mb-3 text-2xl">
-          ⭐
-        </div>
-        <h3 id="modal-valoracion-titulo" class="text-xl font-extrabold text-white">Califica tu Experiencia</h3>
-        <p class="text-xs text-gray-400 mt-1">¿Qué tal te pareció la atención en la barbería?</p>
+  <!-- Barra inferior con el resumen de la selección -->
+  <div id="barra-resumen" class="fixed bottom-0 inset-x-0 z-30 border-t border-gray-800 bg-[#0F172A]/95 backdrop-blur-md oculto">
+    <div class="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between gap-3">
+      <div class="min-w-0">
+        <p id="barra-titulo" class="text-sm font-bold text-white truncate"></p>
+        <p id="barra-detalle" class="text-xs text-gray-400 truncate first-letter:uppercase"></p>
       </div>
+      <button id="barra-boton" type="button" onclick="avanzarPaso()" class="py-2.5 px-5 rounded-xl font-bold text-sm bg-blue-600 hover:bg-blue-500 text-white shadow-lg shadow-blue-600/25 whitespace-nowrap flex-shrink-0">Continuar</button>
+    </div>
+  </div>
 
-      <form id="form-valoracion" onsubmit="enviarValoracionCliente(event)" class="space-y-4">
-        <!-- Selector de Estrellas interactivo -->
-        <div class="flex items-center justify-center gap-2 py-2">
-          <input type="hidden" id="val-estrellas" value="5">
-          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(1)">★</button>
-          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(2)">★</button>
-          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(3)">★</button>
-          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(4)">★</button>
-          <button type="button" class="star-rating-btn active" onclick="seleccionarEstrella(5)">★</button>
+  <!-- MODAL VALORACIÓN -->
+  <div id="modal-valoracion" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 oculto" role="dialog" aria-modal="true">
+    <div class="bg-gray-900 border border-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative aparecer">
+      <button type="button" onclick="cerrarModalValoracion()" class="absolute top-4 right-4 text-gray-500 hover:text-white" aria-label="Cerrar"><i data-lucide="x" class="w-5 h-5"></i></button>
+      <h3 id="modal-valoracion-titulo" class="text-lg font-extrabold text-white pr-6">Califica tu experiencia</h3>
+      <p class="text-sm text-gray-400 mt-1">¿Qué tal te pareció la atención?</p>
+      <div id="val-requiere-cuenta" class="oculto mt-4 text-center">
+        <p class="text-sm text-gray-300">Las opiniones son de clientes que ya fueron atendidos. Ingresa con tu cuenta para dejar la tuya.</p>
+        <a id="val-link-cuenta" href="/cuenta.html" class="inline-block mt-4 px-5 py-2.5 rounded-xl text-sm font-bold bg-blue-600 hover:bg-blue-500 text-white">Ingresar a mi cuenta</a>
+      </div>
+      <form id="form-valoracion" onsubmit="enviarValoracionCliente(event)" class="space-y-4 mt-4">
+        <input type="hidden" id="val-estrellas" value="5">
+        <div class="flex items-center justify-center gap-1" id="selector-estrellas">
+          <button type="button" class="estrella activa" onclick="seleccionarEstrella(1)" aria-label="1 estrella">★</button>
+          <button type="button" class="estrella activa" onclick="seleccionarEstrella(2)" aria-label="2 estrellas">★</button>
+          <button type="button" class="estrella activa" onclick="seleccionarEstrella(3)" aria-label="3 estrellas">★</button>
+          <button type="button" class="estrella activa" onclick="seleccionarEstrella(4)" aria-label="4 estrellas">★</button>
+          <button type="button" class="estrella activa" onclick="seleccionarEstrella(5)" aria-label="5 estrellas">★</button>
         </div>
-        <p id="label-estrellas-desc" class="text-center text-xs font-semibold text-amber-400">Excelente (5 de 5)</p>
-
+        <p id="label-estrellas-desc" class="text-center text-xs font-semibold text-amber-300">Excelente</p>
+        <div id="val-campo-nombre">
+          <label class="etiqueta" for="val-nombre">Tu nombre</label>
+          <input type="text" id="val-nombre" maxlength="60" readonly class="campo opacity-80">
+        </div>
         <div>
-          <label class="block text-xs font-semibold text-gray-400 mb-1">Tu Nombre *</label>
-          <input type="text" id="val-nombre" required placeholder="Ej: Carlos Mejía" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400">
+          <label class="etiqueta" for="val-comentario">Comentario (opcional)</label>
+          <textarea id="val-comentario" rows="2" maxlength="500" placeholder="Excelente atención, muy buen corte..." class="campo"></textarea>
         </div>
-
-        <div>
-          <label class="block text-xs font-semibold text-gray-400 mb-1">Comentario u Opinión (Opcional)</label>
-          <textarea id="val-comentario" rows="2" placeholder="Excelente atención, muy buen corte..." class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2.5 text-sm text-white focus:outline-none focus:border-amber-400"></textarea>
-        </div>
-
-        <button type="submit" id="btn-enviar-valoracion" class="w-full py-3.5 rounded-xl font-bold bg-amber-500 hover:bg-amber-400 text-gray-950 flex items-center justify-center gap-2 shadow-lg shadow-amber-500/20 text-sm transition">
-          <i data-lucide="send" class="w-4 h-4"></i> Publicar Calificación
-        </button>
+        <button type="submit" id="btn-enviar-valoracion" class="w-full py-3 rounded-xl font-bold bg-amber-500 hover:bg-amber-400 text-gray-950 text-sm transition">Publicar opinión</button>
       </form>
     </div>
   </div>
 
-  <!-- MODAL PARA VER FOTO GRANDE ESTILO INSTAGRAM -->
-  <div id="modal-foto-grande" class="fixed inset-0 bg-black/90 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden" onclick="cerrarModalFotoGrande()">
-    <div class="relative max-w-sm sm:max-w-md w-full text-center" onclick="event.stopPropagation()">
-      <button onclick="cerrarModalFotoGrande()" class="absolute -top-10 right-0 text-gray-400 hover:text-white transition">
-        <i data-lucide="x" class="w-7 h-7"></i>
-      </button>
-      <div class="bg-gray-900 p-4 rounded-3xl border border-gray-800 shadow-2xl flex flex-col items-center">
-        <img id="img-grande-src" src="" class="w-64 h-64 sm:w-72 sm:h-72 object-contain rounded-2xl bg-gray-950 p-2 border border-gray-800 shadow-inner">
-        <h4 id="img-grande-titulo" class="text-white font-bold text-lg mt-3">Barbería</h4>
-      </div>
+  <!-- MODAL FOTO GRANDE -->
+  <div id="modal-foto-grande" class="fixed inset-0 bg-black/90 backdrop-blur-sm z-50 flex items-center justify-center p-6 oculto" onclick="cerrarModalFotoGrande()">
+    <div class="max-w-sm w-full text-center" onclick="event.stopPropagation()">
+      <img id="img-grande-src" src="" alt="" class="w-full aspect-square object-cover rounded-3xl bg-gray-900 border border-gray-800">
+      <p id="img-grande-titulo" class="text-white font-bold mt-3"></p>
+      <button type="button" onclick="cerrarModalFotoGrande()" class="mt-3 text-sm text-gray-400 hover:text-white">Cerrar</button>
     </div>
   </div>
 
   <!-- MODAL ÉXITO -->
-  <div id="success-modal" class="fixed inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-gray-900 border border-gray-800 max-w-md w-full rounded-3xl p-6 sm:p-8 shadow-2xl text-center">
-      <div class="w-16 h-16 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto mb-4 text-3xl font-bold">
-        ✓
+  <div id="success-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 oculto" role="dialog" aria-modal="true">
+    <div class="bg-gray-900 border border-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center aparecer">
+      <div class="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center justify-center mx-auto mb-3">
+        <i data-lucide="check" class="w-7 h-7"></i>
       </div>
-      <h3 class="text-2xl font-extrabold text-white">¡Reserva Exitosa!</h3>
-      <p class="text-xs sm:text-sm text-gray-300 mt-1">Tu cita ha sido agendada en la barbería.</p>
-      
-      <div class="my-5 p-4 rounded-2xl bg-gray-950 border border-gray-800 text-left text-xs sm:text-sm space-y-2">
-        <div class="flex justify-between text-xs text-gray-400">
-          <span>Código:</span>
-          <span id="modal-codigo" class="font-mono text-blue-400 font-bold">--</span>
-        </div>
-        <div class="flex justify-between font-medium">
-          <span class="text-gray-400">Servicio:</span>
-          <span id="modal-servicio" class="text-white">--</span>
-        </div>
-        <div class="flex justify-between font-medium">
-          <span class="text-gray-400">Horario:</span>
-          <span id="modal-horario" class="text-emerald-400 font-semibold">--</span>
-        </div>
+      <h3 id="exito-titulo" class="text-xl font-extrabold text-white">¡Cita reservada!</h3>
+      <p class="text-sm text-gray-400 mt-1">Te enviamos los detalles por WhatsApp.</p>
+      <div class="my-5 p-4 rounded-2xl bg-gray-950/70 border border-gray-800 text-left text-sm space-y-2">
+        <div class="flex justify-between gap-3"><span class="text-gray-500">Servicio</span><span id="modal-servicio" class="font-semibold text-white text-right">--</span></div>
+        <div class="flex justify-between gap-3"><span class="text-gray-500">Cuándo</span><span id="modal-horario" class="font-semibold text-emerald-300 text-right first-letter:uppercase">--</span></div>
+        <div class="flex justify-between gap-3"><span class="text-gray-500">Código</span><span id="modal-codigo" class="font-mono text-blue-300">--</span></div>
       </div>
-
-      <div class="space-y-3">
-        <div class="p-3.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-xs sm:text-sm font-semibold flex items-center justify-center gap-2">
-          <span>📲</span> <span>¡Listo! Recibirás los detalles de tu cita y confirmación en tu WhatsApp.</span>
-        </div>
-        <button onclick="cerrarModal()" class="w-full py-2.5 px-4 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white transition text-xs sm:text-sm shadow-md">
-          Aceptar y Finalizar
-        </button>
-        <a id="link-exito-mis-citas" href="/cuenta.html" class="block w-full py-2.5 px-4 rounded-xl font-bold bg-gray-800 hover:bg-gray-700 text-gray-200 transition text-xs sm:text-sm">
-          Ver mis citas
-        </a>
+      <div class="grid grid-cols-2 gap-2">
+        <a id="link-exito-mis-citas" href="/cuenta.html" class="py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700 transition">Ver mis citas</a>
+        <button type="button" onclick="cerrarModal()" class="py-2.5 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-500 transition">Listo</button>
       </div>
     </div>
   </div>
 
-  <footer class="border-t border-gray-800/80 py-6 text-center text-xs text-gray-500">
-    <p>© 2026 BarberFlow Pro • Reservas instantáneas en línea</p>
-    <a href="/login.html" class="text-gray-500 hover:text-blue-400 mt-1 inline-block">¿Eres barbero o dueño? Inicia sesión aquí</a>
+  <footer class="py-6 text-center text-xs text-gray-600">
+    <p>Reservas con BarberFlow</p>
+    <a href="/login.html" class="text-gray-600 hover:text-blue-400 mt-1 inline-block">¿Eres el barbero? Ingresa aquí</a>
   </footer>
 
-  <script src="/js/client.js?v=20261123b"></script>
+  <script src="/js/tema.js?v=20261124"></script>
+  <script src="/js/client.js?v=20261124"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

@@ -114,6 +114,7 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddControllers();
+builder.Services.AddHostedService<AutomatizacionCitasService>();
 builder.Services.AddEndpointsApiExplorer();
 
 var app = builder.Build();
@@ -153,6 +154,9 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HoraAnuncioSemana"" text DEFAULT '08:00';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HoraAnuncioSabado"" text DEFAULT '08:00';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HoraAnuncioDomingo"" text DEFAULT '09:00';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MinutosAnticipacion"" integer NOT NULL DEFAULT 30;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""ColorPrimario"" text NOT NULL DEFAULT '#2563EB';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PortadaUrl"" text NOT NULL DEFAULT '';
             ");
         }
         catch (Exception ex)

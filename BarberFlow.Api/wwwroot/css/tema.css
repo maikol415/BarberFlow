@@ -1,0 +1,30 @@
+/* Color de marca de cada barbería (lo define js/tema.js). Por defecto, azul. */
+:root {
+  --acento: rgb(37, 99, 235);
+  --acento-rgb: 37, 99, 235;
+  --acento-claro: rgb(147, 197, 253);
+}
+
+.bg-blue-600 { background-color: var(--acento) !important; }
+.hover\:bg-blue-500:hover { background-color: var(--acento) !important; filter: brightness(1.12); }
+.border-blue-500 { border-color: var(--acento) !important; }
+.ring-blue-500 { --tw-ring-color: var(--acento) !important; }
+.text-blue-400, .text-blue-300, .text-blue-200 { color: var(--acento-claro) !important; }
+.hover\:text-blue-300:hover, .hover\:text-blue-400:hover { color: var(--acento-claro) !important; filter: brightness(1.15); }
+.bg-blue-600\/15 { background-color: rgba(var(--acento-rgb), .15) !important; }
+.bg-blue-600\/20 { background-color: rgba(var(--acento-rgb), .2) !important; }
+.border-blue-500\/30, .border-blue-500\/40 { border-color: rgba(var(--acento-rgb), .4) !important; }
+.shadow-blue-600\/25, .shadow-blue-600\/20 { --tw-shadow-color: rgba(var(--acento-rgb), .25) !important; }
+.focus\:border-blue-500:focus, .campo:focus { border-color: var(--acento) !important; }
+.paso-num { background: rgba(var(--acento-rgb), .15) !important; color: var(--acento-claro) !important; border-color: rgba(var(--acento-rgb), .35) !important; }
+.paso-num.listo { background: #059669 !important; color: #fff !important; border-color: #059669 !important; }
+
+/* Portada: degradado del color de marca, o la foto que suba la barbería */
+#portada-barberia {
+  background-image: linear-gradient(135deg, rgba(var(--acento-rgb), .45), rgba(var(--acento-rgb), .08) 60%, transparent);
+  background-size: cover;
+  background-position: center;
+}
+#portada-barberia.con-foto { height: 9rem; }
+@media (min-width: 640px) { #portada-barberia.con-foto { height: 11rem; } }
+.ring-blue-500\/30 { --tw-ring-color: rgba(var(--acento-rgb), .3) !important; }

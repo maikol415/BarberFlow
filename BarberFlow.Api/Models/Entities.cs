@@ -23,12 +23,15 @@ public class Barberia
     public string Direccion { get; set; } = "";
     public string TelefonoWhatsApp { get; set; } = "";
     public string LogoUrl { get; set; } = "";
+    public string ColorPrimario { get; set; } = "#2563EB"; // Color de marca de la página pública
+    public string PortadaUrl { get; set; } = "";           // Imagen de fondo/portada de la página pública
     public string HorarioTexto { get; set; } = "Lunes a Sábado 9:00 AM - 8:00 PM";
 
     // Horarios laborales base (de qué hora a qué hora trabaja la barbería)
     public string HoraApertura { get; set; } = "09:00"; // Formato 24h ej: 09:00
     public string HoraCierre { get; set; } = "20:00";   // Formato 24h ej: 20:00
     public int IntervaloMinutos { get; set; } = 40;     // Cada 30, 40 o 45 min
+    public int MinutosAnticipacion { get; set; } = 30;  // Mínimo de minutos entre "ahora" y la hora reservada (mismo día)
     public string DiasLaborales { get; set; } = "1,2,3,4,5,6"; // 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb, 0=Dom
 
     // Activar o desactivar selector de barbero

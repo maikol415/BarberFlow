@@ -195,6 +195,7 @@ async function pedirEliminarCuenta() {
 
 // ---------- Citas ----------
 const ESTILO_ESTADO = {
+  'Pendiente': 'bg-amber-500/10 text-amber-300 border-amber-500/30',
   'Confirmada': 'bg-emerald-500/10 text-emerald-300 border-emerald-500/30',
   'No Confirmada': 'bg-amber-500/10 text-amber-300 border-amber-500/30',
   'Completada': 'bg-blue-500/10 text-blue-300 border-blue-500/30',
@@ -204,7 +205,8 @@ const ESTILO_ESTADO = {
 
 function tarjetaCita(c) {
   const f = formatearFecha(c.fecha);
-  const estado = (!c.proxima && (c.estado === 'Confirmada' || c.estado === 'No Confirmada')) ? 'Pasada' : c.estado;
+  const estado = (!c.proxima && (c.estado === 'Confirmada' || c.estado === 'Pendiente')) ? 'Pasada' : c.estado;
+  const TEXTO_ESTADO = { 'Pendiente': 'Por confirmar', 'No Confirmada': 'No confirmada', 'Completada': 'Atendida' };
   const acciones = c.proxima ? `
       <div class="grid grid-cols-2 gap-2 mt-4">
         <a href="/index.html?b=${encodeURIComponent(slug)}&reagendar=${c.id}" class="py-2 rounded-xl text-xs font-bold text-center bg-blue-600/15 text-blue-300 border border-blue-500/30 hover:bg-blue-600/25 transition">Reagendar</a>
@@ -225,7 +227,7 @@ function tarjetaCita(c) {
         <div class="min-w-0 flex-1">
           <div class="flex items-start justify-between gap-2">
             <h3 class="font-bold text-white text-sm leading-snug">${escapeHtml(c.servicio)}</h3>
-            <span class="text-[10px] px-2 py-0.5 rounded-full border font-bold whitespace-nowrap ${ESTILO_ESTADO[estado] || ESTILO_ESTADO.Pasada}">${escapeHtml(estado)}</span>
+            <span class="text-[10px] px-2 py-0.5 rounded-full border font-bold whitespace-nowrap ${ESTILO_ESTADO[estado] || ESTILO_ESTADO.Pasada}">${escapeHtml(TEXTO_ESTADO[estado] || estado)}</span>
           </div>
           <p class="text-xs text-gray-300 mt-1 flex items-center gap-1.5"><i data-lucide="clock" class="w-3.5 h-3.5 text-gray-500"></i> ${escapeHtml(formatearHora(c.hora))}${c.duracionMinutos ? ` · ${c.duracionMinutos} min` : ''}</p>
           <p class="text-xs text-gray-400 mt-0.5 flex items-center gap-1.5"><i data-lucide="user" class="w-3.5 h-3.5 text-gray-500"></i> ${escapeHtml(c.barbero)}</p>
@@ -314,6 +316,7 @@ async function iniciar() {
     const res = await fetch(`/api/public/barberia/${encodeURIComponent(slug)}`);
     if (res.ok) {
       const b = await res.json();
+      if (window.aplicarTemaBarberia) aplicarTemaBarberia(b);
       $('header-barberia').textContent = b.nombre;
       $('auth-barberia').textContent = b.nombre;
       document.title = `Mi cuenta · ${b.nombre}`;
