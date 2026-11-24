@@ -114,7 +114,9 @@ async function initClient() {
 
   todosLosServicios = barberia.servicios || [];
   const linkCuenta = `/cuenta.html?b=${encodeURIComponent(barberia.slug)}`;
-  ['btn-portal-cliente', 'link-exito-mis-citas'].forEach(id => { const el = $(id); if (el) el.href = linkCuenta; });
+  ['btn-portal-cliente', 'link-exito-mis-citas', 'link-ingresar-datos'].forEach(id => { const el = $(id); if (el) el.href = linkCuenta; });
+  // Sin cuenta: invitarlo a crearla (antes solo se llegaba por "Mis citas")
+  mostrar('aviso-cuenta-datos', !clienteSesion);
 
   renderEncabezado();
   renderCategoriasYServicios();
@@ -680,6 +682,13 @@ async function confirmarReservaFinal(e) {
     $('modal-horario').textContent = capitalizar(`${fechaLegible(data.fecha)} · ${minutosATexto(convertirHoraAMinutos(data.hora))}`);
     $('modal-codigo').textContent = data.codigoReserva || '';
     mostrar('barra-resumen', false);
+    // Sin cuenta: invitación destacada; con cuenta: botón "Ver mis citas"
+    mostrar('exito-invitar-cuenta', !clienteSesion);
+    mostrar('link-exito-mis-citas', !!clienteSesion);
+    $('exito-botones').classList.toggle('grid-cols-2', !!clienteSesion);
+    // Con la invitación visible, 'Listo' pasa a segundo plano para que destaque 'Crear mi cuenta'
+    ['bg-blue-600', 'text-white', 'hover:bg-blue-500'].forEach(c => $('exito-listo').classList.toggle(c, !!clienteSesion));
+    ['bg-gray-800', 'text-gray-200', 'hover:bg-gray-700'].forEach(c => $('exito-listo').classList.toggle(c, !clienteSesion));
     mostrar('success-modal', true);
     lucide.createIcons();
     try { if (typeof confetti === 'function') confetti({ particleCount: 80, spread: 60, origin: { y: 0.6 } }); } catch (err) {}
@@ -832,6 +841,19 @@ async function enviarValoracionCliente(e) {
 }
 
 // ================== Sesión del cliente (gestionada en /cuenta.html) ==================
+// Abre el registro con el nombre y el WhatsApp que escribió al reservar.
+// Se pasan por sessionStorage (no por la URL) para que el número no quede en el historial ni en registros.
+function irACrearCuenta() {
+  try {
+    sessionStorage.setItem('bf_prellenar_registro', JSON.stringify({
+      nombre: $('cliente-nombre').value.trim(),
+      pais: $('cliente-pais').value,
+      telefono: $('cliente-telefono').value.replace(/\D/g, '')
+    }));
+  } catch (e) {}
+  window.location.href = `/cuenta.html?b=${encodeURIComponent(barberia.slug)}&registro=1`;
+}
+
 function separarIndicativoYNumero(telefono) {
   let limpio = String(telefono || '').replace(/[^\d+]/g, '');
   if (!limpio.startsWith('+')) limpio = `+${limpio}`;

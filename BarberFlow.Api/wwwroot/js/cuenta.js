@@ -327,7 +327,21 @@ async function iniciar() {
 
   sesion = leerSesion();
   if (sesion) await cargarCuenta();
-  else mostrarVista('auth');
+  else {
+    mostrarVista('auth');
+    // Viene de "Crear mi cuenta" en la página de reservas: abrir el registro con sus datos ya escritos
+    if (new URLSearchParams(location.search).get('registro') === '1') {
+      mostrarFormulario('registro');
+      try {
+        const datos = JSON.parse(sessionStorage.getItem('bf_prellenar_registro') || 'null');
+        sessionStorage.removeItem('bf_prellenar_registro');
+        if (datos?.nombre) $('reg-nombre').value = datos.nombre;
+        if (datos?.pais && [...$('reg-pais').options].some(o => o.value === datos.pais)) $('reg-pais').value = datos.pais;
+        if (datos?.telefono) $('reg-tel').value = datos.telefono;
+        (datos?.nombre && datos?.telefono ? $('reg-genero') : $('reg-nombre')).focus();
+      } catch (e) {}
+    }
+  }
 }
 
 window.addEventListener('DOMContentLoaded', iniciar);

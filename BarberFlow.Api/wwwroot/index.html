@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126k">
-  <link rel="stylesheet" href="/css/tema.css?v=20261126k">
-  <script src="/js/iconos.js?v=20261126k"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261126m">
+  <link rel="stylesheet" href="/css/tema.css?v=20261126m">
+  <script src="/js/iconos.js?v=20261126m"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="/js/confetti.browser.min.js"></script>
   <style>
@@ -150,6 +150,15 @@
         </div>
       </div>
 
+      <div id="aviso-cuenta-datos" class="oculto mb-4 p-3 rounded-2xl bg-blue-500/10 border border-blue-500/25 flex items-start gap-2.5">
+        <i data-lucide="user-plus" class="w-4 h-4 text-blue-300 flex-shrink-0 mt-0.5"></i>
+        <p class="text-xs text-gray-300 leading-relaxed">
+          <button type="button" onclick="irACrearCuenta()" class="font-bold text-blue-300 underline underline-offset-2">Crea tu cuenta</button>
+          para ver, cambiar o cancelar tus citas cuando quieras.
+          ¿Ya tienes una? <a id="link-ingresar-datos" href="/cuenta.html" class="font-bold text-blue-300 underline underline-offset-2">Ingresa</a> y tus datos se llenan solos.
+        </p>
+      </div>
+
       <div id="resumen-reserva" class="mb-4 p-4 rounded-2xl bg-gray-950/70 border border-gray-800 text-sm space-y-2">
         <div class="flex justify-between gap-3"><span class="text-gray-500">Servicio</span><span id="resumen-servicio" class="font-semibold text-white text-right">Sin elegir</span></div>
         <div id="resumen-box-barbero" class="flex justify-between gap-3 oculto"><span class="text-gray-500">Profesional</span><span id="resumen-barbero" class="font-semibold text-white text-right">Cualquiera</span></div>
@@ -253,9 +262,14 @@
         <div class="flex justify-between gap-3"><span class="text-gray-500">Cuándo</span><span id="modal-horario" class="font-semibold text-emerald-300 text-right first-letter:uppercase">--</span></div>
         <div class="flex justify-between gap-3"><span class="text-gray-500">Código</span><span id="modal-codigo" class="font-mono text-blue-300">--</span></div>
       </div>
-      <div class="grid grid-cols-2 gap-2">
+      <div id="exito-invitar-cuenta" class="oculto mb-4 p-4 rounded-2xl bg-blue-500/10 border border-blue-500/30 text-left">
+        <p class="text-sm font-bold text-white flex items-center gap-2"><i data-lucide="user-plus" class="w-4 h-4 text-blue-300"></i> Crea tu cuenta en 20 segundos</p>
+        <p class="text-xs text-gray-400 mt-1">Ve tus citas, cámbialas o cancélalas cuando quieras. Tu nombre y tu número ya quedan llenos.</p>
+        <button type="button" onclick="irACrearCuenta()" class="mt-3 w-full py-2.5 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-500 transition">Crear mi cuenta</button>
+      </div>
+      <div id="exito-botones" class="grid grid-cols-2 gap-2">
         <a id="link-exito-mis-citas" href="/cuenta.html" class="py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700 transition">Ver mis citas</a>
-        <button type="button" onclick="cerrarModal()" class="py-2.5 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-500 transition">Listo</button>
+        <button id="exito-listo" type="button" onclick="cerrarModal()" class="py-2.5 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-500 transition">Listo</button>
       </div>
     </div>
   </div>
@@ -265,8 +279,8 @@
     <a href="/login.html" class="text-gray-600 hover:text-blue-400 mt-1 inline-block">¿Eres el barbero? Ingresa aquí</a>
   </footer>
 
-  <script src="/js/tema.js?v=20261126k"></script>
-  <script src="/js/avisos.js?v=20261126k"></script>
-  <script src="/js/client.js?v=20261126k"></script>
+  <script src="/js/tema.js?v=20261126m"></script>
+  <script src="/js/avisos.js?v=20261126m"></script>
+  <script src="/js/client.js?v=20261126m"></script>
 </body>
 </html>
