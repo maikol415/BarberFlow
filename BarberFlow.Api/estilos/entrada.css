@@ -12,3 +12,7 @@
 .campo.pr-11 { padding-right: 2.75rem; }
 .campo.py-2 { padding-top: .5rem; padding-bottom: .5rem; }
 .campo.text-sm { font-size: .875rem; line-height: 1.25rem; }
+
+/* Filas que se desplazan de lado sin mostrar la barra (sugerencias del chat de prueba) */
+.sin-barra { scrollbar-width: none; }
+.sin-barra::-webkit-scrollbar { display: none; }

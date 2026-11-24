@@ -153,7 +153,7 @@ const saludoPendiente = new Set();
 
 const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
   try {
-    if (!sock || (!estaConectado && !MODO_PRUEBA)) return false;
+    if (!sock || (!estaConectado && !MODO_PRUEBA && !sock.esPrueba)) return false;
 
     if (saludoPendiente.has(remitente)) {
       saludoPendiente.delete(remitente);
@@ -167,7 +167,7 @@ const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
     const delayBase = 2500;
     const delayExtraPorLongitud = Math.min(Math.floor((textoRespuesta || '').length * 15), 2000);
     const delayAleatorio = Math.floor(Math.random() * 800); // 0 a 800ms de variación natural
-    const tiempoTotal = MODO_PRUEBA ? 0 : delayBase + delayExtraPorLongitud + delayAleatorio; // aprox 3 a 4.5 segundos
+    const tiempoTotal = MODO_PRUEBA || sock.esPrueba ? 0 : delayBase + delayExtraPorLongitud + delayAleatorio; // aprox 3 a 4.5 segundos
 
     await sock.sendPresenceUpdate('composing', remitente);
     await new Promise(r => setTimeout(r, tiempoTotal));
@@ -181,9 +181,9 @@ const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
 };
 
 // Cargar o refrescar datos de la barbería en segundo plano cada 60s
-async function obtenerDatosBarberia() {
+async function obtenerDatosBarberia(forzar = false) {
   const ahoraTs = Date.now();
-  if (!cacheBarberia || ahoraTs - ultimaCargaCache > 60000) {
+  if (forzar || !cacheBarberia || ahoraTs - ultimaCargaCache > 60000) {
     try {
       const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`, { timeout: 4000 });
       if (res.ok) {
@@ -253,10 +253,11 @@ const servidorHttp = http.createServer(async (req, res) => {
     return;
   }
 
-  // 3. Webhooks desde la API (Web ➔ WhatsApp)
+  // 3. Webhooks desde la API (Web ➔ WhatsApp) y chat de prueba del panel
   const webhooks = {
     '/api/notificar-cita': manejarNotificarCita,
-    '/api/notificar-cancelacion': manejarNotificarCancelacion
+    '/api/notificar-cancelacion': manejarNotificarCancelacion,
+    '/api/probar': probarConversacion
   };
   const ruta = req.url.split('?')[0];
   if (req.method === 'POST' && webhooks[ruta]) {
@@ -265,7 +266,7 @@ const servidorHttp = http.createServer(async (req, res) => {
     req.on('end', async () => {
       try {
         const resultado = await webhooks[ruta](JSON.parse(body || '{}'));
-        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.writeHead(resultado?.status || 200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(resultado));
       } catch (err) {
         console.error(`Error en webhook ${ruta}:`, err);
@@ -326,11 +327,14 @@ export function avisoDeHoy(barberia, ahoraMs = Date.now()) {
   const deHoy = (barberia?.bloqueos || []).filter(b => b.fecha === hoy);
   const diaCompleto = deHoy.find(b => !b.hora || b.hora === 'TODO_EL_DIA');
   if (diaCompleto) return `🚫 *Hoy no atendemos*${diaCompleto.motivo ? `: ${diaCompleto.motivo}` : ''}. Puedes reservar para otro día.`;
+  const [hh, mm] = new Intl.DateTimeFormat('en-GB', { timeZone: 'America/Bogota', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(ahoraMs)).split(':').map(Number);
+  const ahoraMin = hh * 60 + mm;
   const descansos = deHoy.map(b => {
     const [desde, hasta] = b.hora.includes('-') ? b.hora.split('-') : [b.hora, null];
     const ini = horaAMinutos(desde);
     if (ini === null) return null;
     const fin = hasta ? horaAMinutos(hasta) : ini + (barberia.intervaloMinutos || 40);
+    if (fin <= ahoraMin) return null; // ese descanso ya pasó
     return `${b.motivo || 'Descanso'} ${minutosATextoBot(ini)} – ${minutosATextoBot(fin)}`;
   }).filter(Boolean);
   return descansos.length ? `☕ *Hoy tenemos descanso:* ${descansos.join('; ')}` : '';
@@ -542,6 +546,7 @@ function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barber
   setTimeout(async () => {
     try {
       if (!socketActivo || !estaConectado) return;
+      if ((await obtenerDatosBarberia()).pedirOpinionActivo === false) return; // el barbero lo apagó en el panel
       if (!await citaSigueActiva(citaId)) return; // cancelada o reagendada: no pedir reseña
       const urlCalificar = urlCalificarCita(tokenPublico);
       const msgResena =
@@ -557,53 +562,98 @@ function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barber
   return Math.round(espera / 60000);
 }
 
-// Recordatorio automático ~2 horas antes de cada cita confirmada de hoy.
-// Se desactiva con RECORDATORIOS_ACTIVOS=0. Se recuerda en memoria qué citas ya se avisaron.
+// Recordatorio automático X horas antes de cada cita (X se elige en el panel: 1, 2, 3, 6, 12 o 24).
+// Se apaga desde el panel o con RECORDATORIOS_ACTIVOS=0. Se recuerda en memoria qué citas ya se avisaron.
+const HORAS_RECORDATORIO_VALIDAS = [1, 2, 3, 6, 12, 24];
 const recordatoriosEnviados = new Set();
 export async function revisarRecordatorios(ahoraMs = Date.now()) {
   if (process.env.RECORDATORIOS_ACTIVOS === '0') return [];
   if (!socketActivo || (!estaConectado && !MODO_PRUEBA)) return [];
 
-  const fechaIso = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ahoraMs));
-  const res = await apiBotFetch(`/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
-  if (!res.ok) return [];
-  const data = await res.json();
+  const barberiaDatos = await obtenerDatosBarberia();
+  if (barberiaDatos.recordatoriosActivos === false) return [];
+  const horas = HORAS_RECORDATORIO_VALIDAS.includes(Number(barberiaDatos.horasRecordatorio)) ? Number(barberiaDatos.horasRecordatorio) : 2;
+  const objetivo = horas * 60;
+
+  const fechaCo = ms => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ms));
+  const hoy = fechaCo(ahoraMs);
+  // Con 6 horas o más, la cita a recordar puede ser de mañana
+  const fechas = horas >= 6 ? [hoy, fechaCo(ahoraMs + 86400000)] : [hoy];
   const enviados = [];
 
-  for (const c of data.citas || []) {
-    if (!['Confirmada', 'Pendiente'].includes(c.estado) || !c.telefonoCliente || recordatoriosEnviados.has(c.id)) continue;
-    const inicio = instanteCita(fechaIso, c.hora);
-    if (!inicio) continue;
-    const minutosFaltan = (inicio - ahoraMs) / 60000;
-    if (minutosFaltan < 90 || minutosFaltan > 150) continue;
+  for (const fechaIso of fechas) {
+    const res = await apiBotFetch(`/bot/resumen-diario/${BARBERIA_SLUG}?fecha=${fechaIso}`);
+    if (!res.ok) continue;
+    const data = await res.json();
+    const cuando = fechaIso === hoy ? 'de hoy' : 'de mañana';
 
-    recordatoriosEnviados.add(c.id);
-    const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
-    const barberiaDatos = await obtenerDatosBarberia();
-    const plantillaRec = (barberiaDatos.plantillaRecordatorio || '').trim();
-    if (plantillaRec) {
-      let texto = aplicarPlantilla(plantillaRec, {
-        cliente: obtenerPrimerNombre(c.nombreCliente), servicio: c.servicio, fecha: fechaLegible(fechaIso), hora: c.hora,
-        codigo: c.codigoReserva || '', barberia: data.nombre || '', direccion: barberiaDatos.direccion || '', barbero: c.barbero || ''
-      });
-      if (c.estado === 'Pendiente' && !mencionaConfirmar(texto)) texto += `\n\n👉 Responde *SI* para confirmar que vienes.`;
-      await enviarMensajeHumano(socketActivo, jid, texto);
+    for (const c of data.citas || []) {
+      if (!['Confirmada', 'Pendiente'].includes(c.estado) || !c.telefonoCliente || recordatoriosEnviados.has(c.id)) continue;
+      const inicio = instanteCita(fechaIso, c.hora);
+      if (!inicio) continue;
+      const minutosFaltan = (inicio - ahoraMs) / 60000;
+      if (minutosFaltan < objetivo - 30 || minutosFaltan > objetivo + 30) continue;
+
+      recordatoriosEnviados.add(c.id);
+      const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
+      const plantillaRec = (barberiaDatos.plantillaRecordatorio || '').trim();
+      if (plantillaRec) {
+        let texto = aplicarPlantilla(plantillaRec, {
+          cliente: obtenerPrimerNombre(c.nombreCliente), servicio: c.servicio, fecha: fechaLegible(fechaIso), hora: c.hora,
+          codigo: c.codigoReserva || '', barberia: data.nombre || '', direccion: barberiaDatos.direccion || '', barbero: c.barbero || ''
+        });
+        if (c.estado === 'Pendiente' && !mencionaConfirmar(texto)) texto += `\n\n👉 Responde *SI* para confirmar que vienes.`;
+        await enviarMensajeHumano(socketActivo, jid, texto);
+        enviados.push(c.id);
+        continue;
+      }
+      await enviarMensajeHumano(
+        socketActivo,
+        jid,
+        `⏰ ¡Hola ${obtenerPrimerNombre(c.nombreCliente)}! Te recordamos tu cita ${cuando} en *${data.nombre || 'la barbería'}*:\n\n` +
+        `✂️ *Servicio:* ${c.servicio}\n` +
+        (fechaIso === hoy ? '' : `📅 *Fecha:* ${fechaLegible(fechaIso)}\n`) +
+        `🕒 *Hora:* ${c.hora}\n\n` +
+        (c.estado === 'Pendiente'
+          ? `👉 Responde *SI* para confirmar que vienes, o *CANCELAR* / *REAGENDAR* si no puedes. 💈`
+          : `Por favor llega 5 minutos antes. Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*. 💈`)
+      );
       enviados.push(c.id);
-      continue;
     }
-    await enviarMensajeHumano(
-      socketActivo,
-      jid,
-      `⏰ ¡Hola ${obtenerPrimerNombre(c.nombreCliente)}! Te recordamos tu cita de hoy en *${data.nombre || 'la barbería'}*:\n\n` +
-      `✂️ *Servicio:* ${c.servicio}\n` +
-      `🕒 *Hora:* ${c.hora}\n\n` +
-      (c.estado === 'Pendiente'
-        ? `👉 Responde *SI* para confirmar que vienes, o *CANCELAR* / *REAGENDAR* si no puedes. 💈`
-        : `Por favor llega 5 minutos antes. Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*. 💈`)
-    );
-    enviados.push(c.id);
   }
   return enviados;
+}
+
+// ----------------- CHAT DE PRUEBA DEL PANEL -----------------
+// El barbero escribe en el panel como si fuera un cliente nuevo y ve lo que respondería el bot.
+// Nada sale por WhatsApp: las respuestas se capturan con un socket falso. Funciona aunque el bot no esté vinculado.
+const JID_CHAT_PRUEBA = 'chat-de-prueba-del-panel@lid';
+export async function probarConversacion({ slug, texto, reiniciar } = {}) {
+  if (!slug || String(slug).toLowerCase() !== BARBERIA_SLUG.toLowerCase()) {
+    return { status: 403, error: 'Este bot atiende otra barbería.' };
+  }
+  if (reiniciar) {
+    ultimaInteraccionCliente.delete(JID_CHAT_PRUEBA);
+    estadoCliente.delete(JID_CHAT_PRUEBA);
+    saludoPendiente.delete(JID_CHAT_PRUEBA);
+    ultimaDerivacionMap.delete(JID_CHAT_PRUEBA);
+  }
+  const mensaje = String(texto || '').slice(0, 500).trim();
+  if (!mensaje) return { respuestas: [] };
+
+  await obtenerDatosBarberia(true);
+  const respuestas = [];
+  const sockPrueba = {
+    esPrueba: true,
+    sendMessage: async (jid, contenido) => { if (jid === JID_CHAT_PRUEBA && contenido?.text) respuestas.push(contenido.text); },
+    sendPresenceUpdate: async () => {},
+    onWhatsApp: async () => []
+  };
+  await procesarMensajeEntrante(sockPrueba, {
+    type: 'notify',
+    messages: [{ key: { remoteJid: JID_CHAT_PRUEBA, fromMe: false, id: `PRUEBA${Date.now()}` }, message: { conversation: mensaje } }]
+  });
+  return { respuestas, botActivo: cacheBarberia?.botActivo !== false };
 }
 
 // Solo para el simulador de pruebas

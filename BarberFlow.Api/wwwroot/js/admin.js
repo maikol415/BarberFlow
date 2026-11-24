@@ -115,6 +115,16 @@ async function cargarPerfil() {
       `Por favor llega 5 minutos antes. Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*.`;
 
     // Horarios de Anuncio Matutino
+    const chkRecordatorios = document.getElementById('conf-recordatorios-activos');
+    if (chkRecordatorios) {
+      chkRecordatorios.checked = barberiaActual.recordatoriosActivos !== false;
+      document.getElementById('conf-horas-recordatorio').value = String(barberiaActual.horasRecordatorio || 2);
+      const alternarHoras = () => document.getElementById('fila-horas-recordatorio').classList.toggle('opacity-40', !chkRecordatorios.checked);
+      chkRecordatorios.onchange = alternarHoras;
+      alternarHoras();
+    }
+    const chkOpinion = document.getElementById('conf-pedir-opinion');
+    if (chkOpinion) chkOpinion.checked = barberiaActual.pedirOpinionActivo !== false;
     const chkAnuncio = document.getElementById('conf-anuncio-activo');
     if (chkAnuncio) chkAnuncio.checked = barberiaActual.anuncioMatutinoActivo !== false;
     const inpSemana = document.getElementById('conf-anuncio-semana');
@@ -1268,6 +1278,9 @@ async function guardarConfiguracionBot() {
     mensajeDerivacionHumana: document.getElementById('conf-bot-derivacion').value,
     plantillaConfirmacion: document.getElementById('conf-bot-confirmacion').value,
     plantillaRecordatorio: document.getElementById('conf-bot-recordatorio').value,
+    recordatoriosActivos: document.getElementById('conf-recordatorios-activos')?.checked !== false,
+    horasRecordatorio: parseInt(document.getElementById('conf-horas-recordatorio')?.value || '2'),
+    pedirOpinionActivo: document.getElementById('conf-pedir-opinion')?.checked !== false,
     anuncioMatutinoActivo: document.getElementById('conf-anuncio-activo')?.checked !== false,
     horaAnuncioSemana: document.getElementById('conf-anuncio-semana')?.value || '08:00',
     horaAnuncioSabado: document.getElementById('conf-anuncio-sabado')?.value || '08:00',
@@ -1290,6 +1303,90 @@ async function guardarConfiguracionBot() {
     avisar('Error al conectar con el servidor.');
   }
 }
+
+// ----- Chat de prueba del bot -----
+// Texto de WhatsApp a HTML seguro: *negrita*, _cursiva_, enlaces y saltos de línea
+function textoWhatsAppAHtml(texto) {
+  return escapeHtml(texto)
+    .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
+    .replace(/(^|\s)_([^_\n]+)_/g, '$1<i>$2</i>')
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1" target="_blank" rel="noopener" class="underline text-emerald-300 break-all">$1</a>');
+}
+
+function agregarBurbujaChat(texto, deCliente, tipo = '') {
+  const cont = document.getElementById('chat-prueba-mensajes');
+  const fila = document.createElement('div');
+  fila.className = `flex ${deCliente ? 'justify-end' : 'justify-start'}`;
+  const burbuja = document.createElement('div');
+  burbuja.className = `max-w-[85%] px-3 py-2 rounded-2xl whitespace-pre-line break-words text-[13px] leading-snug ${
+    tipo === 'nota' ? 'bg-transparent text-gray-500 italic text-xs'
+    : deCliente ? 'bg-emerald-700 text-white rounded-br-md' : 'bg-gray-800 text-gray-100 rounded-bl-md'}`;
+  burbuja.innerHTML = textoWhatsAppAHtml(texto);
+  fila.appendChild(burbuja);
+  cont.appendChild(fila);
+  cont.scrollTop = cont.scrollHeight;
+  return fila;
+}
+
+function pintarInicioChatPrueba() {
+  const cont = document.getElementById('chat-prueba-mensajes');
+  if (!cont) return;
+  cont.innerHTML = '';
+  agregarBurbujaChat('Escribe un mensaje o toca una sugerencia para ver cómo responde tu bot.', false, 'nota');
+}
+
+let chatPruebaReiniciar = true;
+async function enviarTextoChatPrueba(texto) {
+  texto = (texto || '').trim();
+  if (!texto) return;
+  const boton = document.getElementById('chat-prueba-enviar');
+  const cont = document.getElementById('chat-prueba-mensajes');
+  if (cont.querySelector('.italic') && cont.children.length === 1) cont.innerHTML = '';
+  agregarBurbujaChat(texto, true);
+  const escribiendo = agregarBurbujaChat('escribiendo…', false, 'nota');
+  boton.disabled = true;
+  try {
+    const res = await fetch('/api/admin/bot/probar', {
+      method: 'POST',
+      headers: getAuthHeaders(),
+      body: JSON.stringify({ texto, reiniciar: chatPruebaReiniciar })
+    });
+    const data = await res.json().catch(() => ({}));
+    escribiendo.remove();
+    if (!res.ok) {
+      agregarBurbujaChat(data.message || 'No se pudo probar el bot en este momento.', false, 'nota');
+      return;
+    }
+    chatPruebaReiniciar = false;
+    if (data.botActivo === false) agregarBurbujaChat('El bot está apagado (interruptor "Estado" arriba): a los clientes no les respondería nada.', false, 'nota');
+    else if (!data.respuestas?.length) agregarBurbujaChat('(El bot no respondería a este mensaje: lo toma como una reacción como "ok" o "gracias", o ya avisó que el barbero contestará.)', false, 'nota');
+    (data.respuestas || []).forEach(r => agregarBurbujaChat(r, false));
+  } catch (err) {
+    escribiendo.remove();
+    agregarBurbujaChat('No se pudo conectar con el servidor.', false, 'nota');
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+function enviarChatPrueba(e) {
+  e.preventDefault();
+  const input = document.getElementById('chat-prueba-texto');
+  const texto = input.value;
+  input.value = '';
+  enviarTextoChatPrueba(texto);
+  input.focus();
+}
+
+function reiniciarChatPrueba() {
+  chatPruebaReiniciar = true;
+  pintarInicioChatPrueba();
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  pintarInicioChatPrueba();
+  document.querySelectorAll('#chat-prueba-sugerencias button').forEach(b => b.onclick = () => enviarTextoChatPrueba(b.dataset.texto));
+});
 
 function renderListaReglasBot(reglas) {
   const container = document.getElementById('lista-reglas-bot');

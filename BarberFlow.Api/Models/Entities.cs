@@ -32,6 +32,11 @@ public class Barberia
     public string HoraCierre { get; set; } = "20:00";   // Formato 24h ej: 20:00
     public int IntervaloMinutos { get; set; } = 40;     // Cada 30, 40 o 45 min
     public int MinutosAnticipacion { get; set; } = 30;  // Mínimo de minutos entre "ahora" y la hora reservada (mismo día)
+
+    // Mensajes automáticos del bot a los clientes
+    public bool RecordatoriosActivos { get; set; } = true; // Recordar la cita por WhatsApp
+    public int HorasRecordatorio { get; set; } = 2;        // Cuántas horas antes (1, 2, 3, 6, 12 o 24)
+    public bool PedirOpinionActivo { get; set; } = true;   // Pedir calificación 1 hora después de la cita
     public string DiasLaborales { get; set; } = "1,2,3,4,5,6"; // 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb, 0=Dom
 
     // Activar o desactivar selector de barbero

@@ -27,6 +27,7 @@ const {
   normalizarTexto,
   avisoDeHoy,
   INTENCION,
+  probarConversacion,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -303,9 +304,20 @@ comprobar('"melo pues" en plena conversación no dispara respuestas', r || 'sile
 
 // Motivo del bloqueo visible para el cliente
 const hoyCo = fechaColombia(0);
-comprobar('Aviso de hoy: día cerrado con motivo', avisoDeHoy({ bloqueos: [{ fecha: hoyCo, hora: 'TODO_EL_DIA', motivo: 'Festivo' }] }), ['Hoy no atendemos', 'Festivo']);
-comprobar('Aviso de hoy: descanso con horas', avisoDeHoy({ bloqueos: [{ fecha: hoyCo, hora: '12:30-14:00', motivo: 'Almuerzo' }] }), ['Hoy tenemos descanso', 'Almuerzo 12:30 p. m. – 2:00 p. m.']);
+const a10am = Date.parse(hoyCo + 'T10:00:00-05:00'), a3pm = Date.parse(hoyCo + 'T15:00:00-05:00');
+comprobar('Aviso de hoy: día cerrado con motivo', avisoDeHoy({ bloqueos: [{ fecha: hoyCo, hora: 'TODO_EL_DIA', motivo: 'Festivo' }] }, a10am), ['Hoy no atendemos', 'Festivo']);
+comprobar('Aviso de hoy: un descanso que ya pasó no se menciona', avisoDeHoy({ bloqueos: [{ fecha: hoyCo, hora: '12:30-14:00', motivo: 'Almuerzo' }] }, a3pm) || 'vacío', ['vacío']);
+comprobar('Aviso de hoy: descanso con horas', avisoDeHoy({ bloqueos: [{ fecha: hoyCo, hora: '12:30-14:00', motivo: 'Almuerzo' }] }, a10am), ['Hoy tenemos descanso', 'Almuerzo 12:30 p. m. – 2:00 p. m.']);
 comprobar('Aviso de hoy: nada si el bloqueo es otro día', avisoDeHoy({ bloqueos: [{ fecha: manana, hora: 'TODO_EL_DIA', motivo: 'Festivo' }] }) || 'vacío', ['vacío']);
 
+// Chat de prueba del panel
+let prueba = await probarConversacion({ slug: 'otra-barberia', texto: 'hola' });
+comprobar('Chat de prueba: rechaza otra barbería', String(prueba.status), ['403']);
+prueba = await probarConversacion({ slug: SLUG, texto: 'Buenaaas', reiniciar: true });
+comprobar('Chat de prueba: responde con la bienvenida', prueba.respuestas.join(' | '), ['Bienvenid', '*1.*']);
+prueba = await probarConversacion({ slug: SLUG, texto: '2' });
+comprobar('Chat de prueba: sigue la conversación (opción 2)', prueba.respuestas.join(' | '), ['Servicios y precios']);
+prueba = await probarConversacion({ slug: SLUG, texto: 'hola', reiniciar: true });
+comprobar('Chat de prueba: empezar de nuevo vuelve a saludar', prueba.respuestas.join(' | '), ['Bienvenid']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

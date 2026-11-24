@@ -50,7 +50,10 @@ public record UpdateBarberiaDto(
     string? HoraAnuncioDomingo = null,
     int? MinutosAnticipacion = null,
     string? ColorPrimario = null,
-    string? PortadaUrl = null
+    string? PortadaUrl = null,
+    bool? RecordatoriosActivos = null,
+    int? HorasRecordatorio = null,
+    bool? PedirOpinionActivo = null
 );
 
 public record CrearBotReglaDto(

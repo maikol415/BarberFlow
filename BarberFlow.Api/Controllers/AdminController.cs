@@ -67,6 +67,9 @@ public class AdminController : ControllerBase
                 barberia.HoraCierre,
                 barberia.IntervaloMinutos,
                 barberia.MinutosAnticipacion,
+                barberia.RecordatoriosActivos,
+                barberia.HorasRecordatorio,
+                barberia.PedirOpinionActivo,
                 barberia.DiasLaborales,
                 barberia.MostrarSelectorBarbero,
                 barberia.DatosPago,
@@ -140,6 +143,9 @@ public class AdminController : ControllerBase
         if (dto.PlantillaConfirmacion != null) barberia.PlantillaConfirmacion = dto.PlantillaConfirmacion.Trim();
         if (dto.PlantillaRecordatorio != null) barberia.PlantillaRecordatorio = dto.PlantillaRecordatorio.Trim();
         if (dto.AnuncioMatutinoActivo.HasValue) barberia.AnuncioMatutinoActivo = dto.AnuncioMatutinoActivo.Value;
+        if (dto.RecordatoriosActivos.HasValue) barberia.RecordatoriosActivos = dto.RecordatoriosActivos.Value;
+        if (dto.HorasRecordatorio is 1 or 2 or 3 or 6 or 12 or 24) barberia.HorasRecordatorio = dto.HorasRecordatorio.Value;
+        if (dto.PedirOpinionActivo.HasValue) barberia.PedirOpinionActivo = dto.PedirOpinionActivo.Value;
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSemana)) barberia.HoraAnuncioSemana = dto.HoraAnuncioSemana.Trim();
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSabado)) barberia.HoraAnuncioSabado = dto.HoraAnuncioSabado.Trim();
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioDomingo)) barberia.HoraAnuncioDomingo = dto.HoraAnuncioDomingo.Trim();
@@ -588,6 +594,39 @@ public class AdminController : ControllerBase
         {
             Console.WriteLine($"[Bot Reiniciar Error]: {ex.Message}");
             return StatusCode(502, new { message = "No se pudo conectar con el servicio de WhatsApp." });
+        }
+    }
+
+    public record ProbarBotDto(string? Texto, bool Reiniciar = false);
+
+    // Chat de prueba del panel: el bot responde como si el barbero fuera un cliente, sin enviar nada por WhatsApp
+    [HttpPost("bot/probar")]
+    public async Task<IActionResult> ProbarBot([FromBody] ProbarBotDto dto)
+    {
+        var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
+        var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
+        if (string.IsNullOrWhiteSpace(botKey)) return StatusCode(503, new { message = "BOT_API_KEY no está configurada en el servidor." });
+        var texto = (dto.Texto ?? "").Trim();
+        if (texto.Length > 500) texto = texto[..500];
+
+        try
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{botUrl.TrimEnd('/')}/api/probar")
+            {
+                Content = JsonContent.Create(new { slug = User.FindFirst("BarberiaSlug")?.Value, texto, reiniciar = dto.Reiniciar })
+            };
+            req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
+            using var resp = await _botHttp.SendAsync(req);
+            if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
+                return StatusCode(403, new { message = "El bot de WhatsApp no está asignado a tu barbería." });
+            if (!resp.IsSuccessStatusCode)
+                return StatusCode(502, new { message = "El bot no pudo responder la prueba." });
+            return Content(await resp.Content.ReadAsStringAsync(), "application/json");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Bot Probar Error]: {ex.Message}");
+            return StatusCode(502, new { message = "No se pudo conectar con el bot. Si está dormido, espera unos segundos y vuelve a intentar." });
         }
     }
 

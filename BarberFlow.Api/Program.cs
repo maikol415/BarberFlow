@@ -162,6 +162,9 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MinutosAnticipacion"" integer NOT NULL DEFAULT 30;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""ColorPrimario"" text NOT NULL DEFAULT '#2563EB';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PortadaUrl"" text NOT NULL DEFAULT '';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""RecordatoriosActivos"" boolean NOT NULL DEFAULT true;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasRecordatorio"" integer NOT NULL DEFAULT 2;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PedirOpinionActivo"" boolean NOT NULL DEFAULT true;
             ");
         }
         catch (Exception ex)
