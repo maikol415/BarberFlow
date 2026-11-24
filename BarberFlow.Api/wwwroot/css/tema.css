@@ -14,6 +14,9 @@
 .bg-blue-600\/15 { background-color: rgba(var(--acento-rgb), .15) !important; }
 .bg-blue-600\/20 { background-color: rgba(var(--acento-rgb), .2) !important; }
 .border-blue-500\/30, .border-blue-500\/40 { border-color: rgba(var(--acento-rgb), .4) !important; }
+.border-blue-500\/25 { border-color: rgba(var(--acento-rgb), .3) !important; }
+.bg-blue-500\/10 { background-color: rgba(var(--acento-rgb), .1) !important; }
+.hover\:bg-blue-600\/25:hover { background-color: rgba(var(--acento-rgb), .25) !important; }
 .shadow-blue-600\/25, .shadow-blue-600\/20 { --tw-shadow-color: rgba(var(--acento-rgb), .25) !important; }
 .focus\:border-blue-500:focus, .campo:focus { border-color: var(--acento) !important; }
 .paso-num { background: rgba(var(--acento-rgb), .15) !important; color: var(--acento-claro) !important; border-color: rgba(var(--acento-rgb), .35) !important; }
