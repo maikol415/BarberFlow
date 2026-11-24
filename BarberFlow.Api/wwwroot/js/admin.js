@@ -140,44 +140,59 @@ async function cargarPerfil() {
   }
 }
 
-// Función utilitaria para optimizar y comprimir imágenes antes de guardarlas (máx 500x500 y calidad 0.8)
-function comprimirImagen(file, maxWidth = 500, maxHeight = 500, quality = 0.8) {
+// Reduce una foto a un tamaño razonable conservando la nitidez.
+// Se achica por pasos (mitad en mitad) con suavizado alto: evita el efecto borroso/pixelado de reducir de una sola vez.
+// Los logos con transparencia se guardan en PNG para no quedar con fondo negro.
+function comprimirImagen(file, maxWidth = 1000, maxHeight = 1000, quality = 0.88, { conservarTransparencia = false } = {}) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.readAsDataURL(file);
+    reader.onerror = reject;
     reader.onload = (event) => {
       const img = new Image();
-      img.src = event.target.result;
+      img.onerror = reject;
       img.onload = () => {
-        let width = img.width;
-        let height = img.height;
+        const escala = Math.min(1, maxWidth / img.width, maxHeight / img.height);
+        const ancho = Math.max(1, Math.round(img.width * escala));
+        const alto = Math.max(1, Math.round(img.height * escala));
 
-        if (width > height) {
-          if (width > maxWidth) {
-            height = Math.round((height * maxWidth) / width);
-            width = maxWidth;
-          }
-        } else {
-          if (height > maxHeight) {
-            width = Math.round((width * maxHeight) / height);
-            height = maxHeight;
-          }
+        let origen = img, w = img.width, h = img.height;
+        while (w / 2 >= ancho && h / 2 >= alto) {
+          const paso = document.createElement('canvas');
+          paso.width = Math.round(w / 2); paso.height = Math.round(h / 2);
+          const c = paso.getContext('2d');
+          c.imageSmoothingEnabled = true; c.imageSmoothingQuality = 'high';
+          c.drawImage(origen, 0, 0, paso.width, paso.height);
+          origen = paso; w = paso.width; h = paso.height;
         }
 
         const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
+        canvas.width = ancho; canvas.height = alto;
         const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
+        ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+        ctx.drawImage(origen, 0, 0, ancho, alto);
 
-        // Exportar como JPEG comprimido
-        const dataUrl = canvas.toDataURL('image/jpeg', quality);
-        resolve(dataUrl);
+        if (conservarTransparencia && /png|webp|gif/.test(file.type) && tieneTransparencia(ctx, ancho, alto)) {
+          resolve(canvas.toDataURL('image/png'));
+          return;
+        }
+        // JPEG: si quedara alguna zona transparente, se rellena con el gris oscuro de la app
+        const fondo = document.createElement('canvas');
+        fondo.width = ancho; fondo.height = alto;
+        const f = fondo.getContext('2d');
+        f.fillStyle = '#111827'; f.fillRect(0, 0, ancho, alto);
+        f.drawImage(canvas, 0, 0);
+        resolve(fondo.toDataURL('image/jpeg', quality));
       };
-      img.onerror = (err) => reject(err);
+      img.src = event.target.result;
     };
-    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
   });
+}
+
+function tieneTransparencia(ctx, ancho, alto) {
+  const datos = ctx.getImageData(0, 0, ancho, alto).data;
+  for (let i = 3; i < datos.length; i += 16) if (datos[i] < 250) return true;
+  return false;
 }
 
 // ----- Apariencia: color de marca y portada -----
@@ -244,7 +259,7 @@ async function subirPortadaBarberia(e) {
   const file = e.target.files[0];
   if (!file) return;
   try {
-    barberiaActual.portadaUrl = await comprimirImagen(file, 1400, 600, 0.72);
+    barberiaActual.portadaUrl = await comprimirImagen(file, 1800, 900, 0.82);
     pintarPreviewPortada();
     avisar('Portada lista. Haz clic en "Guardar Cambios de la Barbería" para publicarla.');
   } catch (err) {
@@ -263,7 +278,7 @@ async function subirFotoBarberia(e) {
   if (!file) return;
 
   try {
-    const base64Optimizado = await comprimirImagen(file, 600, 600, 0.82);
+    const base64Optimizado = await comprimirImagen(file, 800, 800, 0.9, { conservarTransparencia: true });
     document.getElementById('preview-logo-barberia').src = base64Optimizado;
     document.getElementById('conf-logo').value = base64Optimizado;
     barberiaActual.logoUrl = base64Optimizado;
@@ -281,7 +296,7 @@ async function subirFotoMiembro(e) {
   if (!file) return;
 
   try {
-    const base64Optimizado = await comprimirImagen(file, 400, 400, 0.8);
+    const base64Optimizado = await comprimirImagen(file, 1000, 1000, 0.88);
     document.getElementById('preview-foto-miembro').src = base64Optimizado;
     tempMiembroFotoUrl = base64Optimizado;
     avisar('Foto del barbero cargada.');
@@ -295,7 +310,7 @@ async function subirFotoMiembroEdicion(e) {
   if (!file) return;
 
   try {
-    const base64Optimizado = await comprimirImagen(file, 400, 400, 0.8);
+    const base64Optimizado = await comprimirImagen(file, 1000, 1000, 0.88);
     document.getElementById('edit-preview-foto-miembro').src = base64Optimizado;
     tempEditMiembroFotoUrl = base64Optimizado;
   } catch (err) {
@@ -681,37 +696,43 @@ function renderListaMiembros(miembros) {
   });
 }
 
+// "12:00-14:30" -> "12:00 p. m. – 2:30 p. m."; "12:30pm" o "15:00" -> una hora legible
+function textoHorasBloqueo(hora) {
+  if (!hora || hora === 'TODO_EL_DIA') return 'Todo el día';
+  if (hora.includes('-')) {
+    const [desde, hasta] = hora.split('-');
+    return `${horaLegible(desde)} – ${horaLegible(hasta)}`;
+  }
+  return horaLegible(hora);
+}
+
 function renderListaBloqueos(bloqueos) {
   const container = document.getElementById('lista-bloqueos');
-  container.innerHTML = '';
+  const hoy = hoyBogotaIso();
+  const proximos = (bloqueos || [])
+    .filter(b => b.fecha >= hoy)
+    .sort((a, b) => a.fecha === b.fecha ? minutosDeHora(a.hora) - minutosDeHora(b.hora) : a.fecha.localeCompare(b.fecha));
 
-  if (!bloqueos || bloqueos.length === 0) {
-    container.innerHTML = `<p class="text-xs text-gray-500 italic">No tienes ningún día ni horario bloqueado actualmente.</p>`;
+  if (!proximos.length) {
+    container.innerHTML = `<p class="text-xs text-gray-500">No tienes días ni horarios bloqueados.</p>`;
     return;
   }
 
-  bloqueos.forEach(b => {
-    const esDiaCompleto = !b.hora || b.hora === 'TODO_EL_DIA';
-    const div = document.createElement('div');
-    div.className = 'p-3 rounded-xl bg-gray-950 border border-gray-800 flex items-center justify-between';
-    div.innerHTML = `
-      <div class="flex items-center gap-3">
-        <span class="w-8 h-8 rounded-lg ${esDiaCompleto ? 'bg-red-500/20 text-red-400' : 'bg-amber-500/20 text-amber-400'} flex items-center justify-center text-xs font-bold">
-          ${esDiaCompleto ? 'DÍA' : 'HR'}
+  container.innerHTML = proximos.map(b => {
+    const diaCompleto = !b.hora || b.hora === 'TODO_EL_DIA';
+    return `
+      <div class="p-3 rounded-2xl bg-gray-950/60 border border-gray-800 flex items-center gap-3">
+        <span class="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center ${diaCompleto ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}">
+          <i data-lucide="${diaCompleto ? 'calendar-x' : 'clock'}" class="w-5 h-5"></i>
         </span>
-        <div>
-          <div class="text-sm font-bold text-white">
-            ${b.fecha} ${esDiaCompleto ? '• (Día completo libre)' : `• ${b.hora}`}
-          </div>
-          <p class="text-xs text-gray-400">${b.motivo || 'No disponible'}</p>
+        <div class="min-w-0 flex-1">
+          <p class="text-sm font-bold text-white">${escapeHtml(tituloDia(b.fecha))}</p>
+          <p class="text-xs text-gray-400 truncate">${escapeHtml(textoHorasBloqueo(b.hora))}${b.motivo ? ` · ${escapeHtml(b.motivo)}` : ''}</p>
         </div>
-      </div>
-      <button onclick="eliminarBloqueo(${b.id})" class="text-red-400 hover:text-red-300 text-xs px-2.5 py-1.5 rounded-lg bg-red-500/10 border border-red-500/20">
-        Habilitar Horario
-      </button>
-    `;
-    container.appendChild(div);
-  });
+        <button onclick="eliminarBloqueo(${b.id})" class="text-xs px-3 py-2 rounded-xl text-gray-300 bg-gray-800 hover:bg-gray-700 font-semibold flex-shrink-0">Quitar</button>
+      </div>`;
+  }).join('');
+  lucide.createIcons();
 }
 
 async function guardarPerfilBarberia(e) {
@@ -953,11 +974,7 @@ async function guardarEdicionMiembro(e) {
 }
 
 async function bloquearPausaRapida(tipo) {
-  const ahora = new Date();
-  const anio = ahora.getFullYear();
-  const mes = String(ahora.getMonth() + 1).padStart(2, '0');
-  const dia = String(ahora.getDate()).padStart(2, '0');
-  const hoyIso = `${anio}-${mes}-${dia}`;
+  const hoyIso = hoyBogotaIso();
 
   let horas = [];
   let motivo = '';
@@ -1049,7 +1066,7 @@ async function agregarBloqueo(e) {
 }
 
 async function eliminarBloqueo(id) {
-  if (!(await confirmar('¿Deseas reactivar este horario?'))) return;
+  if (!(await confirmar('¿Quitar este bloqueo? Ese horario vuelve a estar disponible para reservar.', { peligro: false, aceptar: 'Sí, quitar' }))) return;
   try {
     await fetch(`/api/admin/bloqueos/${id}`, {
       method: 'DELETE',

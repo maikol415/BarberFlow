@@ -24,6 +24,9 @@ const {
   manejarNotificarCancelacion,
   revisarRecordatorios,
   urlCalificarCita,
+  normalizarTexto,
+  avisoDeHoy,
+  INTENCION,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -279,6 +282,30 @@ comprobar('Aviso de cita nueva va al mismo chat @lid del cliente', enviados.map(
 
 r = await cliente(vieja, 'reagendar');
 comprobar('Reagendar sin cita activa: ofrece reservar una nueva', r, ['No encontramos una cita activa', 'index.html?b=']);
+
+// Cómo escribe la gente en Colombia / Medellín
+comprobar('Normaliza "¡¡Holaaaa!!" y "Quiubooo"', `${normalizarTexto('¡¡Holaaaa!!')}|${normalizarTexto('Quiubooo parce')}`, ['hola|quiubo parce']);
+for (const saludo of ['Holaaa', 'Buenaaas', 'buenas tardes', 'Quiubo', 'Oe', 'Qué más pues', 'Holi', 'Buen día', 'ey parce']) {
+  comprobar(`Reconoce el saludo "${saludo}"`, INTENCION.saludo.test(normalizarTexto(saludo)) ? 'saludo' : 'no', ['saludo']);
+}
+comprobar('"Cuánto valen los cortes?" es pregunta de precios', INTENCION.precios.test(normalizarTexto('Cuánto valen los cortes?')) ? 'precios' : 'no', ['precios']);
+comprobar('"No voy a poder ir" es cancelar', INTENCION.cancelar.test(normalizarTexto('Uy no voy a poder ir')) ? 'cancelar' : 'no', ['cancelar']);
+comprobar('"Me toca correr la cita" es reagendar', INTENCION.reagendar.test(normalizarTexto('me toca correr la cita')) ? 'reagendar' : 'no', ['reagendar']);
+comprobar('"Sisas" confirma', INTENCION.confirmar.test(normalizarTexto('Sisas!!')) ? 'si' : 'no', ['si']);
+comprobar('"Melo pues" es casual', INTENCION.casual.test(normalizarTexto('Melo pues')) ? 'casual' : 'no', ['casual']);
+comprobar('"Hola, cuánto vale?" no es casual', INTENCION.casual.test(normalizarTexto('Hola, cuánto vale?')) ? 'casual' : 'no', ['no']);
+
+const paisa = { remoteJid: `5730066${base}@s.whatsapp.net` };
+r = await cliente(paisa, 'Quiuboooo');
+comprobar('"Quiuboooo" responde con la bienvenida y el menú', r, ['Bienvenid', '*1.*']);
+r = await cliente(paisa, 'melo pues');
+comprobar('"melo pues" en plena conversación no dispara respuestas', r || 'silencio', ['silencio']);
+
+// Motivo del bloqueo visible para el cliente
+const hoyCo = fechaColombia(0);
+comprobar('Aviso de hoy: día cerrado con motivo', avisoDeHoy({ bloqueos: [{ fecha: hoyCo, hora: 'TODO_EL_DIA', motivo: 'Festivo' }] }), ['Hoy no atendemos', 'Festivo']);
+comprobar('Aviso de hoy: descanso con horas', avisoDeHoy({ bloqueos: [{ fecha: hoyCo, hora: '12:30-14:00', motivo: 'Almuerzo' }] }), ['Hoy tenemos descanso', 'Almuerzo 12:30 p. m. – 2:00 p. m.']);
+comprobar('Aviso de hoy: nada si el bloqueo es otro día', avisoDeHoy({ bloqueos: [{ fecha: manana, hora: 'TODO_EL_DIA', motivo: 'Festivo' }] }) || 'vacío', ['vacío']);
 
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

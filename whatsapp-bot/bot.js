@@ -287,6 +287,55 @@ if (!MODO_PRUEBA) {
   });
 }
 
+// ----------------- CÓMO ESCRIBE LA GENTE (Colombia / Medellín) -----------------
+
+// "¡¡Holaaaa!!", "Buenaaas", "Quiubooo" -> "hola", "buenas", "quiubo" (sin tildes, sin letras alargadas ni signos)
+export function normalizarTexto(texto) {
+  return String(texto || '')
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/(.)\1{2,}/g, '$1')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// Intenciones sobre el texto normalizado
+export const INTENCION = {
+  saludo: /\b(hol+a+s?|holi+s?|ola+|alo|buen[oa]s?|buen dia|bn[ao]?s|quiubo|quihubo|kiubo|k hubo|que hubo|que mas|q mas|qmas|que hay|que hay pues|oe+|oie|ey+|hey+|epa+|ole+|saludos|info|informacion|hi|hello|parce|parcero|mor|veci|vecino)\b/,
+  cancelar: /\b(cancel\w*|anular|no (puedo|voy a poder|alcanzo a|podre|pude) (ir|llegar|asistir)|ya no (voy|puedo ir)|me toca cancelar)\b/,
+  reagendar: /\b(reagend\w*|reprogram\w*|aplazar|cambiar (la |mi |de )?(cita|fecha|hora|horario|turno|dia)|otra hora|otro horario|correr (la |mi )?(cita|turno|hora)|mover (la |mi )?(cita|turno|hora))\b/,
+  // Respuesta de confirmación: todo el mensaje es un "sí"
+  confirmar: /^(si|sii|sip|sisas|sí|confirmo|confirmar|confirmado|confirmada|si confirmo|si senor|si senora|claro|claro que si|de una si|si voy|si claro|ahi estare|alla estare|ahi estoy|asistire|ahi nos vemos|listo si|si listo)$/,
+  precios: /\b(precios?|cuanto (vale|valen|cuesta|cuestan|sale|salen|cobran|es|seria)|que vale|que valor|valor|tarifas?|costos?|servicios?|cortes?|lista de precios)\b/,
+  reservar: /\b(reservar|reserva|agendar|separar|apartar|cupo|cupos|pedir (una )?cita|sacar (una )?cita|quiero (una )?cita|necesito (una )?cita|cita nueva|hay turno|hay cupo|tienen cupo|turno disponible)\b/,
+  ubicacion: /\b(horarios?|abren|abre|cierran|cierra|atienden|abierto|abiertos|donde|direccion|ubicacion|ubicados|como llego|como llegar|mapa)\b/,
+  pagos: /\b(pagos?|pagar|nequi|daviplata|bancolombia|transferencia|transferir|consignar|consignacion|efectivo|tarjeta|datafono)\b/,
+  // Reacciones sueltas: el bot no responde en medio de una conversación
+  casual: /^((ja|je|ji|jo|ha)+|gracias|muchas gracias|mil gracias|dios le pague|dios te pague|ok|oki|okey|okay|vale|dale|listo|lista|melo|bacano|chevere|super|perfecto|genial|excelente|bueno|bien|esta bien|asi es|de una|entendido|ah bueno|uy|chimba|que chimba|bendiciones|igualmente)( pues| parce| mor| hermano| bro)?$/
+};
+
+const minutosATextoBot = min => {
+  const h = Math.floor(min / 60), m = min % 60;
+  return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`;
+};
+
+// Aviso de hoy según los bloqueos del barbero: "Hoy no atendemos: Festivo" o "Hoy tenemos descanso: Almuerzo 12:30 – 2:00 p. m."
+export function avisoDeHoy(barberia, ahoraMs = Date.now()) {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ahoraMs));
+  const deHoy = (barberia?.bloqueos || []).filter(b => b.fecha === hoy);
+  const diaCompleto = deHoy.find(b => !b.hora || b.hora === 'TODO_EL_DIA');
+  if (diaCompleto) return `🚫 *Hoy no atendemos*${diaCompleto.motivo ? `: ${diaCompleto.motivo}` : ''}. Puedes reservar para otro día.`;
+  const descansos = deHoy.map(b => {
+    const [desde, hasta] = b.hora.includes('-') ? b.hora.split('-') : [b.hora, null];
+    const ini = horaAMinutos(desde);
+    if (ini === null) return null;
+    const fin = hasta ? horaAMinutos(hasta) : ini + (barberia.intervaloMinutos || 40);
+    return `${b.motivo || 'Descanso'} ${minutosATextoBot(ini)} – ${minutosATextoBot(fin)}`;
+  }).filter(Boolean);
+  return descansos.length ? `☕ *Hoy tenemos descanso:* ${descansos.join('; ')}` : '';
+}
+
 // ----------------- TEXTOS DEL BOT -----------------
 
 // Ícono según la categoría o el nombre del servicio (uñas 💅, barba 🧔, facial ✨, etc.)
@@ -683,6 +732,8 @@ export async function procesarMensajeEntrante(sock, m) {
       ).toLowerCase().trim();
 
       if (!texto) return;
+      // Versión sin tildes ni letras alargadas ("Holaaa", "Quiubooo", "Buenaaas") para reconocer cómo escribe la gente
+      const textoN = normalizarTexto(texto);
 
       const ahora = Date.now();
       // ¿Empieza una conversación? (primer mensaje, o más de 6 horas sin escribir)
@@ -727,7 +778,9 @@ export async function procesarMensajeEntrante(sock, m) {
             }
           }
         } catch (e) {}
-        const menu = menuPrincipal(barberia, saludoPersonalizado, nombreConocido);
+        // Si hoy el barbero no atiende o tiene un descanso, se avisa de una vez con el motivo
+        const aviso = avisoDeHoy(barberia);
+        const menu = menuPrincipal(barberia, saludoPersonalizado, nombreConocido) + (aviso ? `\n\n${aviso}` : '');
         await enviarMensajeHumano(sock, remitente, notaFinal ? `${menu}\n\n${notaFinal}` : menu);
       };
 
@@ -841,7 +894,7 @@ export async function procesarMensajeEntrante(sock, m) {
       };
 
       // 1. SOLICITUD DE CANCELACIÓN ("cancelar", "cancelar cita", etc.)
-      if (texto.includes('cancelar') || texto.includes('cancelo') || texto === 'cancelar cita') {
+      if (texto.includes('cancelar') || texto.includes('cancelo') || INTENCION.cancelar.test(textoN)) {
         try {
           const cita = await buscarCitaClienteAsync();
           if (cita) {
@@ -889,7 +942,7 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       // 2. SOLICITUD DE REAGENDAR ("reagendar", "cambiar cita", "mover turno")
-      if (texto.includes('reagendar') || texto.includes('cambiar fecha') || texto.includes('cambiar hora') || texto.includes('mover cita')) {
+      if (texto.includes('reagendar') || INTENCION.reagendar.test(textoN)) {
         try {
           const cita = await buscarCitaClienteAsync();
           let urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
@@ -920,8 +973,7 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       // 3. CONFIRMACIÓN DE ASISTENCIA ("si", "confirmo", "asistiré"...): la cita pasa a Confirmada
-      const palabrasSi = ['si', 'sí', 'confirmo', 'confirmar', 'confirmado', 'asistire', 'asistiré', 'si confirmo', 'sí confirmo', 'si señor', 'sí señor', 'claro'];
-      if (palabrasSi.includes(texto.replace(/[.!¡]/g, '').trim())) {
+      if (INTENCION.confirmar.test(textoN)) {
         const cita = await buscarCitaClienteAsync();
         if (!cita) {
           await enviarMensajeHumano(sock, remitente,
@@ -990,15 +1042,7 @@ export async function procesarMensajeEntrante(sock, m) {
       // 5. Precios y Servicios (Abrir submenú de categorías)
       if (
         soloNumeros === '2' ||
-        texto === '2' ||
-        texto.includes('precio') ||
-        texto.includes('servicios') ||
-        texto.includes('servicio') ||
-        texto.includes('cuanto vale') ||
-        texto.includes('cuánto vale') ||
-        texto.includes('costo') ||
-        texto.includes('cortes') ||
-        texto.includes('corte')
+        INTENCION.precios.test(textoN)
       ) {
         estadoCliente.set(remitente, { nivel: 'SERVICIOS' });
 
@@ -1017,7 +1061,7 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       // 6a. Opción 1: reservar (enlace directo, sin repetir el menú)
-      if (soloNumeros === '1' || texto === '1' || /\b(reservar|agendar|separar|cita nueva|pedir cita)\b/.test(texto)) {
+      if (soloNumeros === '1' || INTENCION.reservar.test(textoN)) {
         estadoCliente.set(remitente, { nivel: 'INICIO' });
         await enviarMensajeHumano(sock, remitente,
           `📅 *Reserva tu cita en línea*\n\nElige servicio, día y hora aquí (toma menos de un minuto):\n👉 ${linkReservas()}\n\n` +
@@ -1026,15 +1070,7 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       // 6. Saludos / Menú principal
-      if (
-        texto.includes('hola') ||
-        texto.includes('buenas') ||
-        texto.includes('buenos dias') ||
-        texto.includes('buenos días') ||
-        texto.includes('buenas tardes') ||
-        texto.includes('buenas noches') ||
-        texto.includes('info')
-      ) {
+      if (INTENCION.saludo.test(textoN)) {
         await saludarConMenu();
         return;
       }
@@ -1042,13 +1078,7 @@ export async function procesarMensajeEntrante(sock, m) {
       // 7. Ubicación / Dónde quedan
       if (
         soloNumeros === '3' ||
-        /\b(horario|abren|cierran|atienden|abierto)\b/.test(texto) ||
-        texto.includes('donde') ||
-        texto.includes('dónde') ||
-        texto.includes('direccion') ||
-        texto.includes('dirección') ||
-        texto.includes('ubicacion') ||
-        texto.includes('ubicación')
+        INTENCION.ubicacion.test(textoN)
       ) {
         const mapa = barberia.direccion
           ? `\n🗺️ https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${barberia.nombre} ${barberia.direccion}`)}`
@@ -1056,6 +1086,7 @@ export async function procesarMensajeEntrante(sock, m) {
         const ubi = `📍 *Dónde estamos*\n\n` +
           `${barberia.direccion || 'Escríbenos y te compartimos la ubicación.'}${mapa}\n\n` +
           (barberia.horarioTexto ? `🕘 *Horario:* ${barberia.horarioTexto}\n\n` : '') +
+          (avisoDeHoy(barberia) ? `${avisoDeHoy(barberia)}\n\n` : '') +
           `📅 Reserva y evita la fila: ${linkReservas()}\n\n` +
           `_Responde *0* para volver al menú._`;
         await enviarMensajeHumano(sock, remitente, ubi);
@@ -1065,13 +1096,7 @@ export async function procesarMensajeEntrante(sock, m) {
       // 8. Métodos de Pago
       if (
         soloNumeros === '4' ||
-        texto === '4' ||
-        texto.includes('pago') ||
-        texto.includes('pagar') ||
-        texto.includes('nequi') ||
-        texto.includes('bancolombia') ||
-        texto.includes('transferencia') ||
-        texto.includes('efectivo')
+        INTENCION.pagos.test(textoN)
       ) {
         let msgPago = `💳 *Formas de pago*\n\n`;
         msgPago += `💵 *Efectivo:* en el local al terminar tu servicio.\n`;
@@ -1101,13 +1126,8 @@ export async function procesarMensajeEntrante(sock, m) {
 
       // 9. FILTRO INTELIGENTE DE MENSAJES CASUALES / DESPEDIDAS / RISAS
       // Si el mensaje es una reacción informal, despedida o risa, el bot guarda silencio como un humano
-      const frasesCasual = [
-        'jaja', 'jeje', 'jojo', 'gracias', 'muchas gracias', 'vale', 'dale', 'ok', 'okay',
-        'listo', 'lista', 'esta bien', 'está bien', 'asi es', 'así es', 'de una', 'perfecto',
-        'bueno', 'bien', 'chimba', 'genial', 'excelente', 'uy', 'ah bueno', 'entendido'
-      ];
-      const esMensajeCasual = frasesCasual.some(frase => texto === frase || texto.startsWith(frase + ' ') || texto.endsWith(' ' + frase));
-      if (esMensajeCasual || texto.length <= 3) {
+      const esMensajeCasual = INTENCION.casual.test(textoN);
+      if (esMensajeCasual || textoN.length <= 3) {
         // Al empezar la conversación se saluda; en medio de ella, silencio ante charlas casuales
         if (esInicioConversacion) await saludarConMenu();
         return;

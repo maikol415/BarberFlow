@@ -87,6 +87,43 @@ public class PublicController : ControllerBase
         return null;
     }
 
+    // Las fotos se guardan como data URL en la base de datos. Para no inflar los datos de la barbería,
+    // la página recibe un enlace corto (/api/public/imagen/miembro/5?v=...) y el navegador la descarga aparte
+    // y la guarda en caché; "v" cambia cuando cambia la foto.
+    private static string? UrlImagen(string? valor, string tipo, int id)
+    {
+        // Solo fotos en base64; los íconos SVG pequeños (avatar por defecto) se dejan tal cual
+        if (string.IsNullOrEmpty(valor) || !System.Text.RegularExpressions.Regex.IsMatch(valor, @"^data:image/(png|jpeg|jpg|webp|gif);base64,")) return valor;
+        uint hash = 2166136261;
+        foreach (var c in valor) { hash ^= c; hash *= 16777619; }
+        return $"/api/public/imagen/{tipo}/{id}?v={hash:x8}";
+    }
+
+    [HttpGet("imagen/{tipo}/{id:int}")]
+    public async Task<IActionResult> Imagen(string tipo, int id)
+    {
+        string? valor = tipo switch
+        {
+            "logo" => await _context.Barberias.Where(b => b.Id == id).Select(b => b.LogoUrl).FirstOrDefaultAsync(),
+            "portada" => await _context.Barberias.Where(b => b.Id == id).Select(b => b.PortadaUrl).FirstOrDefaultAsync(),
+            "miembro" => await _context.Miembros.Where(m => m.Id == id && m.Activo).Select(m => m.FotoUrl).FirstOrDefaultAsync(),
+            _ => null
+        };
+        if (string.IsNullOrEmpty(valor)) return NotFound();
+
+        var m = System.Text.RegularExpressions.Regex.Match(valor, @"^data:image/(?<tipo>png|jpeg|jpg|webp|gif);base64,(?<datos>.+)$");
+        if (!m.Success) return valor.StartsWith("https://") || valor.StartsWith("/") ? Redirect(valor) : NotFound();
+
+        byte[] bytes;
+        try { bytes = Convert.FromBase64String(m.Groups["datos"].Value); }
+        catch (FormatException) { return NotFound(); }
+
+        var mime = m.Groups["tipo"].Value == "jpg" ? "image/jpeg" : $"image/{m.Groups["tipo"].Value}";
+        Response.Headers.CacheControl = "public, max-age=31536000, immutable";
+        Response.Headers["X-Content-Type-Options"] = "nosniff";
+        return File(bytes, mime);
+    }
+
     [HttpGet("barberia/{slug}")]
     public async Task<IActionResult> ObtenerBarberia(string slug)
     {
@@ -174,9 +211,9 @@ public class PublicController : ControllerBase
                 barberia.Descripcion,
                 barberia.Direccion,
                 barberia.TelefonoWhatsApp,
-                barberia.LogoUrl,
+                LogoUrl = UrlImagen(barberia.LogoUrl, "logo", barberia.Id),
                 barberia.ColorPrimario,
-                barberia.PortadaUrl,
+                PortadaUrl = UrlImagen(barberia.PortadaUrl, "portada", barberia.Id),
                 barberia.PlantillaConfirmacion,
                 barberia.PlantillaRecordatorio,
                 barberia.HorarioTexto,
@@ -213,7 +250,7 @@ public class PublicController : ControllerBase
                     m.Id,
                     m.Nombre,
                     m.Rol,
-                    m.FotoUrl
+                    FotoUrl = UrlImagen(m.FotoUrl, "miembro", m.Id)
                 }),
                 Bloqueos = barberia.Bloqueos.Select(bl => new
                 {

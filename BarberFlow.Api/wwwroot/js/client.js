@@ -197,9 +197,10 @@ function renderEncabezado() {
   }
 }
 
-function abrirModalImagenGrande(src, titulo) {
+function abrirModalImagenGrande(src, titulo, subtitulo = '') {
   $('img-grande-src').src = src;
   $('img-grande-titulo').textContent = titulo || '';
+  $('img-grande-subtitulo').textContent = subtitulo || '';
   mostrar('modal-foto-grande', true);
 }
 
@@ -330,8 +331,15 @@ function renderBarberos() {
   const lista = [{ id: null, nombre: 'Cualquiera', rol: 'El primero libre', fotoUrl: null }, ...(barberia.miembros || [])];
   $('barbers-container').innerHTML = lista.map(b => {
     const activo = reservaActual.barberoId === b.id;
-    const foto = b.fotoUrl
-      ? `<img src="${escapeHtml(b.fotoUrl)}" alt="" class="w-14 h-14 rounded-full object-cover bg-gray-800 mx-auto" onerror="this.src='${DEFAULT_AVATAR}'">`
+    // Tocar la foto la abre en grande (y también elige a ese barbero)
+    const fotoReal = b.fotoUrl && !b.fotoUrl.startsWith('data:image/svg');
+    const avatar = `<img src="${escapeHtml(b.fotoUrl || '')}" alt="Foto de ${escapeHtml(b.nombre)}" loading="lazy" class="w-14 h-14 rounded-full object-cover bg-gray-800" onerror="this.onerror=null;this.src=DEFAULT_AVATAR">`;
+    const foto = fotoReal
+      ? `<span class="relative block w-14 h-14 mx-auto" data-ver-foto title="Ver foto">
+          ${avatar}
+          <span class="absolute -bottom-0.5 -right-0.5 w-5 h-5 rounded-full bg-gray-900 border border-gray-700 flex items-center justify-center"><i data-lucide="zoom-in" class="w-3 h-3 text-gray-300"></i></span>
+        </span>`
+      : b.fotoUrl ? `<span class="block w-14 h-14 mx-auto">${avatar}</span>`
       : `<div class="w-14 h-14 rounded-full bg-gray-800 mx-auto flex items-center justify-center"><i data-lucide="users" class="w-6 h-6 text-gray-400"></i></div>`;
     return `<button type="button" data-id="${b.id ?? ''}" aria-pressed="${activo}"
       class="w-28 flex-shrink-0 p-3 rounded-2xl border text-center transition ${activo ? 'bg-blue-600/15 border-blue-500 ring-1 ring-blue-500' : 'bg-gray-950/50 border-gray-800 hover:border-gray-700'}">
@@ -340,9 +348,10 @@ function renderBarberos() {
       <div class="text-[10px] text-gray-500 truncate">${escapeHtml(b.rol || '')}</div>
     </button>`;
   }).join('');
-  $('barbers-container').querySelectorAll('button').forEach(btn => btn.onclick = () => {
+  $('barbers-container').querySelectorAll('button').forEach(btn => btn.onclick = (e) => {
     reservaActual.barberoId = btn.dataset.id ? Number(btn.dataset.id) : null;
     const b = lista.find(x => (x.id ?? '') === (reservaActual.barberoId ?? ''));
+    if (b?.fotoUrl && e.target.closest('[data-ver-foto]')) abrirModalImagenGrande(b.fotoUrl, b.nombre, b.rol);
     $('resumen-barbero').textContent = b ? b.nombre : 'Cualquiera';
     renderBarberos();
     renderCalendario(true);
@@ -448,7 +457,34 @@ function renderCalendario(reubicar) {
   const activo = tira.querySelector(`[data-fecha="${reservaActual.fechaSeleccionada}"]`);
   if (activo) activo.scrollIntoView({ block: 'nearest', inline: 'center' });
 
+  renderAvisosCierre(hoy);
   renderHorariosDisponibles();
+}
+
+// Días que la barbería cerró a propósito (festivo, vacaciones…), con el motivo que escribió el barbero
+function renderAvisosCierre(hoy) {
+  const limite = sumarDias(hoy, 14);
+  const cierres = (barberia.bloqueos || [])
+    .filter(b => (!b.hora || b.hora === 'TODO_EL_DIA') && b.fecha >= hoy && b.fecha <= limite)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  $('avisos-cierre').innerHTML = cierres.map(b => `
+    <p class="text-xs text-amber-200/90 bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2 flex items-start gap-2">
+      <i data-lucide="calendar-x" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0"></i>
+      <span><strong class="text-amber-100">${escapeHtml(capitalizar(fechaLegible(b.fecha)))}:</strong> cerrado${b.motivo ? ` por ${escapeHtml(b.motivo.toLowerCase())}` : ''}</span>
+    </p>`).join('');
+}
+
+// Descansos de un día con su motivo (ej: "Almuerzo · 12:30 – 2:00 p. m.")
+function descansosDelDia(iso) {
+  return (barberia.bloqueos || [])
+    .filter(b => b.fecha === iso && b.hora && b.hora !== 'TODO_EL_DIA')
+    .map(b => {
+      const [desde, hasta] = b.hora.includes('-') ? b.hora.split('-') : [b.hora, null];
+      const ini = convertirHoraAMinutos(desde);
+      const fin = hasta ? convertirHoraAMinutos(hasta) : ini + (barberia.intervaloMinutos || 40);
+      return { ini, texto: `${b.motivo || 'Descanso'} · ${minutosATexto(ini)} – ${minutosATexto(fin)}` };
+    })
+    .sort((a, b) => a.ini - b.ini);
 }
 
 function desplazarDias(direccion) {
@@ -481,6 +517,7 @@ function renderHorariosDisponibles() {
     const siguiente = primerDiaConTurnos();
     cont.innerHTML = `<div class="py-6 px-4 text-center rounded-2xl border border-dashed border-gray-800">
       <p class="text-sm text-gray-300 font-semibold">${esHoy ? 'Ya no quedan turnos para hoy' : 'No hay turnos este día'}</p>
+      ${descansosDelDia(iso).length ? `<p class="text-xs text-gray-500 mt-1">${descansosDelDia(iso).map(d => escapeHtml(d.texto)).join('; ')}</p>` : ''}
       ${siguiente ? `<button type="button" onclick="seleccionarDiaCalendario('${siguiente}')" class="mt-3 text-xs font-bold text-blue-400 hover:text-blue-300">Ver el ${escapeHtml(fechaLegible(siguiente))} →</button>` : ''}
     </div>`;
     return;
@@ -506,6 +543,12 @@ function renderHorariosDisponibles() {
         }).join('')}
       </div>
     </div>`).join('');
+
+  const descansos = descansosDelDia(iso);
+  if (descansos.length) {
+    cont.insertAdjacentHTML('beforeend', `<p class="mt-3 text-xs text-gray-500 flex items-start gap-1.5"><i data-lucide="coffee" class="w-3.5 h-3.5 mt-0.5 flex-shrink-0"></i>
+      <span>Ese día el barbero no atiende en: ${descansos.map(d => escapeHtml(d.texto)).join('; ')}</span></p>`);
+  }
 
   cont.querySelectorAll('button[data-hora]').forEach(b => b.onclick = () => seleccionarHora(b.dataset.hora));
   lucide.createIcons();
