@@ -246,9 +246,9 @@ async function subirPortadaBarberia(e) {
   try {
     barberiaActual.portadaUrl = await comprimirImagen(file, 1400, 600, 0.72);
     pintarPreviewPortada();
-    alert('Portada lista. Haz clic en "Guardar Cambios de la Barbería" para publicarla.');
+    avisar('Portada lista. Haz clic en "Guardar Cambios de la Barbería" para publicarla.');
   } catch (err) {
-    alert('No se pudo procesar la imagen de portada.');
+    avisar('No se pudo procesar la imagen de portada.');
   }
 }
 
@@ -268,9 +268,9 @@ async function subirFotoBarberia(e) {
     document.getElementById('conf-logo').value = base64Optimizado;
     barberiaActual.logoUrl = base64Optimizado;
     document.getElementById('admin-barberia-logo').src = base64Optimizado;
-    alert('Foto optimizada y cargada. Haz clic en "Guardar Información de la Barbería" para guardarla permanentemente.');
+    avisar('Foto optimizada y cargada. Haz clic en "Guardar Información de la Barbería" para guardarla permanentemente.');
   } catch (err) {
-    alert('Error al procesar la imagen de la barbería.');
+    avisar('Error al procesar la imagen de la barbería.');
   }
 }
 
@@ -284,9 +284,9 @@ async function subirFotoMiembro(e) {
     const base64Optimizado = await comprimirImagen(file, 400, 400, 0.8);
     document.getElementById('preview-foto-miembro').src = base64Optimizado;
     tempMiembroFotoUrl = base64Optimizado;
-    alert('Foto del barbero cargada.');
+    avisar('Foto del barbero cargada.');
   } catch (err) {
-    alert('Error al cargar la foto del barbero.');
+    avisar('Error al cargar la foto del barbero.');
   }
 }
 
@@ -299,7 +299,7 @@ async function subirFotoMiembroEdicion(e) {
     document.getElementById('edit-preview-foto-miembro').src = base64Optimizado;
     tempEditMiembroFotoUrl = base64Optimizado;
   } catch (err) {
-    alert('Error al cargar la foto.');
+    avisar('Error al cargar la foto.');
   }
 }
 
@@ -354,7 +354,7 @@ function aplicarRangoPersonalizado() {
   const start = document.getElementById('filtro-inicio').value;
   const end = document.getElementById('filtro-fin').value;
   if (!start || !end) {
-    alert('Por favor selecciona fecha de inicio y fecha de fin.');
+    avisar('Por favor selecciona fecha de inicio y fecha de fin.');
     return;
   }
   cargarCitas(`fechaInicio=${start}&fechaFin=${end}`);
@@ -566,12 +566,12 @@ async function marcarCompletada(id) {
     });
     if (res.ok) cargarCitas();
   } catch (err) {
-    alert('Error al completar cita.');
+    avisar('Error al completar cita.');
   }
 }
 
 async function eliminarOMoverNoConfirmada(id) {
-  if (!confirm('¿El cliente no vino o quieres quitar esta cita de la agenda? Se moverá a "No confirmadas".')) return;
+  if (!(await confirmar('¿El cliente no vino o quieres quitar esta cita de la agenda? Se moverá a "No confirmadas".'))) return;
   try {
     const res = await fetch(`/api/admin/citas/${id}?marcarNoConfirmada=true`, {
       method: 'DELETE',
@@ -579,7 +579,7 @@ async function eliminarOMoverNoConfirmada(id) {
     });
     if (res.ok) cargarCitas();
   } catch (err) {
-    alert('Error al actualizar cita.');
+    avisar('Error al actualizar cita.');
   }
 }
 
@@ -592,12 +592,12 @@ async function reactivarCita(id) {
     });
     if (res.ok) cargarCitas();
   } catch (err) {
-    alert('Error al reactivar cita.');
+    avisar('Error al reactivar cita.');
   }
 }
 
 async function eliminarPermanente(id) {
-  if (!confirm('¿Seguro que deseas eliminar definitivamente esta cita?')) return;
+  if (!(await confirmar('¿Seguro que deseas eliminar definitivamente esta cita?'))) return;
   try {
     const res = await fetch(`/api/admin/citas/${id}?marcarNoConfirmada=false`, {
       method: 'DELETE',
@@ -605,7 +605,7 @@ async function eliminarPermanente(id) {
     });
     if (res.ok) cargarCitas();
   } catch (err) {
-    alert('Error al eliminar.');
+    avisar('Error al eliminar.');
   }
 }
 
@@ -739,11 +739,11 @@ async function guardarPerfilBarberia(e) {
       body: JSON.stringify(payload)
     });
     if (res.ok) {
-      alert('¡Información de la barbería actualizada!');
+      avisar('¡Información de la barbería actualizada!');
       cargarPerfil();
     }
   } catch (err) {
-    alert('Error al guardar cambios.');
+    avisar('Error al guardar cambios.');
   }
 }
 
@@ -778,11 +778,11 @@ async function guardarHorariosBase(e) {
       body: JSON.stringify(payload)
     });
     if (res.ok) {
-      alert('¡Horario laboral actualizado con éxito!');
+      avisar('¡Horario laboral actualizado con éxito!');
       cargarPerfil();
     }
   } catch (err) {
-    alert('Error al guardar horarios.');
+    avisar('Error al guardar horarios.');
   }
 }
 
@@ -809,12 +809,12 @@ async function agregarServicio(e) {
       cargarPerfil();
     }
   } catch (err) {
-    alert('Error agregando servicio.');
+    avisar('Error agregando servicio.');
   }
 }
 
 async function eliminarServicio(id) {
-  if (!confirm('¿Seguro que deseas eliminar este servicio?')) return;
+  if (!(await confirmar('¿Seguro que deseas eliminar este servicio?'))) return;
   try {
     await fetch(`/api/admin/servicios/${id}`, {
       method: 'DELETE',
@@ -822,7 +822,7 @@ async function eliminarServicio(id) {
     });
     cargarPerfil();
   } catch (err) {
-    alert('Error eliminando servicio.');
+    avisar('Error eliminando servicio.');
   }
 }
 
@@ -866,10 +866,10 @@ async function guardarEdicionServicio(e) {
       cargarPerfil();
     } else {
       const data = await res.json();
-      alert(data.message || 'Error al actualizar el servicio.');
+      avisar(data.message || 'Error al actualizar el servicio.');
     }
   } catch (err) {
-    alert('Error al conectar con el servidor.');
+    avisar('Error al conectar con el servidor.');
   }
 }
 
@@ -895,12 +895,12 @@ async function agregarMiembro(e) {
       cargarPerfil();
     }
   } catch (err) {
-    alert('Error agregando barbero.');
+    avisar('Error agregando barbero.');
   }
 }
 
 async function eliminarMiembro(id) {
-  if (!confirm('¿Seguro que deseas eliminar este barbero?')) return;
+  if (!(await confirmar('¿Seguro que deseas eliminar este barbero?'))) return;
   try {
     await fetch(`/api/admin/miembros/${id}`, {
       method: 'DELETE',
@@ -908,7 +908,7 @@ async function eliminarMiembro(id) {
     });
     cargarPerfil();
   } catch (err) {
-    alert('Error eliminando barbero.');
+    avisar('Error eliminando barbero.');
   }
 }
 
@@ -945,10 +945,10 @@ async function guardarEdicionMiembro(e) {
       cerrarModalEditarMiembro();
       cargarPerfil();
     } else {
-      alert('No se pudo guardar la edición del miembro.');
+      avisar('No se pudo guardar la edición del miembro.');
     }
   } catch (err) {
-    alert('Error al conectar con el servidor.');
+    avisar('Error al conectar con el servidor.');
   }
 }
 
@@ -980,7 +980,7 @@ async function bloquearPausaRapida(tipo) {
     } catch (err) {}
   }
 
-  alert(`¡${motivo} bloqueado para hoy con éxito!`);
+  avisar(`¡${motivo} bloqueado para hoy con éxito!`);
   cargarPerfil();
 }
 
@@ -1013,14 +1013,14 @@ async function agregarBloqueo(e) {
     const desde = document.getElementById('bloq-desde').value;
     const hasta = document.getElementById('bloq-hasta').value;
     if (!desde || !hasta) {
-      alert('Por favor selecciona las horas Desde y Hasta.');
+      avisar('Por favor selecciona las horas Desde y Hasta.');
       return;
     }
     horaString = `${desde}-${hasta}`;
   } else if (tipo === 'hora') {
     const exacta = document.getElementById('bloq-hora-exacta').value;
     if (!exacta) {
-      alert('Por favor selecciona la hora a bloquear.');
+      avisar('Por favor selecciona la hora a bloquear.');
       return;
     }
     horaString = exacta;
@@ -1040,16 +1040,16 @@ async function agregarBloqueo(e) {
     });
     if (res.ok) {
       document.getElementById('bloq-motivo').value = '';
-      alert('¡Horario o día bloqueado con éxito!');
+      avisar('¡Horario o día bloqueado con éxito!');
       cargarPerfil();
     }
   } catch (err) {
-    alert('Error al registrar bloqueo.');
+    avisar('Error al registrar bloqueo.');
   }
 }
 
 async function eliminarBloqueo(id) {
-  if (!confirm('¿Deseas reactivar este horario?')) return;
+  if (!(await confirmar('¿Deseas reactivar este horario?'))) return;
   try {
     await fetch(`/api/admin/bloqueos/${id}`, {
       method: 'DELETE',
@@ -1057,7 +1057,7 @@ async function eliminarBloqueo(id) {
     });
     cargarPerfil();
   } catch (err) {
-    alert('Error al eliminar bloqueo.');
+    avisar('Error al eliminar bloqueo.');
   }
 }
 
@@ -1137,7 +1137,7 @@ async function guardarCitaManual(e) {
 
     const data = await res.json();
     if (res.ok) {
-      alert(`¡Cita agendada con éxito para ${nombre} a las ${horaFormateada}!`);
+      avisar(`¡Cita agendada con éxito para ${nombre} a las ${horaFormateada}!`);
       cerrarModalCitaManual();
       document.getElementById('form-cita-manual').reset();
       cargarCitas();
@@ -1165,10 +1165,10 @@ async function guardarCitaManual(e) {
       const cleanPais = pais.replace('+', '');
       window.open(`https://wa.me/${cleanPais}${telefonoLimpio}?text=${msgConfirm}`, '_blank');
     } else {
-      alert(data.message || 'No se pudo agendar la cita.');
+      avisar(data.message || 'No se pudo agendar la cita.');
     }
   } catch (err) {
-    alert('Error conectando con el servidor.');
+    avisar('Error conectando con el servidor.');
   } finally {
     btn.disabled = false;
     btn.innerText = 'Confirmar y Agendar';
@@ -1176,7 +1176,7 @@ async function guardarCitaManual(e) {
 }
 
 async function limpiarDatosPrueba() {
-  if (!confirm('⚠️ ¿Deseas limpiar todas las citas y bloqueos de prueba?\n\nTus servicios, precios y barberos permanecerán intactos, pero las estadísticas volverán a $0 para arrancar el lanzamiento oficial.')) {
+  if (!(await confirmar('⚠️ ¿Deseas limpiar todas las citas y bloqueos de prueba?\n\nTus servicios, precios y barberos permanecerán intactos, pero las estadísticas volverán a $0 para arrancar el lanzamiento oficial.'))) {
     return;
   }
 
@@ -1187,14 +1187,14 @@ async function limpiarDatosPrueba() {
     });
     const data = await res.json();
     if (res.ok) {
-      alert(data.message);
+      avisar(data.message);
       cargarCitas();
       cargarPerfil();
     } else {
-      alert('No se pudo limpiar los datos.');
+      avisar('No se pudo limpiar los datos.');
     }
   } catch (err) {
-    alert('Error al conectar con el servidor.');
+    avisar('Error al conectar con el servidor.');
   }
 }
 
@@ -1264,13 +1264,13 @@ async function guardarConfiguracionBot() {
       body: JSON.stringify(payload)
     });
     if (res.ok) {
-      alert('¡Configuración y plantillas del Bot guardadas con éxito!');
+      avisar('¡Configuración y plantillas del Bot guardadas con éxito!');
       cargarPerfil();
     } else {
-      alert('Error guardando configuración del bot.');
+      avisar('Error guardando configuración del bot.');
     }
   } catch (err) {
-    alert('Error al conectar con el servidor.');
+    avisar('Error al conectar con el servidor.');
   }
 }
 
@@ -1313,7 +1313,7 @@ async function crearReglaBot(e) {
   const respuesta = document.getElementById('regla-respuesta').value.trim();
 
   if (!claves || !respuesta) {
-    alert('Por favor completa las palabras clave y la respuesta.');
+    avisar('Por favor completa las palabras clave y la respuesta.');
     return;
   }
 
@@ -1329,15 +1329,15 @@ async function crearReglaBot(e) {
       document.getElementById('regla-respuesta').value = '';
       cargarPerfil();
     } else {
-      alert('Error creando regla.');
+      avisar('Error creando regla.');
     }
   } catch (err) {
-    alert('Error al conectar con el servidor.');
+    avisar('Error al conectar con el servidor.');
   }
 }
 
 async function eliminarReglaBot(id) {
-  if (!confirm('¿Deseas eliminar esta regla de respuesta?')) return;
+  if (!(await confirmar('¿Deseas eliminar esta regla de respuesta?'))) return;
   try {
     const res = await fetch(`/api/admin/bot/reglas/${id}`, {
       method: 'DELETE',
@@ -1345,7 +1345,7 @@ async function eliminarReglaBot(id) {
     });
     if (res.ok) cargarPerfil();
   } catch (err) {
-    alert('Error eliminando regla.');
+    avisar('Error eliminando regla.');
   }
 }
 
@@ -1416,14 +1416,14 @@ async function abrirModalVincularWhatsApp() {
 }
 
 async function desvincularWhatsApp() {
-  if (!confirm('¿Desvincular el WhatsApp conectado al bot? Tendrás que escanear un QR nuevo con el celular que quieras usar.')) return;
+  if (!(await confirmar('¿Desvincular el WhatsApp conectado al bot? Tendrás que escanear un QR nuevo con el celular que quieras usar.'))) return;
   try {
     const res = await fetch('/api/admin/bot/reiniciar', { method: 'POST', headers: getAuthHeaders() });
     const data = await res.json().catch(() => ({}));
-    alert(data.message || (res.ok ? 'Listo. Espera el QR nuevo.' : 'No se pudo desvincular.'));
+    avisar(data.message || (res.ok ? 'Listo. Espera el QR nuevo.' : 'No se pudo desvincular.'));
     if (res.ok) abrirModalVincularWhatsApp();
   } catch (e) {
-    alert('No se pudo conectar con el servidor.');
+    avisar('No se pudo conectar con el servidor.');
   }
 }
 
@@ -1434,12 +1434,12 @@ function cerrarModalVincularWhatsApp() {
 }
 
 async function eliminarBarberiaCompleta() {
-  if (!confirm('⚠️ ¿Estás SEGURO de eliminar por completo tu barbería y tu cuenta?\n\nEsta acción borrará todas tus citas, servicios y configuración permanentemente.')) {
+  if (!(await confirmar('⚠️ ¿Estás SEGURO de eliminar por completo tu barbería y tu cuenta?\n\nEsta acción borrará todas tus citas, servicios y configuración permanentemente.'))) {
     return;
   }
-  const confirmacion = prompt("Para confirmar definitivamente, escribe 'ELIMINAR':");
+  const confirmacion = await pedirTexto("Para confirmar definitivamente, escribe ELIMINAR:", "ELIMINAR");
   if (confirmacion !== 'ELIMINAR') {
-    alert('Operación cancelada. No se eliminó la barbería.');
+    avisar('Operación cancelada. No se eliminó la barbería.');
     return;
   }
 
@@ -1450,16 +1450,16 @@ async function eliminarBarberiaCompleta() {
     });
 
     if (res.ok) {
-      alert('Tu barbería y cuenta han sido eliminadas correctamente.');
+      avisar('Tu barbería y cuenta han sido eliminadas correctamente.');
       localStorage.removeItem('bf_token');
       localStorage.removeItem('bf_user');
       window.location.href = '/login.html';
     } else {
       const data = await res.json();
-      alert(data.message || 'Error al eliminar la barbería.');
+      avisar(data.message || 'Error al eliminar la barbería.');
     }
   } catch (err) {
-    alert('Error al conectar con el servidor.');
+    avisar('Error al conectar con el servidor.');
   }
 }
 

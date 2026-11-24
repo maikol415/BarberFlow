@@ -663,7 +663,7 @@ async function verificarParametrosUrl() {
     try {
       const res = await fetch(`/api/public/cita-resena/${encodeURIComponent(calificarToken)}`);
       if (!res.ok) {
-        alert('El enlace para calificar no es válido o ya expiró.');
+        avisar('El enlace para calificar no es válido o ya expiró.');
       } else {
         const info = await res.json();
         if (info.puedeCalificar) {
@@ -672,7 +672,7 @@ async function verificarParametrosUrl() {
           $('modal-valoracion-titulo').textContent = `¿Cómo te fue en ${info.barberiaNombre}?`;
           abrirModalValoracion();
         } else {
-          alert(info.motivoNoCalificable || 'Esta cita no se puede calificar.');
+          avisar(info.motivoNoCalificable || 'Esta cita no se puede calificar.');
         }
       }
     } catch (e) { console.log('Error cargando cita para calificar:', e); }
@@ -683,12 +683,12 @@ async function verificarParametrosUrl() {
     try {
       const res = await fetch(`/api/public/cita-resena/${encodeURIComponent(reagendarToken)}`);
       if (!res.ok) {
-        alert('El enlace para reagendar no es válido. Puedes reservar un turno nuevo abajo.');
+        avisar('El enlace para reagendar no es válido. Puedes reservar un turno nuevo abajo.');
         return;
       }
       const info = await res.json();
       if (info.estado === 'Cancelada') {
-        alert('Esta cita ya fue cancelada o reagendada. Puedes reservar un turno nuevo abajo.');
+        avisar('Esta cita ya fue cancelada o reagendada. Puedes reservar un turno nuevo abajo.');
         return;
       }
       const serv = todosLosServicios.find(s => s.nombre.toLowerCase() === String(info.servicio).toLowerCase());
@@ -754,7 +754,7 @@ async function enviarValoracionCliente(e) {
       : await fetch('/api/public/valoraciones', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${clienteSesion?.token || ''}` }, body: JSON.stringify({ barberiaSlug: barberia.slug, nombreCliente: clienteSesion?.nombre || '', estrellas, comentario }) });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) { mostrar('form-valoracion', false); mostrar('val-requiere-cuenta', true); return; }
-    if (!res.ok) { alert(data.message || 'No se pudo enviar tu opinión.'); return; }
+    if (!res.ok) { avisar(data.message || 'No se pudo enviar tu opinión.'); return; }
     cerrarModalValoracion();
     $('val-comentario').value = '';
     const ref = await fetch(`/api/public/barberia/${encodeURIComponent(barberia.slug)}`);
@@ -765,7 +765,7 @@ async function enviarValoracionCliente(e) {
       renderOpiniones();
     }
   } catch (err) {
-    alert('No pudimos conectar con el servidor.');
+    avisar('No pudimos conectar con el servidor.');
   } finally {
     btn.disabled = false;
     btn.textContent = 'Publicar opinión';
