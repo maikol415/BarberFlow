@@ -34,10 +34,12 @@ const {
 
 // ---------- WhatsApp falso ----------
 const enviados = [];
+const lidsFalsos = {};
 const sockFalso = {
   sendMessage: async (jid, contenido) => { enviados.push({ jid, texto: contenido.text || '' }); },
   sendPresenceUpdate: async () => {},
-  onWhatsApp: async (num) => [{ exists: true, jid: `${num}@s.whatsapp.net` }]
+  // Como WhatsApp real: devuelve también el ID anónimo (@lid) del número si lo conocemos
+  onWhatsApp: async (num) => [{ exists: true, jid: `${num}@s.whatsapp.net`, lid: lidsFalsos[num] }]
 };
 
 let contador = 0;
@@ -327,5 +329,22 @@ prueba = await probarConversacion({ slug: SLUG, texto: '2' });
 comprobar('Chat de prueba: sigue la conversación (opción 2)', prueba.respuestas.join(' | '), ['Servicios y precios']);
 prueba = await probarConversacion({ slug: SLUG, texto: 'hola', reiniciar: true });
 comprobar('Chat de prueba: empezar de nuevo vuelve a saludar', prueba.respuestas.join(' | '), ['Bienvenid']);
+// Chat @lid SIN número (WhatsApp no manda senderPn): el bot aprende el número al enviarle la confirmación
+const telMayer = `+57301${base}`;
+const lidMayer = { remoteJid: `77${base}11@lid` };
+lidsFalsos[dig(telMayer)] = lidMayer.remoteJid;
+r = await cliente(lidMayer, 'Hola');
+comprobar('Chat @lid sin número: saluda con el menú', r, ['Bienvenid']);
+r = await cliente(lidMayer, 'Si');
+comprobar('Chat @lid sin número y sin cita conocida: lo dice claro', r, ['No pudimos identificar tu número']);
+const citaMayer = await crearCita(telMayer, 'Mayerli Prueba', pasado, '05:00 PM');
+enviados.length = 0;
+await manejarNotificarCita({ ...payloadBase, citaId: citaMayer.id, codigoReserva: citaMayer.codigoReserva, nombreCliente: 'Mayerli Prueba', telefonoCliente: telMayer, fecha: pasado, hora: citaMayer.hora });
+comprobar('La confirmación de la cita va al mismo chat @lid donde escribió', enviados.map(e => e.jid).join(','), [lidMayer.remoteJid]);
+r = await cliente(lidMayer, 'Si');
+comprobar('Después responde SI desde el chat @lid: confirma su cita', r, ['quedó *confirmada*', 'Mayerli']);
+r = await cliente(lidMayer, 'cancelar');
+comprobar('Y CANCELAR desde el chat @lid encuentra su cita', r, ['encontramos tu cita', citaMayer.hora]);
+r = await cliente(lidMayer, '2');
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

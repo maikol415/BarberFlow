@@ -196,8 +196,10 @@ export async function crearAlmacenSesion({ databaseUrl, sesion, carpeta = './aut
       estadoActual?.desactivar();
       estadoActual = null;
       await asegurarTabla();
-      // En la misma cola: se ejecuta después de cualquier escritura pendiente del socket viejo
-      await cola(() => pool.query(`DELETE FROM ${TABLA} WHERE sesion = $1`, [sesion]));
+      // En la misma cola: se ejecuta después de cualquier escritura pendiente del socket viejo.
+      // Las claves "bf-…" (qué número tiene cada chat @lid de los clientes) no son de la sesión:
+      // se conservan para que, tras volver a vincular WhatsApp, el bot siga reconociendo a los clientes.
+      await cola(() => pool.query(`DELETE FROM ${TABLA} WHERE sesion = $1 AND clave NOT LIKE 'bf-%'`, [sesion]));
     },
     pool
   };

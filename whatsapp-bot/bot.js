@@ -54,10 +54,36 @@ function digitosDeJid(jid) {
 
 function recordarLid(lid, tel) {
   if (!lid || !tel) return;
-  telefonoPorLid.set(lid, tel);
+  recordarTelefonoDeLid(lid, tel);
   if (lidPorTelefono.get(tel) === lid) return;
   lidPorTelefono.set(tel, lid);
   almacenClavesSesion?.set({ 'bf-lid': { [tel]: lid } }).catch(e => console.error('No se pudo guardar el chat @lid:', e.message));
+}
+
+// Solo "este @lid es este número" (para reconocer al cliente cuando escribe), sin cambiar a dónde se le envía
+function recordarTelefonoDeLid(lid, tel) {
+  if (!lid || !tel || telefonoPorLid.get(lid) === tel) return;
+  telefonoPorLid.set(lid, tel);
+  almacenClavesSesion?.set({ 'bf-tel': { [lid]: tel } }).catch(e => console.error('No se pudo guardar el número del chat @lid:', e.message));
+}
+
+async function telefonoDeLidGuardado(lid) {
+  if (!lid) return '';
+  if (telefonoPorLid.has(lid)) return telefonoPorLid.get(lid);
+  try {
+    const guardado = (await almacenClavesSesion?.get('bf-tel', [lid]))?.[lid];
+    if (typeof guardado === 'string' && guardado) {
+      telefonoPorLid.set(lid, guardado);
+      return guardado;
+    }
+  } catch (e) {}
+  return '';
+}
+
+// "116…@lid" o "116…" -> "116…@lid"
+function normalizarLid(lid) {
+  const usuario = String(lid || '').split('@')[0].split(':')[0];
+  return /^\d+$/.test(usuario) ? `${usuario}@lid` : null;
 }
 
 async function lidDeTelefono(tel) {
@@ -86,6 +112,15 @@ function telefonoDelRemitente(key) {
   }
 
   return telefonoPorLid.get(remoteJid) || '';
+}
+
+// Igual que telefonoDelRemitente, pero si WhatsApp no manda el número (chat @lid sin senderPn)
+// lo busca en lo aprendido al enviarle la confirmación de su cita (ver resolverJidDestinatario)
+async function telefonoDelRemitenteAsync(key) {
+  const tel = telefonoDelRemitente(key);
+  if (tel) return tel;
+  const remoteJid = key?.remoteJid || '';
+  return remoteJid.endsWith('@lid') ? telefonoDeLidGuardado(remoteJid) : '';
 }
 
 const ultimaInteraccionCliente = new Map(); // Para saber cuándo habló por última vez
@@ -136,9 +171,20 @@ async function resolverJidDestinatario(sock, telefono) {
   if (lid) return lid;
 
   try {
-    const limpio = telefono.replace(/[^0-9]/g, '');
+    const limpio = digitosDeJid(jidDirecto);
     const res = await sock.onWhatsApp(limpio);
     if (res && res.length > 0 && res[0].exists && res[0].jid) {
+      // WhatsApp también devuelve el ID anónimo (@lid) del número: así reconocemos al cliente
+      // cuando responde desde un chat @lid que no trae su número (p. ej. "SI" o "CANCELAR")
+      const lidCliente = normalizarLid(res[0].lid);
+      if (lidCliente) {
+        recordarTelefonoDeLid(lidCliente, limpio);
+        // Si ya nos escribió desde ese chat @lid, la respuesta va a ese mismo chat
+        if (ultimaInteraccionCliente.has(lidCliente)) {
+          recordarLid(lidCliente, limpio);
+          return lidCliente;
+        }
+      }
       return res[0].jid;
     }
   } catch (e) {
@@ -814,7 +860,7 @@ export async function procesarMensajeEntrante(sock, m) {
       if (barberia.botActivo === false) return;
 
       // Extraer número de teléfono del remitente (ej: 17747126594@s.whatsapp.net o 573024084425@s.whatsapp.net)
-      const telSoloDigitos = telefonoDelRemitente(msg.key);
+      const telSoloDigitos = await telefonoDelRemitenteAsync(msg.key);
       const ultimos10 = telSoloDigitos.length >= 10 ? telSoloDigitos.slice(-10) : telSoloDigitos;
       const telBusqueda = telSoloDigitos;
 
@@ -1038,8 +1084,9 @@ export async function procesarMensajeEntrante(sock, m) {
       if (INTENCION.confirmar.test(textoN)) {
         const cita = await buscarCitaClienteAsync();
         if (!cita) {
-          await enviarMensajeHumano(sock, remitente,
-            `No encontramos una cita pendiente con este número. Si quieres reservar, entra aquí:\n👉 ${linkReservas()}`);
+          await enviarMensajeHumano(sock, remitente, telSoloDigitos
+            ? `No encontramos una cita pendiente con este número. Si quieres reservar, entra aquí:\n👉 ${linkReservas()}`
+            : `😕 No pudimos identificar tu número de WhatsApp para buscar tu cita. El barbero te ayudará personalmente por este chat en cuanto pueda.`);
           return;
         }
         const nombre = obtenerPrimerNombre(cita.nombreCliente);
