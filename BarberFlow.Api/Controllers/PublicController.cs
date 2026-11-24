@@ -431,6 +431,9 @@ public class PublicController : ControllerBase
         var miembrosActivos = barberia.Miembros.Where(m => m.Activo).OrderBy(m => m.Id).ToList();
         var variosBarberos = barberia.MostrarSelectorBarbero && miembrosActivos.Count > 1;
         int? miembroAsignado = dto.MiembroEquipoId;
+        // El cliente escoge su barbero; el barbero desde su panel sí puede dejar "Cualquiera"
+        if (miembroAsignado == null && variosBarberos && !esBarberoDeEstaBarberia)
+            return BadRequest(new { message = "Elige con qué barbero quieres tu cita." });
         if (miembroAsignado == null && variosBarberos)
         {
             miembroAsignado = miembrosActivos

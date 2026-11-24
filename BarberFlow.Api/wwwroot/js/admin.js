@@ -500,13 +500,29 @@ function actualizarResumenHoy() {
   const siguiente = deHoy.find(c => minutosDeHora(c.hora) >= minutosAhora - 15);
   const porConfirmar = deHoy.filter(c => c.estado === 'Pendiente').length;
 
+  // Las citas atendidas, las que no se confirmaron y las canceladas salen solas de esta lista
+  const lista = document.getElementById('resumen-hoy-lista');
   if (!deHoy.length) {
     detalle.textContent = 'No tienes más citas hoy.';
-  } else {
-    detalle.innerHTML = `${deHoy.length} cita${deHoy.length === 1 ? '' : 's'} pendiente${deHoy.length === 1 ? '' : 's'}` +
-      (siguiente ? ` · próxima <strong class="text-white">${horaLegible(siguiente.hora)}</strong> con ${escapeHtml(siguiente.nombreCliente.split(' ')[0])}` : '') +
-      (porConfirmar ? ` · <span class="text-amber-300">${porConfirmar} por confirmar</span>` : '');
+    if (lista) lista.innerHTML = '';
+    return;
   }
+  detalle.innerHTML = `${deHoy.length} cita${deHoy.length === 1 ? '' : 's'} por atender` +
+    (porConfirmar ? ` · <span class="text-amber-300">${porConfirmar} por confirmar</span>` : '');
+  if (!lista) return;
+  const visibles = deHoy.slice(0, 5);
+  lista.innerHTML = visibles.map(c => {
+    const empezo = minutosDeHora(c.hora) <= minutosAhora;
+    const esSiguiente = c === siguiente;
+    const etiqueta = empezo ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-emerald-500/15 text-emerald-300">Ahora</span>'
+      : c.estado === 'Pendiente' ? '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-amber-500/15 text-amber-300">Por confirmar</span>'
+      : '<span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-gray-800 text-gray-300">Confirmada</span>';
+    return `<div class="flex items-center gap-2.5 text-xs ${esSiguiente || empezo ? '' : 'opacity-80'}">
+      <span class="w-[4.5rem] flex-shrink-0 font-bold ${esSiguiente || empezo ? 'text-white' : 'text-gray-300'}">${horaLegible(c.hora)}</span>
+      <span class="min-w-0 flex-1 truncate text-gray-300">${escapeHtml(c.nombreCliente)}<span class="text-gray-500"> · ${escapeHtml(c.servicio || '')}${c.barbero ? ` · ${escapeHtml(c.barbero)}` : ''}</span></span>
+      ${etiqueta}
+    </div>`;
+  }).join('') + (deHoy.length > visibles.length ? `<p class="text-[11px] text-gray-500">y ${deHoy.length - visibles.length} más en la agenda de abajo</p>` : '');
 }
 
 // ----- Agenda: lista agrupada por día -----

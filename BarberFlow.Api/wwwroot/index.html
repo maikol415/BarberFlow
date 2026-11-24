@@ -8,9 +8,9 @@
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261124c">
-  <link rel="stylesheet" href="/css/tema.css?v=20261124c">
-  <script src="/js/iconos.js?v=20261124c"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261124d">
+  <link rel="stylesheet" href="/css/tema.css?v=20261124d">
+  <script src="/js/iconos.js?v=20261124d"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="/js/confetti.browser.min.js"></script>
   <style>
@@ -60,7 +60,7 @@
     <!-- Presentación de la barbería -->
     <section class="tarjeta overflow-hidden">
       <div id="portada-barberia" class="relative h-20 sm:h-24"></div>
-      <div class="px-5 sm:px-7 pb-6 -mt-10 sm:-mt-12">
+      <div class="relative z-10 px-5 sm:px-7 pb-6 -mt-10 sm:-mt-12">
         <div class="flex items-end justify-between gap-3">
           <button type="button" onclick="abrirModalImagenGrande(document.getElementById('barber-logo').src, barberia?.nombre)" class="rounded-2xl ring-4 ring-[#111827] flex-shrink-0" aria-label="Ver logo en grande">
             <img id="barber-logo" src="/icons/icon-192.png" alt="" class="w-20 h-20 sm:w-24 sm:h-24 rounded-2xl object-contain bg-gray-900 p-1">
@@ -112,7 +112,7 @@
         <span id="num-paso-barbero" class="paso-num">2</span>
         <div>
           <h2 class="font-extrabold text-white text-base">¿Con quién?</h2>
-          <p class="text-xs text-gray-500">Elige tu profesional o el primero disponible</p>
+          <p class="text-xs text-gray-500">Elige con quién quieres tu cita</p>
         </div>
       </div>
       <div id="barbers-container" class="flex gap-2.5 overflow-x-auto sin-scroll pb-1"></div>
@@ -161,7 +161,7 @@
 
       <div id="resumen-reserva" class="mb-4 p-4 rounded-2xl bg-gray-950/70 border border-gray-800 text-sm space-y-2">
         <div class="flex justify-between gap-3"><span class="text-gray-500">Servicio</span><span id="resumen-servicio" class="font-semibold text-white text-right">Sin elegir</span></div>
-        <div id="resumen-box-barbero" class="flex justify-between gap-3 oculto"><span class="text-gray-500">Profesional</span><span id="resumen-barbero" class="font-semibold text-white text-right">Cualquiera</span></div>
+        <div id="resumen-box-barbero" class="flex justify-between gap-3 oculto"><span class="text-gray-500">Profesional</span><span id="resumen-barbero" class="font-semibold text-white text-right">Sin elegir</span></div>
         <div class="flex justify-between gap-3"><span class="text-gray-500">Fecha</span><span id="resumen-fecha-hora" class="font-semibold text-white text-right first-letter:uppercase">Sin elegir</span></div>
         <div class="flex justify-between gap-3 pt-2 border-t border-gray-800"><span class="text-gray-500">Total</span><span id="resumen-precio" class="font-extrabold text-white">$ 0</span></div>
       </div>
@@ -280,8 +280,8 @@
     <a href="/login.html" class="text-gray-600 hover:text-blue-400 mt-1 inline-block">¿Eres el barbero? Ingresa aquí</a>
   </footer>
 
-  <script src="/js/tema.js?v=20261124c"></script>
-  <script src="/js/avisos.js?v=20261124c"></script>
-  <script src="/js/client.js?v=20261124c"></script>
+  <script src="/js/tema.js?v=20261124d"></script>
+  <script src="/js/avisos.js?v=20261124d"></script>
+  <script src="/js/client.js?v=20261124d"></script>
 </body>
 </html>

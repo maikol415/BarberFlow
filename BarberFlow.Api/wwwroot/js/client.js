@@ -402,7 +402,7 @@ function configurarSelectorBarbero() {
 }
 
 function renderBarberos() {
-  const lista = [{ id: null, nombre: 'Cualquiera', rol: 'El primero libre', fotoUrl: null }, ...(barberia.miembros || [])];
+  const lista = [...(barberia.miembros || [])];
   $('barbers-container').innerHTML = lista.map(b => {
     const activo = reservaActual.barberoId === b.id;
     // Tocar la foto la abre en grande (y también elige a ese barbero)
@@ -426,7 +426,7 @@ function renderBarberos() {
     reservaActual.barberoId = btn.dataset.id ? Number(btn.dataset.id) : null;
     const b = lista.find(x => (x.id ?? '') === (reservaActual.barberoId ?? ''));
     if (b?.fotoUrl && e.target.closest('[data-ver-foto]')) abrirModalImagenGrande(b.fotoUrl, b.nombre, b.rol);
-    $('resumen-barbero').textContent = b ? b.nombre : 'Cualquiera';
+    $('resumen-barbero').textContent = b ? b.nombre : 'Sin elegir';
     renderBarberos();
     renderCalendario(true);
   });
@@ -595,6 +595,11 @@ function renderHorariosDisponibles() {
     cont.innerHTML = `<div class="py-6 text-center text-sm text-gray-500 rounded-2xl border border-dashed border-gray-800">Primero elige un servicio para ver los horarios.</div>`;
     return;
   }
+  // Varios barberos: primero se elige con quién (los días siguen mostrando si hay algún barbero libre)
+  if (hayVariosBarberos() && reservaActual.barberoId == null) {
+    cont.innerHTML = `<div class="py-6 text-center text-sm text-gray-400 rounded-2xl border border-dashed border-gray-800">Primero elige <strong class="text-white">con quién</strong> quieres tu cita para ver sus horas libres.</div>`;
+    return;
+  }
   const iso = reservaActual.fechaSeleccionada;
   if (!iso) {
     cont.innerHTML = `<div class="py-6 text-center text-sm text-gray-500 rounded-2xl border border-dashed border-gray-800">No hay turnos disponibles en los próximos ${DIAS_A_MOSTRAR} días. Escríbele a la barbería por WhatsApp.</div>`;
@@ -721,6 +726,7 @@ async function confirmarReservaFinal(e) {
   const telefono = `${$('cliente-pais').value}${$('cliente-telefono').value.replace(/\D/g, '')}`;
 
   if (!serv) return mostrarErrorReserva('Elige primero el servicio que quieres reservar.');
+  if (hayVariosBarberos() && reservaActual.barberoId == null) return mostrarErrorReserva('Elige con qué barbero quieres tu cita.');
   if (!reservaActual.fechaSeleccionada || !reservaActual.horaSeleccionada) return mostrarErrorReserva('Elige el día y la hora de tu cita.');
 
   const btn = $('btn-confirmar-final');
