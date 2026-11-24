@@ -3,151 +3,120 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Acceso Barberos - BarberFlow Pro</title>
-  <link rel="manifest" href="/manifest.json">
-  <meta name="theme-color" content="#2563EB">
+  <title>Panel del barbero</title>
+  <link rel="manifest" href="/manifest-admin.json">
+  <meta name="theme-color" content="#0B0F19">
   <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Mi Barbería">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
   <link rel="stylesheet" href="/css/tailwind.min.css">
   <script src="/js/tailwind.cdn.js"></script>
   <script src="/js/lucide.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
+    body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; }
+    .campo { width: 100%; background: #030712; border: 1px solid #374151; border-radius: 0.75rem; padding: 0.75rem 0.9rem; font-size: 0.95rem; color: #fff; outline: none; transition: border-color .15s; }
+    .campo:focus { border-color: #3B82F6; }
+    .etiqueta { display: block; font-size: 0.75rem; font-weight: 600; color: #9CA3AF; margin-bottom: 0.35rem; }
+    .tab-activa { background: #1F2937; color: #fff; }
+    .tab-inactiva { color: #9CA3AF; }
+    .oculto { display: none !important; }
   </style>
+  <script>
+    // Si ya hay una sesión vigente (por ejemplo, al abrir la app instalada), ir directo a la agenda
+    (function () {
+      try {
+        const token = localStorage.getItem('bf_token');
+        const payload = token && JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')));
+        if (payload && payload.exp * 1000 > Date.now() + 60000) location.replace('/admin.html');
+      } catch (e) {}
+    })();
+  </script>
 </head>
-<body class="min-h-screen flex items-center justify-center p-4">
+<body class="min-h-screen flex flex-col items-center justify-center p-4">
 
-  <div class="max-w-md w-full bg-gray-900 border border-gray-800 rounded-3xl p-6 sm:p-8 shadow-2xl relative overflow-hidden">
-    
-    <!-- Glow de fondo moderno -->
-    <div class="absolute -top-12 -right-12 w-32 h-32 bg-blue-600/20 rounded-full blur-3xl pointer-events-none"></div>
-    <div class="absolute -bottom-12 -left-12 w-32 h-32 bg-blue-600/10 rounded-full blur-3xl pointer-events-none"></div>
-
-    <!-- Header con el estilo de la app -->
-    <div class="text-center mb-6 relative z-10">
-      <div class="w-14 h-14 rounded-2xl bg-blue-600 flex items-center justify-center text-white font-extrabold text-2xl mx-auto mb-3 shadow-lg shadow-blue-500/30">
-        ✂️
-      </div>
-      <h2 class="text-2xl font-extrabold text-white tracking-tight">Barber<span class="text-blue-500">Flow</span> Pro</h2>
-      <p class="text-xs text-gray-400 mt-1">Portal Exclusivo para Barberos y Administradores</p>
+  <main class="w-full max-w-sm">
+    <div class="text-center mb-6">
+      <div class="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-3xl mx-auto shadow-lg shadow-blue-600/30">✂️</div>
+      <h1 class="text-2xl font-extrabold text-white mt-4">Panel del barbero</h1>
+      <p class="text-sm text-gray-400 mt-1">Tu agenda, tus clientes y tu bot en un solo lugar.</p>
     </div>
 
-    <!-- Selector Iniciar Sesión / Registrar Barbería -->
-    <div class="grid grid-cols-2 bg-gray-950 p-1.5 rounded-2xl border border-gray-800 mb-6 text-xs sm:text-sm relative z-10">
-      <button id="tab-login" onclick="cambiarTab('login')" class="py-2.5 rounded-xl font-bold bg-blue-600 text-white transition shadow-md shadow-blue-500/20">
-        Iniciar Sesión
-      </button>
-      <button id="tab-register" onclick="cambiarTab('register')" class="py-2.5 rounded-xl font-medium text-gray-400 hover:text-white transition">
-        Registrar Barbería
-      </button>
+    <div class="bg-gray-900/80 border border-gray-800 rounded-3xl p-5 sm:p-6 shadow-xl">
+      <div class="grid grid-cols-2 gap-1 p-1 rounded-xl bg-gray-950 border border-gray-800 mb-5">
+        <button id="tab-login" type="button" onclick="cambiarTab('login')" class="py-2 rounded-lg text-sm font-bold transition tab-activa">Ingresar</button>
+        <button id="tab-register" type="button" onclick="cambiarTab('register')" class="py-2 rounded-lg text-sm font-bold transition tab-inactiva">Crear barbería</button>
+      </div>
+
+      <p id="auth-error" class="oculto mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-medium"></p>
+
+      <!-- Ingresar -->
+      <form id="form-login" onsubmit="hacerLogin(event)" class="space-y-4">
+        <div>
+          <label class="etiqueta" for="login-email">Correo</label>
+          <input type="email" id="login-email" autocomplete="email" inputmode="email" required placeholder="tu_correo@gmail.com" class="campo">
+        </div>
+        <div>
+          <label class="etiqueta" for="login-pass">Contraseña</label>
+          <div class="relative">
+            <input type="password" id="login-pass" autocomplete="current-password" required placeholder="Tu contraseña" class="campo pr-11">
+            <button type="button" onclick="togglePasswordVisibility('login-pass', this)" class="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-500 hover:text-gray-300" aria-label="Mostrar contraseña">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+        <button type="submit" id="btn-login" class="w-full py-3.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-60 shadow-lg shadow-blue-600/25 transition">Entrar</button>
+        <p class="text-center text-[11px] text-gray-500">Tu sesión queda guardada en este celular: no tendrás que escribir la contraseña cada vez.</p>
+      </form>
+
+      <!-- Crear barbería -->
+      <form id="form-register" onsubmit="hacerRegistro(event)" class="space-y-4 oculto">
+        <div>
+          <label class="etiqueta" for="reg-name">Tu nombre</label>
+          <input type="text" id="reg-name" autocomplete="name" required maxlength="60" placeholder="Ej: Juan Pérez" class="campo">
+        </div>
+        <div>
+          <label class="etiqueta" for="reg-barberia">Nombre de tu barbería</label>
+          <input type="text" id="reg-barberia" required maxlength="60" placeholder="Ej: Barbería El Estilo" class="campo">
+        </div>
+        <div>
+          <label class="etiqueta" for="reg-phone">WhatsApp de la barbería</label>
+          <div class="flex gap-2">
+            <select id="reg-pais" class="campo cursor-pointer" style="width:auto" aria-label="Indicativo del país">
+              <option value="+57">🇨🇴 +57</option><option value="+1">🇺🇸 +1</option><option value="+34">🇪🇸 +34</option>
+              <option value="+52">🇲🇽 +52</option><option value="+54">🇦🇷 +54</option><option value="+56">🇨🇱 +56</option>
+              <option value="+51">🇵🇪 +51</option><option value="+58">🇻🇪 +58</option><option value="+593">🇪🇨 +593</option><option value="+507">🇵🇦 +507</option>
+            </select>
+            <input type="tel" id="reg-phone" inputmode="tel" required placeholder="300 123 4567" class="campo">
+          </div>
+        </div>
+        <div>
+          <label class="etiqueta" for="reg-email">Correo</label>
+          <input type="email" id="reg-email" autocomplete="email" inputmode="email" required placeholder="tu_correo@gmail.com" class="campo">
+        </div>
+        <div>
+          <label class="etiqueta" for="reg-pass">Crea una contraseña</label>
+          <div class="relative">
+            <input type="password" id="reg-pass" autocomplete="new-password" minlength="6" required placeholder="Mínimo 6 caracteres" class="campo pr-11">
+            <button type="button" onclick="togglePasswordVisibility('reg-pass', this)" class="absolute right-2 top-1/2 transform -translate-y-1/2 p-1.5 text-gray-500 hover:text-gray-300" aria-label="Mostrar contraseña">
+              <i data-lucide="eye" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </div>
+        <button type="submit" id="btn-register" class="w-full py-3.5 rounded-xl font-bold text-white bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 shadow-lg shadow-emerald-600/25 transition">Crear mi barbería</button>
+      </form>
     </div>
 
-    <!-- Botón elegante para Instalar la App directamente -->
-    <div id="pwa-install-banner" class="hidden mb-4 p-3 rounded-2xl bg-blue-600/10 border border-blue-500/30 flex items-center justify-between gap-2 relative z-10">
-      <div class="flex items-center gap-2">
-        <span class="text-xl">📲</span>
-        <div class="text-left">
-          <p class="text-xs font-bold text-white">Instalar BarberFlow</p>
-          <p class="text-[10px] text-gray-400">Ten el acceso directo en tu celular</p>
-        </div>
-      </div>
-      <button type="button" id="btn-instalar-app" class="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-bold rounded-xl shadow-md transition">
-        Instalar
-      </button>
-    </div>
+    <p class="text-center text-xs text-gray-600 mt-6">BarberFlow · Reservas para barberías</p>
+  </main>
 
-    <!-- Alerta de Error -->
-    <div id="auth-error" class="hidden mb-4 p-3.5 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-xs relative z-10"></div>
-
-    <!-- Formulario Iniciar Sesión -->
-    <form id="form-login" onsubmit="hacerLogin(event)" class="space-y-4 relative z-10">
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1.5">Correo Electrónico</label>
-        <input type="email" id="login-email" required placeholder="Correo Electrónico" class="w-full bg-gray-950 border border-gray-700/80 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:border-blue-500 transition">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1.5">Contraseña</label>
-        <div class="relative">
-          <input type="password" id="login-pass" required placeholder="Contraseña" class="w-full bg-gray-950 border border-gray-700/80 rounded-xl px-4 py-2.5 pr-11 text-sm text-white focus:outline-none focus:border-blue-500 transition">
-          <button type="button" onclick="togglePasswordVisibility('login-pass', 'eye-login')" class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-white">
-            <i id="eye-login" data-lucide="eye" class="w-4 h-4"></i>
-          </button>
-        </div>
-      </div>
-      <button type="submit" id="btn-login" class="w-full py-3.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/30 transition text-sm mt-3 transform active:scale-95">
-        Entrar al Panel
-      </button>
-    </form>
-
-    <!-- Formulario Registro -->
-    <form id="form-register" onsubmit="hacerRegistro(event)" class="space-y-3 hidden relative z-10">
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1">Nombre</label>
-        <input type="text" id="reg-name" required placeholder="Nombre" class="w-full bg-gray-950 border border-gray-700/80 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1">Nombre de tu Barbería</label>
-        <input type="text" id="reg-barberia" required placeholder="Nombre de tu Barbería" class="w-full bg-gray-950 border border-gray-700/80 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1">Número de WhatsApp (con código de país ej: +57...)</label>
-        <input type="tel" id="reg-phone" required placeholder="Ej: +573001234567" class="w-full bg-gray-950 border border-gray-700/80 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1">Correo Electrónico</label>
-        <input type="email" id="reg-email" required placeholder="Correo Electrónico" class="w-full bg-gray-950 border border-gray-700/80 rounded-xl px-3.5 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-      </div>
-      <div>
-        <label class="block text-xs font-semibold text-gray-400 mb-1">Contraseña</label>
-        <div class="relative">
-          <input type="password" id="reg-pass" minlength="6" required placeholder="Contraseña" class="w-full bg-gray-950 border border-gray-700/80 rounded-xl px-3.5 py-2 pr-11 text-sm text-white focus:outline-none focus:border-blue-500">
-          <button type="button" onclick="togglePasswordVisibility('reg-pass', 'eye-reg')" class="absolute inset-y-0 right-0 pr-3.5 flex items-center text-gray-400 hover:text-white">
-            <i id="eye-reg" data-lucide="eye" class="w-4 h-4"></i>
-          </button>
-        </div>
-      </div>
-      <button type="submit" id="btn-register" class="w-full py-3.5 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 shadow-lg shadow-blue-600/30 transition text-sm mt-3 transform active:scale-95">
-        Crear mi Barbería
-      </button>
-    </form>
-
-  </div>
-
-  <script src="/js/auth.js"></script>
+  <script src="/js/auth.js?v=20261124"></script>
   <script>
     lucide.createIcons();
     if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));
+      navigator.serviceWorker.register('/sw.js').catch(() => {});
     }
-
-    // Capturar el evento de instalación para mostrar el botón
-    let deferredPrompt;
-    const banner = document.getElementById('pwa-install-banner');
-    const btnInstalar = document.getElementById('btn-instalar-app');
-
-    window.addEventListener('beforeinstallprompt', (e) => {
-      e.preventDefault();
-      deferredPrompt = e;
-      if (banner) banner.classList.remove('hidden');
-    });
-
-    if (btnInstalar) {
-      btnInstalar.addEventListener('click', async () => {
-        if (!deferredPrompt) return;
-        deferredPrompt.prompt();
-        const { outcome } = await deferredPrompt.userChoice;
-        if (outcome === 'accepted') {
-          if (banner) banner.classList.add('hidden');
-        }
-        deferredPrompt = null;
-      });
-    }
-
-    window.addEventListener('appinstalled', () => {
-      if (banner) banner.classList.add('hidden');
-    });
   </script>
 </body>
 </html>

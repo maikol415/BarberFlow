@@ -291,6 +291,16 @@ var provider = new Microsoft.AspNetCore.StaticFiles.FileExtensionContentTypeProv
 provider.Mappings[".json"] = "application/json";
 provider.Mappings[".webmanifest"] = "application/manifest+json";
 fileOptions.ContentTypeProvider = provider;
+// Las páginas HTML, el service worker y los manifests se revisan siempre con el servidor (con ETag no se
+// descargan de nuevo si no cambiaron). Así, tras cada despliegue nadie se queda con una versión vieja.
+fileOptions.OnPrepareResponse = ctx =>
+{
+    var nombre = ctx.File.Name.ToLowerInvariant();
+    if (nombre.EndsWith(".html") || nombre == "sw.js" || nombre.EndsWith(".json"))
+    {
+        ctx.Context.Response.Headers["Cache-Control"] = "no-cache";
+    }
+};
 app.UseStaticFiles(fileOptions);
 
 app.UseAuthentication();

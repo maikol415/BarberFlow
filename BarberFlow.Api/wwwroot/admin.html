@@ -4,7 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Panel de mi barbería</title>
-  <link rel="manifest" href="/manifest.json">
+  <link rel="manifest" href="/manifest-admin.json">
+  <meta name="apple-mobile-web-app-title" content="Mi Barbería">
   <meta name="theme-color" content="#0B0F19">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -88,6 +89,17 @@
 
     <!-- SECCIÓN 1: AGENDA -->
     <section id="sec-citas" class="space-y-4">
+
+      <!-- Instalar el panel como app (solo en celular y si aún no está instalada) -->
+      <div id="tarjeta-instalar" class="hidden tarjeta p-4 flex items-center gap-3" style="border-color: rgba(59,130,246,.45)">
+        <div class="w-11 h-11 rounded-2xl bg-blue-600 flex items-center justify-center text-xl flex-shrink-0">📲</div>
+        <div class="min-w-0 flex-1">
+          <p class="font-bold text-white text-sm">Instala tu panel como app</p>
+          <p class="text-xs text-gray-400">Ábrelo con un toque desde la pantalla de tu celular, sin buscar la página.</p>
+        </div>
+        <button onclick="instalarApp()" class="h-9 px-4 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white text-sm flex-shrink-0">Instalar</button>
+        <button onclick="ocultarTarjetaInstalar()" title="Ahora no" class="h-9 w-7 text-gray-500 hover:text-gray-300 flex items-center justify-center flex-shrink-0"><i data-lucide="x" class="w-4 h-4"></i></button>
+      </div>
 
       <!-- Resumen de hoy -->
       <div id="resumen-hoy" class="tarjeta p-4 sm:p-5 flex items-center gap-4">
@@ -859,7 +871,10 @@
         <div id="iframe-qr-bot" class="w-[260px] h-[310px]"></div>
       </div>
 
-      <div class="mt-3 pt-2 border-t border-gray-800 flex justify-center">
+      <div class="mt-3 pt-2 border-t border-gray-800 flex justify-center gap-2 flex-wrap">
+        <button onclick="desvincularWhatsApp()" class="py-2 px-4 rounded-lg text-xs font-semibold text-red-300 bg-red-500/10 border border-red-500/30 hover:bg-red-500/20 transition">
+          Desvincular y nuevo QR
+        </button>
         <button onclick="cerrarModalVincularWhatsApp()" class="py-2 px-5 rounded-lg text-xs font-semibold text-gray-300 bg-gray-800 hover:bg-gray-700 transition">
           Listo / Cerrar
         </button>
@@ -867,8 +882,18 @@
     </div>
   </div>
 
+  <!-- Guía para instalar la app -->
+  <div id="modal-instalar" class="hidden fixed inset-0 bg-black/80 backdrop-blur-sm z-[60] flex items-end sm:items-center justify-center p-4" onclick="if (event.target === this) cerrarGuiaInstalar()">
+    <div class="tarjeta w-full max-w-sm p-6" style="background:#111827">
+      <h3 class="text-lg font-extrabold text-white">Instalar el panel</h3>
+      <p class="text-sm text-gray-400 mt-1">Solo se hace una vez. Después lo abres como cualquier app.</p>
+      <ol id="pasos-instalar" class="mt-4 space-y-3 text-sm text-gray-200"></ol>
+      <button onclick="cerrarGuiaInstalar()" class="mt-5 w-full py-3 rounded-xl font-bold bg-gray-800 text-gray-200 hover:bg-gray-700">Entendido</button>
+    </div>
+  </div>
+
   <script src="/js/tema.js?v=20261124b"></script>
-  <script src="/js/admin.js?v=20261124c"></script>
+  <script src="/js/admin.js?v=20261124d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

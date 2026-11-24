@@ -24,7 +24,7 @@ function escapeHtml(valor) {
 }
 
 async function initAdmin() {
-  const hoyStr = new Date().toISOString().split('T')[0];
+  const hoyStr = hoyBogotaIso(); // fecha de Colombia (toISOString daba el día siguiente después de las 7 p. m.)
   const inputFechaBloq = document.getElementById('bloq-fecha');
   if (inputFechaBloq) inputFechaBloq.value = hoyStr;
 
@@ -1415,6 +1415,18 @@ async function abrirModalVincularWhatsApp() {
   intervalPollBot = setInterval(consultarEstadoBot, 3000);
 }
 
+async function desvincularWhatsApp() {
+  if (!confirm('¿Desvincular el WhatsApp conectado al bot? Tendrás que escanear un QR nuevo con el celular que quieras usar.')) return;
+  try {
+    const res = await fetch('/api/admin/bot/reiniciar', { method: 'POST', headers: getAuthHeaders() });
+    const data = await res.json().catch(() => ({}));
+    alert(data.message || (res.ok ? 'Listo. Espera el QR nuevo.' : 'No se pudo desvincular.'));
+    if (res.ok) abrirModalVincularWhatsApp();
+  } catch (e) {
+    alert('No se pudo conectar con el servidor.');
+  }
+}
+
 function cerrarModalVincularWhatsApp() {
   const modal = document.getElementById('modal-vincular-whatsapp');
   if (modal) modal.classList.add('hidden');
@@ -1450,6 +1462,57 @@ async function eliminarBarberiaCompleta() {
     alert('Error al conectar con el servidor.');
   }
 }
+
+// ----- Instalar el panel como app (PWA) -----
+let promptInstalarApp = null;
+
+function esAppInstalada() {
+  return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
+}
+function esIPhone() { return /iphone|ipad|ipod/i.test(navigator.userAgent); }
+function esCelular() { return /android|iphone|ipad|ipod|mobile/i.test(navigator.userAgent); }
+
+function mostrarTarjetaInstalar() {
+  let oculta = false;
+  try { oculta = localStorage.getItem('bf_ocultar_instalar') === '1'; } catch (e) {}
+  const tarjeta = document.getElementById('tarjeta-instalar');
+  if (!tarjeta || esAppInstalada() || oculta || !esCelular()) return;
+  tarjeta.classList.remove('hidden');
+  tarjeta.classList.add('flex');
+}
+
+function ocultarTarjetaInstalar() {
+  try { localStorage.setItem('bf_ocultar_instalar', '1'); } catch (e) {}
+  const tarjeta = document.getElementById('tarjeta-instalar');
+  if (tarjeta) { tarjeta.classList.add('hidden'); tarjeta.classList.remove('flex'); }
+}
+
+async function instalarApp() {
+  if (promptInstalarApp) {
+    promptInstalarApp.prompt();
+    const { outcome } = await promptInstalarApp.userChoice;
+    promptInstalarApp = null;
+    if (outcome === 'accepted') ocultarTarjetaInstalar();
+    return;
+  }
+  // Sin instalación automática (iPhone, o el navegador no la ofreció): guía paso a paso
+  const pasos = esIPhone()
+    ? ['Abre esta página en <b>Safari</b>.', 'Toca el botón <b>Compartir</b> <span class="inline-block px-1.5 rounded bg-gray-800">⬆️</span> (abajo en la pantalla).', 'Elige <b>"Agregar a inicio"</b> y toca <b>Agregar</b>.', 'Listo: verás el ícono <b>Mi Barbería</b> en tu pantalla.']
+    : ['Abre esta página en <b>Google Chrome</b>.', 'Toca el menú <span class="inline-block px-1.5 rounded bg-gray-800">⋮</span> (arriba a la derecha).', 'Elige <b>"Instalar aplicación"</b> o <b>"Agregar a la pantalla principal"</b>.', 'Listo: verás el ícono <b>Mi Barbería</b> en tu pantalla.'];
+  document.getElementById('pasos-instalar').innerHTML = pasos.map((p, i) =>
+    `<li class="flex gap-3"><span class="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center flex-shrink-0">${i + 1}</span><span>${p}</span></li>`).join('');
+  document.getElementById('modal-instalar').classList.remove('hidden');
+}
+
+function cerrarGuiaInstalar() { document.getElementById('modal-instalar').classList.add('hidden'); }
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  promptInstalarApp = e;
+  mostrarTarjetaInstalar();
+});
+window.addEventListener('appinstalled', ocultarTarjetaInstalar);
+window.addEventListener('DOMContentLoaded', mostrarTarjetaInstalar);
 
 function cerrarSesion() {
   localStorage.removeItem('bf_token');

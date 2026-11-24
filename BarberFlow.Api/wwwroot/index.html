@@ -4,7 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Reservar cita</title>
-  <link rel="manifest" href="/manifest.json">
   <meta name="theme-color" content="#0B0F19">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -267,10 +266,5 @@
 
   <script src="/js/tema.js?v=20261124b"></script>
   <script src="/js/client.js?v=20261124"></script>
-  <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));
-    }
-  </script>
 </body>
 </html>

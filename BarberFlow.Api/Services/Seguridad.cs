@@ -41,7 +41,7 @@ public class TokenService
             new Claim(PoliticasAuth.ClaimBarberiaId, barberia.Id.ToString()),
             new Claim("BarberiaSlug", barberia.Slug)
         };
-        return Firmar(claims, TimeSpan.FromDays(7));
+        return Firmar(claims, TimeSpan.FromDays(30)); // el barbero no debe volver a escribir la contraseña cada semana
     }
 
     public string GenerarTokenCliente(ClienteUsuario cliente)

@@ -558,6 +558,39 @@ public class AdminController : ControllerBase
     // ESTADO / QR DEL BOT DE WHATSAPP (proxy autenticado: el navegador nunca habla directo con el bot)
     private static readonly HttpClient _botHttp = new() { Timeout = TimeSpan.FromSeconds(8) };
 
+    // Desvincular el WhatsApp actual del bot y generar un QR nuevo (p. ej. pasar del número de prueba al real)
+    [HttpPost("bot/reiniciar")]
+    public async Task<IActionResult> ReiniciarBot()
+    {
+        var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
+        var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
+        if (string.IsNullOrWhiteSpace(botKey)) return StatusCode(503, new { message = "BOT_API_KEY no está configurada en el servidor." });
+
+        try
+        {
+            // Solo el dueño de la barbería que atiende el bot puede desvincularlo
+            using var reqEstado = new HttpRequestMessage(HttpMethod.Get, $"{botUrl.TrimEnd('/')}/api/status");
+            reqEstado.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
+            using var respEstado = await _botHttp.SendAsync(reqEstado);
+            using var doc = System.Text.Json.JsonDocument.Parse(await respEstado.Content.ReadAsStringAsync());
+            var slugBot = doc.RootElement.TryGetProperty("barberiaSlug", out var sl) ? sl.GetString() : null;
+            if (!string.Equals(slugBot, User.FindFirst("BarberiaSlug")?.Value, StringComparison.OrdinalIgnoreCase))
+                return StatusCode(403, new { message = "El bot de WhatsApp no está asignado a tu barbería." });
+
+            using var req = new HttpRequestMessage(HttpMethod.Post, $"{botUrl.TrimEnd('/')}/api/reset");
+            req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
+            using var resp = await _botHttp.SendAsync(req);
+            return resp.IsSuccessStatusCode
+                ? Ok(new { message = "WhatsApp desvinculado. En unos segundos aparece un QR nuevo." })
+                : StatusCode(502, new { message = "El servicio de WhatsApp no pudo reiniciarse." });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Bot Reiniciar Error]: {ex.Message}");
+            return StatusCode(502, new { message = "No se pudo conectar con el servicio de WhatsApp." });
+        }
+    }
+
     [HttpGet("bot/estado")]
     public async Task<IActionResult> ObtenerEstadoBot()
     {

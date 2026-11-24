@@ -1,132 +1,78 @@
-function cambiarTab(tab) {
-  const errDiv = document.getElementById('auth-error');
-  errDiv.classList.add('hidden');
+// Ingreso y registro de barberos (login.html)
+function $(id) { return document.getElementById(id); }
 
-  if (tab === 'login') {
-    document.getElementById('form-login').classList.remove('hidden');
-    document.getElementById('form-register').classList.add('hidden');
-    document.getElementById('tab-login').className = 'py-2 rounded-xl font-bold bg-blue-600 text-white transition shadow-md shadow-blue-500/20';
-    document.getElementById('tab-register').className = 'py-2 rounded-xl font-medium text-gray-400 hover:text-white transition';
-  } else {
-    document.getElementById('form-login').classList.add('hidden');
-    document.getElementById('form-register').classList.remove('hidden');
-    document.getElementById('tab-register').className = 'py-2 rounded-xl font-bold bg-blue-600 text-white transition shadow-md shadow-blue-500/20';
-    document.getElementById('tab-login').className = 'py-2 rounded-xl font-medium text-gray-400 hover:text-white transition';
-  }
+function cambiarTab(tab) {
+  const login = tab === 'login';
+  $('auth-error').classList.add('oculto');
+  $('form-login').classList.toggle('oculto', !login);
+  $('form-register').classList.toggle('oculto', login);
+  $('tab-login').className = `py-2 rounded-lg text-sm font-bold transition ${login ? 'tab-activa' : 'tab-inactiva'}`;
+  $('tab-register').className = `py-2 rounded-lg text-sm font-bold transition ${login ? 'tab-inactiva' : 'tab-activa'}`;
 }
 
-function togglePasswordVisibility(inputId, iconId) {
-  const input = document.getElementById(inputId);
-  const icon = document.getElementById(iconId);
-
-  if (input.type === 'password') {
-    input.type = 'text';
-    icon.setAttribute('data-lucide', 'eye-off');
-  } else {
-    input.type = 'password';
-    icon.setAttribute('data-lucide', 'eye');
-  }
+function togglePasswordVisibility(inputId, boton) {
+  const input = $(inputId);
+  input.type = input.type === 'password' ? 'text' : 'password';
+  boton.setAttribute('aria-label', input.type === 'password' ? 'Mostrar contraseña' : 'Ocultar contraseña');
+  boton.innerHTML = `<i data-lucide="${input.type === 'password' ? 'eye' : 'eye-off'}" class="w-4 h-4"></i>`;
   lucide.createIcons();
 }
 
 function mostrarError(msg) {
-  const errDiv = document.getElementById('auth-error');
-  errDiv.innerText = msg;
-  errDiv.classList.remove('hidden');
+  const err = $('auth-error');
+  err.textContent = msg;
+  err.classList.remove('oculto');
 }
 
 function validarEmail(email) {
   const re = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
   if (!re.test(email)) return false;
-
   const dominio = email.split('@')[1].toLowerCase();
-  if (dominio === 'mail.com' || dominio === 'gmal.com' || dominio === 'gmai.com') {
-    return false;
+  return !['mail.com', 'gmal.com', 'gmai.com', 'hotmal.com', 'gmail.co'].includes(dominio);
+}
+
+function guardarSesionYEntrar(data) {
+  localStorage.setItem('bf_token', data.token);
+  localStorage.setItem('bf_user', JSON.stringify(data));
+  window.location.href = '/admin.html';
+}
+
+async function enviar(url, payload, boton, textoCargando, textoNormal) {
+  boton.disabled = true;
+  boton.textContent = textoCargando;
+  try {
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      mostrarError(data.message || 'No se pudo completar. Revisa los datos e inténtalo de nuevo.');
+      return;
+    }
+    guardarSesionYEntrar(data);
+  } catch (err) {
+    mostrarError('No pudimos conectar con el servidor. Revisa tu internet e inténtalo de nuevo en un momento.');
+  } finally {
+    boton.disabled = false;
+    boton.textContent = textoNormal;
   }
-  return true;
 }
 
 async function hacerLogin(e) {
   e.preventDefault();
-  const email = document.getElementById('login-email').value.trim();
-  const password = document.getElementById('login-pass').value;
-  const btn = document.getElementById('btn-login');
-
-  if (!validarEmail(email)) {
-    mostrarError('El correo parece mal escrito. Revisa que sea correcto (ej: tu_nombre@gmail.com).');
-    return;
-  }
-
-  btn.disabled = true;
-  btn.innerText = 'Verificando credenciales...';
-
-  try {
-    const res = await fetch('/api/auth/login', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email, password })
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      mostrarError(data.message || 'Correo o contraseña incorrectos.');
-      btn.disabled = false;
-      btn.innerText = 'Entrar al Panel';
-      return;
-    }
-
-    localStorage.setItem('bf_token', data.token);
-    localStorage.setItem('bf_user', JSON.stringify(data));
-    window.location.href = '/admin.html';
-  } catch (err) {
-    mostrarError('No se pudo conectar con el servidor. Verifica que "dotnet run" esté activo en la terminal.');
-    btn.disabled = false;
-    btn.innerText = 'Entrar al Panel';
-  }
+  const email = $('login-email').value.trim();
+  if (!validarEmail(email)) return mostrarError('El correo parece mal escrito. Revísalo (ej: tu_nombre@gmail.com).');
+  await enviar('/api/auth/login', { email, password: $('login-pass').value }, $('btn-login'), 'Entrando...', 'Entrar');
 }
 
 async function hacerRegistro(e) {
   e.preventDefault();
-  const email = document.getElementById('reg-email').value.trim();
-
-  if (!validarEmail(email)) {
-    mostrarError('El correo parece mal escrito. Por favor ingresa un correo válido (ej: @gmail.com, @hotmail.com).');
-    return;
-  }
-
-  const payload = {
-    nombreCompleto: document.getElementById('reg-name').value.trim(),
-    nombreBarberia: document.getElementById('reg-barberia').value.trim(),
-    telefonoWhatsApp: document.getElementById('reg-phone').value.trim(),
-    email: email,
-    password: document.getElementById('reg-pass').value
-  };
-
-  const btn = document.getElementById('btn-register');
-  btn.disabled = true;
-  btn.innerText = 'Creando barbería...';
-
-  try {
-    const res = await fetch('/api/auth/register', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
-    });
-
-    const data = await res.json();
-    if (!res.ok) {
-      mostrarError(data.message || 'Error registrando la barbería.');
-      btn.disabled = false;
-      btn.innerText = 'Crear mi Barbería';
-      return;
-    }
-
-    localStorage.setItem('bf_token', data.token);
-    localStorage.setItem('bf_user', JSON.stringify(data));
-    window.location.href = '/admin.html';
-  } catch (err) {
-    mostrarError('No se pudo conectar con el servidor. Verifica que "dotnet run" esté activo en la terminal.');
-    btn.disabled = false;
-    btn.innerText = 'Crear mi Barbería';
-  }
+  const email = $('reg-email').value.trim();
+  if (!validarEmail(email)) return mostrarError('El correo parece mal escrito. Revísalo (ej: tu_nombre@gmail.com).');
+  const telefono = `${$('reg-pais').value}${$('reg-phone').value.replace(/\D/g, '')}`;
+  await enviar('/api/auth/register', {
+    nombreCompleto: $('reg-name').value.trim(),
+    nombreBarberia: $('reg-barberia').value.trim(),
+    telefonoWhatsApp: telefono,
+    email,
+    password: $('reg-pass').value
+  }, $('btn-register'), 'Creando tu barbería...', 'Crear mi barbería');
 }
