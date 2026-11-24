@@ -42,9 +42,36 @@ const MODO_PRUEBA = process.env.BOT_MODO_PRUEBA === '1';
 // WhatsApp puede identificar al remitente con un ID anónimo (…@lid) en lugar de su número.
 // En ese caso el número real llega en msg.key.senderPn. Guardamos la relación LID ➔ teléfono.
 const telefonoPorLid = new Map();
+// Y al revés (teléfono ➔ chat @lid): los avisos que inicia el bot (cita nueva, recordatorio, reseña) deben ir
+// al MISMO chat @lid donde el cliente escribe. Si se envían a su número, WhatsApp los muestra como
+// "Esperando el mensaje" porque el cifrado de ese chat es otro.
+const lidPorTelefono = new Map();
+let almacenClavesSesion = null; // claves de la sesión de WhatsApp (PostgreSQL o archivos): ahí se guarda la relación
 
 function digitosDeJid(jid) {
   return (jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
+}
+
+function recordarLid(lid, tel) {
+  if (!lid || !tel) return;
+  telefonoPorLid.set(lid, tel);
+  if (lidPorTelefono.get(tel) === lid) return;
+  lidPorTelefono.set(tel, lid);
+  almacenClavesSesion?.set({ 'bf-lid': { [tel]: lid } }).catch(e => console.error('No se pudo guardar el chat @lid:', e.message));
+}
+
+async function lidDeTelefono(tel) {
+  if (!tel) return null;
+  if (lidPorTelefono.has(tel)) return lidPorTelefono.get(tel);
+  try {
+    const guardado = (await almacenClavesSesion?.get('bf-lid', [tel]))?.[tel];
+    if (typeof guardado === 'string' && guardado.endsWith('@lid')) {
+      lidPorTelefono.set(tel, guardado);
+      telefonoPorLid.set(guardado, tel);
+      return guardado;
+    }
+  } catch (e) {}
+  return null;
 }
 
 function telefonoDelRemitente(key) {
@@ -54,7 +81,7 @@ function telefonoDelRemitente(key) {
   const senderPn = key?.senderPn || '';
   if (senderPn.endsWith('@s.whatsapp.net')) {
     const tel = digitosDeJid(senderPn);
-    if (remoteJid.endsWith('@lid') && tel) telefonoPorLid.set(remoteJid, tel);
+    if (remoteJid.endsWith('@lid') && tel) recordarLid(remoteJid, tel);
     return tel;
   }
 
@@ -103,6 +130,10 @@ function formatearJidWhatsApp(telefono) {
 async function resolverJidDestinatario(sock, telefono) {
   const jidDirecto = formatearJidWhatsApp(telefono);
   if (!sock || !jidDirecto) return jidDirecto;
+
+  // Si el cliente ya nos escribió desde un chat @lid, responderle en ese mismo chat
+  const lid = await lidDeTelefono(digitosDeJid(jidDirecto));
+  if (lid) return lid;
 
   try {
     const limpio = telefono.replace(/[^0-9]/g, '');
@@ -581,6 +612,7 @@ async function iniciarBot() {
   if (generacion !== generacionBot) return; // un reset arrancó otro socket mientras se cargaba
 
   const { state, saveCreds } = estadoAuth;
+  almacenClavesSesion = state.keys;
   const sock = makeWASocket({ auth: state, printQRInTerminal: false });
   socketActivo = sock;
 
@@ -740,7 +772,7 @@ export async function procesarMensajeEntrante(sock, m) {
 
             const nombreCliente = estado.citaNombre || 'amigo';
             const msjCancelado =
-              `✅ ¡Listo ${nombreCliente}! Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* ha sido cancelada correctamente.\n\n` +
+              `✅ ¡Listo ${nombreCliente}! Tu cita para el *${fechaLegible(estado.citaFecha)} a las ${estado.citaHora}* ha sido cancelada correctamente.\n\n` +
               `Lamentamos que no nos puedas acompañar en esta ocasión, ¡esperamos verte muy pronto en la barbería! 💈✂️\n\n` +
               `Cuando desees volver a agendar tu espacio, estaremos encantados de atenderte aquí:\n` +
               `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
@@ -753,7 +785,7 @@ export async function procesarMensajeEntrante(sock, m) {
               if (jidBarbero && jidBarbero !== remitente) {
                 const msjAvisoBarbero =
                   `🔔 *Notificación de Agenda:*\n` +
-                  `El cliente *${nombreCliente}* canceló su turno del *${estado.citaFecha}* a las *${estado.citaHora}*.\n\n` +
+                  `El cliente *${nombreCliente}* canceló su turno del *${fechaLegible(estado.citaFecha)}* a las *${estado.citaHora}*.\n\n` +
                   `✅ Ese horario quedó libre automáticamente en tu calendario web.`;
                 await sock.sendMessage(jidBarbero, { text: msjAvisoBarbero });
               }
@@ -768,7 +800,7 @@ export async function procesarMensajeEntrante(sock, m) {
             await enviarMensajeHumano(
               sock,
               remitente,
-              `👍 ¡Perfecto! Tu cita para el *${estado.citaFecha} a las ${estado.citaHora}* sigue firme y reservada. ¡Te esperamos! 💈✂️`
+              `👍 ¡Perfecto! Tu cita para el *${fechaLegible(estado.citaFecha)} a las ${estado.citaHora}* sigue firme y reservada. ¡Te esperamos! 💈✂️`
             );
             return;
           }
@@ -777,7 +809,7 @@ export async function procesarMensajeEntrante(sock, m) {
           await enviarMensajeHumano(
             sock,
             remitente,
-            `Para confirmar, responde *1* si deseas *cancelar* tu cita del *${estado.citaFecha} a las ${estado.citaHora}*, o *2* si prefieres *mantenerla*. ✂️`
+            `Para confirmar, responde *1* si deseas *cancelar* tu cita del *${fechaLegible(estado.citaFecha)} a las ${estado.citaHora}*, o *2* si prefieres *mantenerla*. ✂️`
           );
           return;
         }
@@ -862,6 +894,14 @@ export async function procesarMensajeEntrante(sock, m) {
           const cita = await buscarCitaClienteAsync();
           let urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
           let detalle = '';
+
+          // Sin cita activa no hay nada que cambiar: ofrecer reservar una nueva
+          if (!cita || !cita.tokenPublico) {
+            await enviarMensajeHumano(sock, remitente,
+              `No encontramos una cita activa con este número para cambiar.\n\n` +
+              `📅 Si quieres, reserva una nueva aquí:\n👉 ${linkReservas()}`);
+            return;
+          }
 
           if (cita && cita.tokenPublico) {
             urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${encodeURIComponent(cita.tokenPublico)}`;

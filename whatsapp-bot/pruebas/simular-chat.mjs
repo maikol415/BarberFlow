@@ -136,7 +136,7 @@ r = await cliente({ remoteJid: ana.remoteJid }, 'cancelar');
 comprobar('Mismo @lid sin senderPn: recuerda el número', r, ['encontramos tu cita', legible(manana)]);
 
 r = await cliente(ana, '1️⃣');
-comprobar('Responder 1️⃣ cancela la cita', r, ['cancelada correctamente', manana]);
+comprobar('Responder 1️⃣ cancela la cita', r, ['cancelada correctamente', legible(manana)]);
 
 r = await cliente(ana, 'cancelar');
 comprobar('Luego ofrece la siguiente cita pendiente', r, ['encontramos tu cita', legible(pasado), citaAnaPasado.hora]);
@@ -270,6 +270,15 @@ recordados = await revisarRecordatorios(mediodia + 5 * 60000);
 comprobar('No repite el recordatorio', recordados.includes(citaCarla.id) ? 'repetido' : 'ok', ['ok']);
 recordados = await revisarRecordatorios(Date.UTC(ma, mm - 1, md, 5, minCarla - 300));
 comprobar('No recuerda con demasiada anticipación', recordados.includes(citaCarla.id) ? 'enviado' : 'ok', ['ok']);
+
+// Avisos al chat @lid: si el cliente ya escribió desde un chat @lid, la cita nueva le llega ahí
+// (si se envía a su número, WhatsApp lo muestra como "Esperando el mensaje")
+enviados.length = 0;
+await manejarNotificarCita({ ...payloadBase, telefonoCliente: telAna, nombreCliente: 'Ana Prueba' });
+comprobar('Aviso de cita nueva va al mismo chat @lid del cliente', enviados.map(e => e.jid).join(','), [ana.remoteJid]);
+
+r = await cliente(vieja, 'reagendar');
+comprobar('Reagendar sin cita activa: ofrece reservar una nueva', r, ['No encontramos una cita activa', 'index.html?b=']);
 
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);
