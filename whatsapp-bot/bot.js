@@ -458,8 +458,13 @@ export function iconoCategoria(texto) {
 }
 
 // Reemplaza {cliente}, {servicio}, {fecha}... en las plantillas que el barbero edita en el panel
-function aplicarPlantilla(plantilla, datos) {
-  return String(plantilla).replace(/\{(\w+)\}/g, (todo, clave) => (datos[clave] ?? todo));
+// Reemplaza {variables}. Una línea cuya variable quedó vacía (p. ej. "Profesional: {barbero}" sin barbero) se quita.
+export function aplicarPlantilla(plantilla, datos) {
+  return String(plantilla)
+    .split('\n')
+    .filter(linea => !(linea.match(/\{(\w+)\}/g) || []).some(v => datos[v.slice(1, -1)] === ''))
+    .join('\n')
+    .replace(/\{(\w+)\}/g, (todo, clave) => (datos[clave] ?? todo));
 }
 
 function mencionaConfirmar(texto) { return /\bSI\b|\bSÍ\b|CONFIRM/i.test(texto); }
@@ -583,6 +588,7 @@ export async function manejarNotificarCita(payload) {
     `${saludoInicial}\n\n` +
     `📋 *Detalles de tu Cita:*\n` +
     `✂️ *Servicio:* ${servicio}\n` +
+    (payload.barbero ? `💈 *Barbero:* ${payload.barbero}\n` : '') +
     `📅 *Fecha:* ${fechaLegible(fecha)}\n` +
     `⏰ *Hora:* ${hora}\n` +
     `🔖 *Código:* ${codigoReserva || '#BF-CITA'}\n` +

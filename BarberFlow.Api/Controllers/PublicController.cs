@@ -284,6 +284,7 @@ public class PublicController : ControllerBase
         var barberia = await _context.Barberias
             .Include(b => b.Servicios)
             .Include(b => b.Bloqueos)
+            .Include(b => b.Miembros.Where(m => m.Activo))
             .FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
 
         if (barberia == null)
@@ -373,22 +374,42 @@ public class PublicController : ControllerBase
         var citasDia = await _context.Citas
             .Include(c => c.Servicio)
             .Where(c => c.BarberiaId == barberia.Id && c.Fecha == dto.Fecha && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
-            .Where(c => dto.MiembroEquipoId == null || c.MiembroEquipoId == null || c.MiembroEquipoId == dto.MiembroEquipoId)
             .ToListAsync();
 
-        var hayTraslapeCita = citasDia.Any(c =>
+        // ¿Choca con alguna cita? miembroId = null revisa todas (barbería de una sola silla).
+        // Con un barbero concreto, solo chocan sus citas y las que no tienen barbero asignado.
+        bool Choca(int? miembroId) => citasDia.Any(c =>
         {
             if (citaAnterior != null && c.Id == citaAnterior.Id) return false;
+            if (miembroId != null && c.MiembroEquipoId != null && c.MiembroEquipoId != miembroId) return false;
             var existIni = ConvertirHoraAMinutos(c.Hora);
             var existDur = c.Servicio?.DuracionMinutos ?? barberia.IntervaloMinutos;
             var existFin = existIni + existDur;
             return nuevoTurnoInicio < existFin && nuevoTurnoFin > existIni;
         });
 
-        if (hayTraslapeCita)
+        // Varios barberos: cada uno tiene su agenda. Si el cliente eligió "Cualquiera",
+        // se le asigna el barbero libre a esa hora con menos citas ese día (así siempre sabe con quién va).
+        var miembrosActivos = barberia.Miembros.Where(m => m.Activo).OrderBy(m => m.Id).ToList();
+        var variosBarberos = barberia.MostrarSelectorBarbero && miembrosActivos.Count > 1;
+        int? miembroAsignado = dto.MiembroEquipoId;
+        if (miembroAsignado == null && variosBarberos)
         {
-            return BadRequest(new { message = "Ese horario o parte de su duración ya fue reservado. Por favor elige otro horario." });
+            miembroAsignado = miembrosActivos
+                .Where(m => !Choca(m.Id))
+                .OrderBy(m => citasDia.Count(c => c.MiembroEquipoId == m.Id))
+                .Select(m => (int?)m.Id)
+                .FirstOrDefault();
+            if (miembroAsignado == null)
+                return BadRequest(new { message = "Ese horario ya está ocupado con todos los barberos. Por favor elige otro horario." });
         }
+        else
+        {
+            if (miembroAsignado == null && miembrosActivos.Count == 1) miembroAsignado = miembrosActivos[0].Id;
+            if (variosBarberos ? Choca(miembroAsignado) : Choca(null))
+                return BadRequest(new { message = "Ese horario o parte de su duración ya fue reservado. Por favor elige otro horario." });
+        }
+        var nombreBarbero = miembrosActivos.FirstOrDefault(m => m.Id == miembroAsignado)?.Nombre ?? "";
 
         var codigoReserva = $"#BF-{Random.Shared.Next(1000, 9999)}";
 
@@ -396,7 +417,7 @@ public class PublicController : ControllerBase
         {
             BarberiaId = barberia.Id,
             ServicioId = servicio.Id,
-            MiembroEquipoId = dto.MiembroEquipoId,
+            MiembroEquipoId = miembroAsignado,
             CodigoReserva = codigoReserva,
             NombreCliente = dto.NombreCliente.Trim(),
             TelefonoCliente = dto.TelefonoCliente.Trim(),
@@ -433,6 +454,7 @@ public class PublicController : ControllerBase
             fecha = cita.Fecha,
             hora = cita.Hora,
             total = cita.Total,
+            barbero = nombreBarbero,
             esReagendamiento = citaAnterior != null
         });
 
@@ -444,6 +466,7 @@ public class PublicController : ControllerBase
             cita.Hora,
             cita.Total,
             ServicioNombre = servicio.Nombre,
+            BarberoNombre = nombreBarbero,
             BarberiaWhatsApp = barberia.TelefonoWhatsApp,
             BarberiaNombre = barberia.Nombre
         });

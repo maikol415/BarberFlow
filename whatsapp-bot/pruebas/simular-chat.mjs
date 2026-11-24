@@ -29,6 +29,7 @@ const {
   INTENCION,
   probarConversacion,
   horasDeRecordatorio,
+  aplicarPlantilla,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -364,5 +365,10 @@ r = await cliente(lidMayer, 'Hola');
 comprobar('La pausa cubre también el chat @lid del mismo cliente', r || 'silencio', ['silencio']);
 prueba = await probarConversacion({ slug: SLUG, texto: 'hola', reiniciar: true });
 comprobar('El chat de prueba del panel no se afecta por la pausa', prueba.respuestas.join(' | '), ['Bienvenid']);
+// Plantillas: el barbero asignado aparece; si no hay barbero, esa línea se quita
+const plantillaPrueba = ['¡Hola {cliente}!', '💈 *Profesional:* {barbero}', '⏰ *Hora:* {hora}'].join('\n');
+comprobar('Plantilla con barbero asignado', aplicarPlantilla(plantillaPrueba, { cliente: 'Mayerli', barbero: 'Diego', hora: '05:00pm' }), ['*Profesional:* Diego', '05:00pm']);
+const sinBarbero = aplicarPlantilla(plantillaPrueba, { cliente: 'Mayerli', barbero: '', hora: '05:00pm' });
+comprobar('Plantilla sin barbero: no deja la línea vacía', sinBarbero.includes('Profesional') ? 'quedó' : sinBarbero, ['¡Hola Mayerli!', '05:00pm']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

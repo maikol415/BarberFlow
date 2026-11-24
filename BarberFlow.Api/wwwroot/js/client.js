@@ -362,7 +362,23 @@ function renderBarberos() {
 // ================== Paso 3: día y hora ==================
 // Turnos libres de un día para el servicio elegido.
 // Hoy empiezan en "ahora + anticipación" (redondeado a 10 min), así no se pierde un cliente si el puesto está libre.
+// ¿La barbería trabaja con varios barberos, cada uno con su agenda?
+function hayVariosBarberos() {
+  return !!barberia.mostrarSelectorBarbero && (barberia.miembros || []).length > 1;
+}
+
+// Turnos libres del día. Con varios barberos y "Cualquiera": los turnos en los que al menos uno está libre.
 function generarTurnos(iso) {
+  if (hayVariosBarberos() && reservaActual.barberoId == null) {
+    const todos = new Set();
+    barberia.miembros.forEach(m => generarTurnosDe(iso, m.id).forEach(t => todos.add(t)));
+    return [...todos].sort((a, b) => a - b);
+  }
+  return generarTurnosDe(iso, hayVariosBarberos() ? reservaActual.barberoId : null);
+}
+
+// barberoId = null: una sola agenda para toda la barbería
+function generarTurnosDe(iso, barberoId) {
   const serv = servicioActual();
   if (!serv || !esDiaLaborable(iso)) return [];
 
@@ -379,7 +395,7 @@ function generarTurnos(iso) {
 
   const ocupados = (barberia.citasOcupadas || [])
     .filter(c => c.fecha === iso)
-    .filter(c => reservaActual.barberoId == null || c.miembroEquipoId == null || c.miembroEquipoId === reservaActual.barberoId)
+    .filter(c => barberoId == null || c.miembroEquipoId == null || c.miembroEquipoId === barberoId)
     .filter(c => !(citaReagendarInfo && c.fecha === citaReagendarInfo.fecha && convertirHoraAMinutos(c.hora) === convertirHoraAMinutos(citaReagendarInfo.hora)))
     .map(c => { const ini = convertirHoraAMinutos(c.hora); return { ini, fin: ini + (c.duracionMinutos || intervalo) }; });
 
@@ -660,7 +676,7 @@ async function confirmarReservaFinal(e) {
     }
 
     $('exito-titulo').textContent = citaTokenReagendar ? '¡Cita reagendada!' : '¡Cita reservada!';
-    $('modal-servicio').textContent = data.servicioNombre || serv.nombre;
+    $('modal-servicio').textContent = (data.servicioNombre || serv.nombre) + (data.barberoNombre ? ` · con ${data.barberoNombre}` : '');
     $('modal-horario').textContent = capitalizar(`${fechaLegible(data.fecha)} · ${minutosATexto(convertirHoraAMinutos(data.hora))}`);
     $('modal-codigo').textContent = data.codigoReserva || '';
     mostrar('barra-resumen', false);
