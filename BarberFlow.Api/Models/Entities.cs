@@ -123,6 +123,15 @@ public class Cita
     public decimal Total { get; set; }
     public string Estado { get; set; } = "Confirmada";
     public DateTime CreadaUtc { get; set; } = DateTime.UtcNow;
+
+    // Token aleatorio para los enlaces públicos (reseña / reagendar): nunca usar el Id en esos enlaces
+    public string TokenPublico { get; set; } = string.Empty;
+    // Momento en que el cliente dejó su reseña (una sola por cita)
+    public DateTime? CalificadaUtc { get; set; }
+
+    public const int LargoTokenPublico = 32;
+    public static string NuevoTokenPublico() =>
+        System.Security.Cryptography.RandomNumberGenerator.GetHexString(LargoTokenPublico, lowercase: true);
 }
 
 public class HorarioBloqueo

@@ -15,8 +15,10 @@ let todosLosServicios = [];
 let categoriaActiva = '';
 let textoBusqueda = '';
 let clienteSesion = null;
-let citaIdCalificar = null;
-let citaIdReagendar = null;
+// Los enlaces (?calificar= / ?reagendar=) traen el token público de la cita, nunca su id
+let citaTokenCalificar = null;
+let citaTokenReagendar = null;
+let citaReagendarInfo = null; // fecha y hora de la cita que se reagenda (su turno queda libre para elegir)
 
 const reservaActual = { servicioId: null, barberoId: null, fechaSeleccionada: null, horaSeleccionada: null, total: 0 };
 
@@ -369,7 +371,7 @@ function generarTurnos(iso) {
   const ocupados = (barberia.citasOcupadas || [])
     .filter(c => c.fecha === iso)
     .filter(c => reservaActual.barberoId == null || c.miembroEquipoId == null || c.miembroEquipoId === reservaActual.barberoId)
-    .filter(c => !(citaIdReagendar && Number(c.id) === Number(citaIdReagendar)))
+    .filter(c => !(citaReagendarInfo && c.fecha === citaReagendarInfo.fecha && convertirHoraAMinutos(c.hora) === convertirHoraAMinutos(citaReagendarInfo.hora)))
     .map(c => { const ini = convertirHoraAMinutos(c.hora); return { ini, fin: ini + (c.duracionMinutos || intervalo) }; });
 
   (barberia.bloqueos || []).filter(b => b.fecha === iso && b.hora && b.hora !== 'TODO_EL_DIA').forEach(b => {
@@ -604,7 +606,7 @@ async function confirmarReservaFinal(e) {
         telefonoCliente: telefono,
         fecha: reservaActual.fechaSeleccionada,
         hora: reservaActual.horaSeleccionada,
-        reagendarCitaId: citaIdReagendar ? Number(citaIdReagendar) : null
+        reagendarToken: citaTokenReagendar
       })
     });
     const data = await res.json().catch(() => ({}));
@@ -614,7 +616,7 @@ async function confirmarReservaFinal(e) {
       return;
     }
 
-    $('exito-titulo').textContent = citaIdReagendar ? '¡Cita reagendada!' : '¡Cita reservada!';
+    $('exito-titulo').textContent = citaTokenReagendar ? '¡Cita reagendada!' : '¡Cita reservada!';
     $('modal-servicio').textContent = data.servicioNombre || serv.nombre;
     $('modal-horario').textContent = capitalizar(`${fechaLegible(data.fecha)} · ${minutosATexto(convertirHoraAMinutos(data.hora))}`);
     $('modal-codigo').textContent = data.codigoReserva || '';
@@ -656,29 +658,43 @@ function cerrarModal() {
 async function verificarParametrosUrl() {
   const params = new URLSearchParams(location.search);
 
-  const calificarId = params.get('calificar');
-  if (calificarId) {
+  const calificarToken = params.get('calificar');
+  if (calificarToken) {
     try {
-      const res = await fetch(`/api/public/cita-resena/${encodeURIComponent(calificarId)}`);
-      if (res.ok) {
+      const res = await fetch(`/api/public/cita-resena/${encodeURIComponent(calificarToken)}`);
+      if (!res.ok) {
+        alert('El enlace para calificar no es válido o ya expiró.');
+      } else {
         const info = await res.json();
-        citaIdCalificar = info.id;
-        $('val-nombre').value = info.nombreCliente || '';
-        $('modal-valoracion-titulo').textContent = `¿Cómo te fue en ${info.barberiaNombre}?`;
-        abrirModalValoracion();
+        if (info.puedeCalificar) {
+          citaTokenCalificar = calificarToken;
+          $('val-nombre').value = info.nombreCliente || '';
+          $('modal-valoracion-titulo').textContent = `¿Cómo te fue en ${info.barberiaNombre}?`;
+          abrirModalValoracion();
+        } else {
+          alert(info.motivoNoCalificable || 'Esta cita no se puede calificar.');
+        }
       }
     } catch (e) { console.log('Error cargando cita para calificar:', e); }
   }
 
-  const reagendarId = params.get('reagendar');
-  if (reagendarId) {
+  const reagendarToken = params.get('reagendar');
+  if (reagendarToken) {
     try {
-      const res = await fetch(`/api/public/cita-resena/${encodeURIComponent(reagendarId)}`);
-      if (!res.ok) return;
+      const res = await fetch(`/api/public/cita-resena/${encodeURIComponent(reagendarToken)}`);
+      if (!res.ok) {
+        alert('El enlace para reagendar no es válido. Puedes reservar un turno nuevo abajo.');
+        return;
+      }
       const info = await res.json();
+      if (info.estado === 'Cancelada') {
+        alert('Esta cita ya fue cancelada o reagendada. Puedes reservar un turno nuevo abajo.');
+        return;
+      }
       const serv = todosLosServicios.find(s => s.nombre.toLowerCase() === String(info.servicio).toLowerCase());
       if (!serv) return;
-      citaIdReagendar = info.id;
+      citaTokenReagendar = reagendarToken;
+      citaReagendarInfo = { fecha: info.fecha, hora: info.hora };
       $('reagendar-nombre-servicio').textContent = info.servicio;
       mostrar('banner-reagendar-aviso', true);
       mostrar('seccion-paso-servicios', false);
@@ -708,7 +724,7 @@ function renderOpiniones() {
 
 function abrirModalValoracion() {
   // Opinan clientes atendidos: con el enlace de su cita (bot) o con su cuenta
-  const puedeOpinar = !!citaIdCalificar || !!clienteSesion;
+  const puedeOpinar = !!citaTokenCalificar || !!clienteSesion;
   mostrar('val-requiere-cuenta', !puedeOpinar);
   mostrar('form-valoracion', puedeOpinar);
   $('val-link-cuenta').href = `/cuenta.html?b=${encodeURIComponent(slugUrl)}`;
@@ -733,8 +749,8 @@ async function enviarValoracionCliente(e) {
   const estrellas = Number($('val-estrellas').value) || 5;
   const comentario = $('val-comentario').value.trim();
   try {
-    const res = citaIdCalificar
-      ? await fetch('/api/public/calificar-cita', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ citaId: citaIdCalificar, estrellas, comentario }) })
+    const res = citaTokenCalificar
+      ? await fetch('/api/public/calificar-cita', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token: citaTokenCalificar, estrellas, comentario }) })
       : await fetch('/api/public/valoraciones', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${clienteSesion?.token || ''}` }, body: JSON.stringify({ barberiaSlug: barberia.slug, nombreCliente: clienteSesion?.nombre || '', estrellas, comentario }) });
     const data = await res.json().catch(() => ({}));
     if (res.status === 401) { mostrar('form-valoracion', false); mostrar('val-requiere-cuenta', true); return; }

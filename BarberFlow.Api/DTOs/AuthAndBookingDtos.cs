@@ -85,7 +85,7 @@ public record CrearCitaPublicaDto(
     [Required] string TelefonoCliente,
     [Required] string Fecha,
     [Required] string Hora,
-    int? ReagendarCitaId = null
+    string? ReagendarToken = null
 );
 
 public record CambiarEstadoCitaDto(
@@ -104,7 +104,7 @@ public record UploadImageDto(
 );
 
 public record ReseñaCitaDto(
-    [Required] int CitaId,
+    [Required] string Token,
     [Required] int Estrellas,
     string? Comentario
 );

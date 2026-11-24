@@ -196,10 +196,45 @@ using (var scope = app.Services.CreateScope())
         {
             Console.WriteLine($"Error creando tabla Valoraciones: {ex.Message}");
         }
+
+        // Token público por cita (enlaces de reseña / reagendar) y marca de reseña única.
+        // Las citas antiguas reciben un token aleatorio (gen_random_uuid usa el generador seguro de PostgreSQL).
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
+                ALTER TABLE ""Citas"" ADD COLUMN IF NOT EXISTS ""TokenPublico"" text NOT NULL DEFAULT '';
+                ALTER TABLE ""Citas"" ADD COLUMN IF NOT EXISTS ""CalificadaUtc"" timestamp with time zone NULL;
+                UPDATE ""Citas"" SET ""TokenPublico"" = replace(gen_random_uuid()::text, '-', '') WHERE ""TokenPublico"" IS NULL OR ""TokenPublico"" = '';
+                CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Citas_TokenPublico"" ON ""Citas"" (""TokenPublico"");
+            ");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error migrando TokenPublico de Citas: {ex.Message}");
+        }
     }
     else
     {
         db.Database.EnsureCreated();
+
+        // SQLite local: EnsureCreated no agrega columnas nuevas a una base ya creada
+        if (db.Database.IsSqlite())
+        {
+            foreach (var sql in new[]
+            {
+                @"ALTER TABLE ""Citas"" ADD COLUMN ""TokenPublico"" TEXT NOT NULL DEFAULT ''",
+                @"ALTER TABLE ""Citas"" ADD COLUMN ""CalificadaUtc"" TEXT NULL"
+            })
+            {
+                try { db.Database.ExecuteSqlRaw(sql); } catch { /* la columna ya existía */ }
+            }
+
+            var citasSinToken = db.Citas.Where(c => c.TokenPublico == "").ToList();
+            foreach (var c in citasSinToken) c.TokenPublico = Cita.NuevoTokenPublico();
+            if (citasSinToken.Count > 0) db.SaveChanges();
+
+            db.Database.ExecuteSqlRaw(@"CREATE UNIQUE INDEX IF NOT EXISTS ""IX_Citas_TokenPublico"" ON ""Citas"" (""TokenPublico"")");
+        }
     }
 
     if (!db.Barberos.Any())
