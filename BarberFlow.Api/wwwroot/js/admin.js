@@ -191,7 +191,7 @@ function pintarApariencia() {
   const input = document.getElementById('conf-color');
   if (!input) return;
   input.value = color;
-  input.oninput = () => pintarPaleta(input.value.toUpperCase());
+  input.oninput = () => { pintarPaleta(input.value.toUpperCase()); pintarPreviewPortada(); };
   pintarPaleta(color);
   pintarPreviewPortada();
 }
@@ -205,21 +205,39 @@ function pintarPaleta(seleccionado) {
     b.title = nombre;
     b.style.background = hex;
     b.className = `w-10 h-10 rounded-lg border-2 transition ${seleccionado === hex ? 'border-white scale-110' : 'border-transparent'}`;
-    b.onclick = () => { document.getElementById('conf-color').value = hex; pintarPaleta(hex); };
+    b.onclick = () => { document.getElementById('conf-color').value = hex; pintarPaleta(hex); pintarPreviewPortada(); };
     cont.insertBefore(b, document.getElementById('conf-color'));
   });
 }
 
 function pintarPreviewPortada() {
   const prev = document.getElementById('preview-portada');
-  if (!prev) return;
-  if (barberiaActual.portadaUrl) {
-    prev.style.backgroundImage = `url("${barberiaActual.portadaUrl}")`;
-    prev.textContent = '';
-  } else {
-    prev.style.backgroundImage = '';
-    prev.textContent = 'Sin portada: se usa un degradado con tu color';
-  }
+  if (!prev || !window.fondoPortada) return;
+  const color = document.getElementById('conf-color').value;
+  const actual = barberiaActual.portadaUrl || '';
+  prev.style.background = fondoPortada(actual, color);
+  const nombre = actual.startsWith('preset:') ? (PORTADAS_BARBERIA[actual.slice(7)]?.nombre || 'Diseño')
+    : actual ? 'Tu foto' : 'Degradado';
+  document.getElementById('preview-portada-nombre').textContent = nombre;
+
+  // Galería: cada diseño se pinta con el color elegido
+  const galeria = document.getElementById('galeria-portadas');
+  galeria.innerHTML = Object.entries(PORTADAS_BARBERIA).map(([clave, p]) => {
+    const valor = clave === 'degradado' ? '' : `preset:${clave}`;
+    const elegido = actual === valor;
+    return `<button type="button" data-portada="${valor}" title="${p.nombre}"
+      class="h-14 rounded-lg border-2 transition ${elegido ? 'border-white' : 'border-gray-800 hover:border-gray-600'}"
+      style="background:${p.css(hexARgbAdmin(color))}"></button>`;
+  }).join('');
+  galeria.querySelectorAll('button').forEach(b => b.onclick = () => {
+    barberiaActual.portadaUrl = b.dataset.portada;
+    pintarPreviewPortada();
+  });
+}
+
+function hexARgbAdmin(hex) {
+  const m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex || '');
+  return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [37, 99, 235];
 }
 
 async function subirPortadaBarberia(e) {
@@ -1187,24 +1205,26 @@ function mostrarSeccion(sec) {
   const secBot = document.getElementById('sec-bot');
   if (secBot) secBot.classList.add('hidden');
 
-  document.getElementById('tab-btn-citas').className = 'px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition';
-  document.getElementById('tab-btn-perfil').className = 'px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition';
-  document.getElementById('tab-btn-horarios').className = 'px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition';
+  const TAB_ACTIVA = 'py-2 px-2 sm:px-4 rounded-xl font-bold bg-blue-600 text-white transition flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 text-[11px] sm:text-sm';
+  const TAB_INACTIVA = 'py-2 px-2 sm:px-4 rounded-xl font-semibold bg-gray-900/70 border border-gray-800 text-gray-400 hover:text-white transition flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 text-[11px] sm:text-sm';
+  ['citas', 'perfil', 'horarios', 'bot'].forEach(t => {
+    const b = document.getElementById(`tab-btn-${t}`);
+    if (b) b.className = t === sec ? TAB_ACTIVA : TAB_INACTIVA;
+  });
   const tabBot = document.getElementById('tab-btn-bot');
-  if (tabBot) tabBot.className = 'px-4 py-2 rounded-xl font-medium text-gray-400 hover:text-white whitespace-nowrap transition flex items-center gap-1.5';
 
   if (sec === 'citas') {
     document.getElementById('sec-citas').classList.remove('hidden');
-    document.getElementById('tab-btn-citas').className = 'px-4 py-2 rounded-xl font-bold bg-blue-600 text-white whitespace-nowrap transition';
+
   } else if (sec === 'perfil') {
     document.getElementById('sec-perfil').classList.remove('hidden');
-    document.getElementById('tab-btn-perfil').className = 'px-4 py-2 rounded-xl font-bold bg-blue-600 text-white whitespace-nowrap transition';
+
   } else if (sec === 'horarios') {
     document.getElementById('sec-horarios').classList.remove('hidden');
-    document.getElementById('tab-btn-horarios').className = 'px-4 py-2 rounded-xl font-bold bg-blue-600 text-white whitespace-nowrap transition';
+
   } else if (sec === 'bot') {
     if (secBot) secBot.classList.remove('hidden');
-    if (tabBot) tabBot.className = 'px-4 py-2 rounded-xl font-bold bg-blue-600 text-white whitespace-nowrap transition flex items-center gap-1.5';
+
   }
 }
 

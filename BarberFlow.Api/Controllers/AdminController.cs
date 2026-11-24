@@ -120,7 +120,7 @@ public class AdminController : ControllerBase
         if (dto.PortadaUrl != null)
         {
             var portada = dto.PortadaUrl.Trim();
-            var valida = portada == "" || portada.Length <= 900_000 &&
+            var valida = portada == "" || System.Text.RegularExpressions.Regex.IsMatch(portada, "^preset:[a-z]{3,20}$") || portada.Length <= 900_000 &&
                 (portada.StartsWith("data:image/jpeg;base64,") || portada.StartsWith("data:image/png;base64,") ||
                  portada.StartsWith("data:image/webp;base64,") || portada.StartsWith("https://") || portada.StartsWith("/uploads/"));
             if (!valida) return BadRequest(new { message = "La imagen de portada no es válida o es demasiado grande." });
@@ -153,7 +153,7 @@ public class AdminController : ControllerBase
     public async Task<IActionResult> LimpiarDatosPrueba()
     {
         var barberiaId = ObtenerBarberiaId();
-        
+
         // 1. Eliminar todas las citas de prueba de esta barbería
         var citas = await _context.Citas.Where(c => c.BarberiaId == barberiaId).ToListAsync();
         _context.Citas.RemoveRange(citas);
@@ -325,8 +325,8 @@ public class AdminController : ControllerBase
 
         var barberia = await _context.Barberias.FindAsync(barberiaId);
 
-        return Ok(new 
-        { 
+        return Ok(new
+        {
             message = "Estado actualizado.",
             cita = new {
                 cita.Id,
