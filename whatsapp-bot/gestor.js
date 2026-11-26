@@ -246,7 +246,8 @@ for (const senal of ['SIGTERM', 'SIGINT']) {
 }
 
 if (!BOT_API_KEY) log('⚠️ Falta BOT_API_KEY: ninguna petición será aceptada.');
-servidor.listen(PUERTO, () => {
+// BOT_HOST=127.0.0.1 cuando corre dentro del servicio de la página: así Render no lo confunde con la página
+servidor.listen(PUERTO, process.env.BOT_HOST || '0.0.0.0', () => {
   log(`Gestor de bots activo en el puerto ${PUERTO} (máximo ${MAX_SESIONES} barberías).`);
   cargarBarberiasConBot();
 });

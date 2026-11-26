@@ -402,7 +402,8 @@ const servidorHttp = http.createServer(async (req, res) => {
 });
 
 if (!MODO_PRUEBA && !MODO_GESTOR) {
-  servidorHttp.listen(PORT, () => {
+  // Las copias por barbería solo las usa el gestor: escuchan únicamente por dentro (127.0.0.1)
+  servidorHttp.listen(PORT, process.env.BOT_HIJO === '1' ? '127.0.0.1' : '0.0.0.0', () => {
     console.log(`Servidor del Bot y Webhooks activo en el puerto ${PORT}`);
   });
 }
