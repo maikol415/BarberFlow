@@ -921,6 +921,46 @@ public class PublicController : ControllerBase
         });
     }
 
+    // "Mis citas" del bot: las próximas citas activas de un teléfono (máximo 5), de la más cercana a la más lejana
+    [RequiereBotKey]
+    [HttpGet("bot/{slug}/mis-citas/{telefono}")]
+    public async Task<IActionResult> MisCitasCliente(string slug, string telefono)
+    {
+        var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
+        await EstadosCitas.AplicarAsync(_context, barberia.Id);
+        var hoy = FechaHoyColombia();
+        var activas = await _context.Citas
+            .Include(c => c.Servicio)
+            .Include(c => c.MiembroEquipo)
+            .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "Completada" && c.Estado != "No Confirmada")
+            .Where(c => string.Compare(c.Fecha, hoy) >= 0)
+            .ToListAsync();
+
+        var citas = activas
+            .Where(c => TelefonoHelper.MismoTelefono(c.TelefonoCliente, telefono))
+            .OrderBy(c => c.Fecha)
+            .ThenBy(c => ConvertirHoraAMinutos(c.Hora))
+            .Take(5)
+            .Select(c => new
+            {
+                c.Id,
+                c.TokenPublico,
+                c.CodigoReserva,
+                c.NombreCliente,
+                c.Fecha,
+                c.Hora,
+                c.Estado,
+                Servicio = c.Servicio?.Nombre ?? "Servicio",
+                Barbero = c.MiembroEquipo?.Nombre ?? "",
+                MotivoNoModificable = MotivoNoModificable(c, barberia)
+            })
+            .ToList();
+
+        return Ok(citas);
+    }
+
     [RequiereBotKey]
     [HttpPost("bot/{slug}/cancelar-cita/{id}")]
     public async Task<IActionResult> CancelarCitaBot(string slug, int id)

@@ -477,6 +477,10 @@ export const INTENCION = {
   saludo: /\b(hol+a+s?|holi+s?|ola+|alo|buen[oa]s?|buen dia|bn[ao]?s|quiubo|quihubo|kiubo|k hubo|que hubo|que mas|q mas|qmas|que hay|que hay pues|oe+|oie|ey+|hey+|epa+|ole+|saludos|info|informacion|hi|hello)\b/,
   cancelar: /\b(cancel\w*|anular|no (puedo|voy a poder|alcanzo a|podre|pude) (ir|llegar|asistir)|ya no (voy|puedo ir)|me toca cancelar)\b/,
   reagendar: /\b(reagend\w*|reprogram\w*|aplazar|cambiar (la |mi |de )?(cita|fecha|hora|horario|turno|dia)|otra hora|otro horario|correr (la |mi )?(cita|turno|hora)|mover (la |mi )?(cita|turno|hora))\b/,
+  // Ver sus citas ("mis citas", "tengo cita?", "a qué hora es mi cita")
+  misCitas: /\b(mis citas|mi cita|mis turnos|mi turno|mis reservas|mi reserva|tengo (una )?cita|cuando es mi cita|a que hora es mi cita|ver (mi|mis) citas?)\b/,
+  // Un "no" suelto: no confirma ni cancela nada
+  negacion: /^(no+|nop|nope|nel|negativo|no se|nose|ns)$/,
   // Respuesta de confirmación: todo el mensaje es un "sí"
   confirmar: /^(si|sii|sip|sisas|sí|confirmo|confirmar|confirmado|confirmada|si confirmo|si senor|si senora|claro|claro que si|de una si|si voy|si claro|ahi estare|alla estare|ahi estoy|asistire|ahi nos vemos|listo si|si listo)$/,
   precios: /\b(precios?|cuanto (vale|valen|cuesta|cuestan|sale|salen|cobran|es|seria)|que vale|que valor|valor|tarifas?|costos?|servicios?|cortes?|lista de precios)\b/,
@@ -488,6 +492,49 @@ export const INTENCION = {
   // Reacciones sueltas: el bot no responde en medio de una conversación
   casual: /^((ja|je|ji|jo|ha)+|gracias|muchas gracias|mil gracias|dios le pague|dios te pague|ok|oki|okey|okay|vale|dale|listo|lista|melo|bacano|chevere|super|perfecto|genial|excelente|bueno|bien|esta bien|asi es|de una|entendido|ah bueno|uy|chimba|que chimba|bendiciones|igualmente)( pues| parce| mor| hermano| bro)?$/
 };
+
+// El cliente respondió algo que no es una opción ("No", "hola", "amén"…) y tiene una cita por confirmar
+export function mensajeRespuestaNoValida(cita) {
+  const nombre = obtenerPrimerNombre(cita.nombreCliente);
+  return `🤔 ${nombre}, esa respuesta no es una de las opciones.\n\n` +
+    `Sobre tu cita de *${cita.servicio}* el *${fechaLegible(cita.fecha)} a las ${cita.hora}*, responde:\n\n` +
+    `• *SI* para confirmar que vienes ✅\n` +
+    `• *CANCELAR* si no puedes asistir ❌\n` +
+    `• *REAGENDAR* para cambiar el día o la hora 🔄\n\n` +
+    `_¿Necesitas otra cosa? Escribe *MENÚ* para ver todas las opciones._`;
+}
+
+// ----- Pregunta pendiente: el bot le pidió al cliente responder SI / CANCELAR sobre una cita -----
+// Mientras no responda una opción válida, cualquier otra cosa ("hola", "no", "amén") recibe las opciones de nuevo.
+// Se guarda también en el almacén de la sesión para que sobreviva a un reinicio del bot.
+const preguntaCita = new Map(); // jid -> { citaId, nombreCliente, servicio, fecha, hora } | null
+export function guardarPreguntaCita(jid, datos) {
+  if (!jid || !datos?.citaId) return;
+  preguntaCita.set(jid, datos);
+  almacenClavesSesion?.set({ 'bf-pregunta': { [jid]: datos } }).catch(e => console.error('No se pudo guardar la pregunta pendiente:', e.message));
+}
+export function borrarPreguntaCita(jids) {
+  for (const j of jids.filter(Boolean)) {
+    if (preguntaCita.get(j) === null) continue;
+    preguntaCita.set(j, null);
+    almacenClavesSesion?.set({ 'bf-pregunta': { [j]: null } }).catch(() => {});
+  }
+}
+export async function preguntaCitaDe(jids, ahoraMs = Date.now()) {
+  for (const j of jids.filter(Boolean)) {
+    let p = preguntaCita.get(j);
+    if (p === undefined) {
+      try { p = (await almacenClavesSesion?.get('bf-pregunta', [j]))?.[j] || null; } catch (e) { p = null; }
+      if (preguntaCita.size > 5000) preguntaCita.clear();
+      preguntaCita.set(j, p);
+    }
+    if (!p) continue;
+    const inicio = instanteCita(p.fecha, p.hora);
+    if (inicio && ahoraMs > inicio) { borrarPreguntaCita([j]); continue; } // la cita ya pasó
+    return p;
+  }
+  return null;
+}
 
 const minutosATextoBot = min => {
   const h = Math.floor(min / 60), m = min % 60;
@@ -544,6 +591,52 @@ export function aplicarPlantilla(plantilla, datos) {
 
 function mencionaConfirmar(texto) { return /\bSI\b|\bSÍ\b|CONFIRM/i.test(texto); }
 
+// La plantilla del barbero a veces no ofrece REAGENDAR (o tampoco CANCELAR): se agrega con el mismo estilo,
+// justo debajo de la línea de CANCELAR, o antes de la última línea divisoria (━━━) si no la hay.
+export function asegurarOpcionReagendar(texto) {
+  if (/REAGEND/i.test(texto)) return texto;
+  const lineas = String(texto).split('\n');
+  const iCancelar = lineas.findIndex(l => /CANCELAR/i.test(l));
+  if (iCancelar >= 0) {
+    const prefijo = (lineas[iCancelar].match(/^(.*?)Responde/i) || [null, '• '])[1];
+    lineas.splice(iCancelar + 1, 0, `${prefijo}Responde *REAGENDAR* si quieres cambiar el día o la hora 🔄`);
+    return lineas.join('\n');
+  }
+  const linea = `👉 Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*.`;
+  let iDivisoria = -1;
+  lineas.forEach((l, i) => { if (/^\s*[━─—=_-]{5,}\s*$/.test(l)) iDivisoria = i; });
+  if (iDivisoria > 0) {
+    lineas.splice(iDivisoria, 0, linea);
+    return lineas.join('\n');
+  }
+  return `${texto}\n\n${linea}`;
+}
+
+// "Mis citas": las próximas citas del cliente y qué puede hacer con ellas
+export function mensajeMisCitas(citas) {
+  const una = citas.length === 1;
+  const nombre = obtenerPrimerNombre(citas[0]?.nombreCliente);
+  let texto = `🗓️ *${una ? 'Tu próxima cita' : 'Tus próximas citas'}, ${nombre}*\n\n`;
+  citas.forEach((c, i) => {
+    texto += `${una ? '' : `*${i + 1}.* `}${iconoCategoria(c.servicio)} *${c.servicio}*\n` +
+      `📅 ${fechaLegible(c.fecha)} · ⏰ ${c.hora}\n` +
+      (c.barbero ? `💈 Con ${c.barbero}\n` : '') +
+      `🔖 ${c.codigoReserva} · ${c.estado === 'Pendiente' ? '⏳ Por confirmar' : '✅ Confirmada'}\n\n`;
+  });
+  return texto +
+    `¿Qué quieres hacer?\n\n` +
+    `*1* 🔄 Reagendar ${una ? '(cambiar día u hora)' : 'una cita'}\n` +
+    `*2* ❌ Cancelar ${una ? 'la cita' : 'una cita'}\n` +
+    `*0* 🏠 Volver al menú`;
+}
+
+// Con varias citas: ¿cuál quiere reagendar o cancelar?
+export function mensajeElegirCita(citas, accion) {
+  return `${accion === 'reagendar' ? '🔄' : '❌'} ¿Cuál cita quieres *${accion}*? Escribe su número:\n\n` +
+    citas.map((c, i) => `*${i + 1}.* ${iconoCategoria(c.servicio)} ${c.servicio} — ${fechaLegible(c.fecha)} · ${c.hora}`).join('\n') +
+    `\n\n*0* 🏠 Volver al menú`;
+}
+
 function linkReservas() { return `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`; }
 
 function menuPrincipal(barberia, saludo, nombreCliente) {
@@ -563,9 +656,10 @@ function menuPrincipal(barberia, saludo, nombreCliente) {
     `*1* 📅 Reservar una cita\n` +
     `*2* 💲 Servicios y precios\n` +
     `*3* 📍 Ubicación y horario\n` +
-    `*4* 💳 Formas de pago\n\n` +
+    `*4* 🗓️ Mis citas (ver, cambiar o cancelar)\n` +
+    `*5* 💳 Formas de pago\n\n` +
     `_Por ejemplo, escribe *1* para reservar._\n` +
-    `Si ya tienes una cita, escribe *CANCELAR* o *REAGENDAR*.`;
+    `_Escribe *MENÚ* cuando quieras volver a ver estas opciones._`;
 }
 
 // ----------------- SEGUIMIENTO DE CITAS (confirmación, reseña, recordatorio) -----------------
@@ -673,6 +767,7 @@ export async function manejarNotificarCita(payload) {
     if (!creadaPorBarbero && !mencionaConfirmar(msgPersonalizado)) {
       msgPersonalizado += `\n\n👉 Responde *SI* para confirmar tu asistencia, o *CANCELAR* / *REAGENDAR* si no puedes.`;
     }
+    msgPersonalizado = asegurarOpcionReagendar(msgPersonalizado);
   }
 
   const msgConfirmacion = msgPersonalizado ||
@@ -695,6 +790,10 @@ export async function manejarNotificarCita(payload) {
 
   const enviado = await enviarMensajeHumano(socketActivo, jid, msgConfirmacion);
   ultimaInteraccionCliente.set(jid, ahora);
+  // Se le pidió responder SI: hasta que responda una opción válida, el bot le recuerda las opciones
+  if (enviado && !creadaPorBarbero && mencionaConfirmar(msgConfirmacion)) {
+    guardarPreguntaCita(jid, { citaId, nombreCliente, servicio, fecha, hora });
+  }
   if (enviado && citaId) confirmacionEnviada.set(citaId, ahora);
   // Solo si el mensaje salió queda "Por confirmar" (si no, el cliente nunca vería la pregunta).
   // Si la anotó el barbero en el local, el cliente ya está ahí: queda Confirmada.
@@ -959,11 +1058,14 @@ export async function revisarRecordatorios(ahoraMs = Date.now()) {
           codigo: c.codigoReserva || '', barberia: data.nombre || '', direccion: barberiaDatos.direccion || '', barbero: c.barbero || ''
         });
         if (c.estado === 'Pendiente' && !mencionaConfirmar(texto)) texto += `\n\n👉 Responde *SI* para confirmar que vienes.`;
-        await enviarMensajeHumano(socketActivo, jid, texto);
+        texto = asegurarOpcionReagendar(texto);
+        if (await enviarMensajeHumano(socketActivo, jid, texto) && c.estado === 'Pendiente') {
+          guardarPreguntaCita(jid, { citaId: c.id, nombreCliente: c.nombreCliente, servicio: c.servicio, fecha: fechaIso, hora: c.hora });
+        }
         enviados.push(c.id);
         continue;
       }
-      await enviarMensajeHumano(
+      const recordatorioEnviado = await enviarMensajeHumano(
         socketActivo,
         jid,
         `⏰ ¡Hola ${obtenerPrimerNombre(c.nombreCliente)}! Te recordamos tu cita ${cuando} en *${data.nombre || 'la barbería'}*:\n\n` +
@@ -974,6 +1076,9 @@ export async function revisarRecordatorios(ahoraMs = Date.now()) {
           ? `👉 Responde *SI* para confirmar que vienes, o *CANCELAR* / *REAGENDAR* si no puedes. 💈`
           : `Por favor llega 5 minutos antes. Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*. 💈`)
       );
+      if (recordatorioEnviado && c.estado === 'Pendiente') {
+        guardarPreguntaCita(jid, { citaId: c.id, nombreCliente: c.nombreCliente, servicio: c.servicio, fecha: fechaIso, hora: c.hora });
+      }
       enviados.push(c.id);
     }
   }
@@ -1282,6 +1387,34 @@ export async function procesarMensajeEntrante(sock, m) {
         await enviarMensajeHumano(sock, remitente, notaFinal ? `${menu}\n\n${notaFinal}` : menu);
       };
 
+      // ¿Tiene pendiente responder SI / CANCELAR sobre su cita? Solo valen esas opciones (y MENÚ para salir);
+      // cualquier otra cosa ("hola", "no", "amén") no cambia nada: se le recuerdan las opciones.
+      if (estado.nivel !== 'CONFIRMAR_CANCELACION') {
+        let pregunta = await preguntaCitaDe(jidsDelChat);
+        // Si la cita ya se canceló (desde la página o el panel), la pregunta ya no aplica
+        if (pregunta && !(await citaSigueActiva(pregunta.citaId))) {
+          borrarPreguntaCita(jidsDelChat);
+          pregunta = null;
+        }
+        if (pregunta) {
+          const esSi = INTENCION.confirmar.test(textoN);
+          const esCancelar = textoN.includes('cancel') || INTENCION.cancelar.test(textoN);
+          const esReagendar = textoN.includes('reagend') || INTENCION.reagendar.test(textoN);
+          const esMenu = /^(menu|inicio|opciones|volver|0)$/.test(textoN);
+          if (esMenu) {
+            borrarPreguntaCita(jidsDelChat);
+            await saludarConMenu();
+            return;
+          }
+          if (!esSi && !esCancelar && !esReagendar) {
+            console.log(`[Pregunta pendiente] ${remitente} escribió "${texto}": se le recuerdan las opciones de su cita.`);
+            await enviarMensajeHumano(sock, remitente, mensajeRespuestaNoValida(pregunta));
+            return;
+          }
+          borrarPreguntaCita(jidsDelChat); // respondió una opción válida: sigue el flujo normal
+        }
+      }
+
       // Si la conversación empieza con solo un número ("4"), primero se saluda y se muestran las opciones
       if (esInicioConversacion && soloNumeros) {
         await saludarConMenu();
@@ -1399,40 +1532,103 @@ export async function procesarMensajeEntrante(sock, m) {
         return null;
       };
 
+      // Cancelar una cita: primero se pide confirmar (1 = sí, 2 = no)
+      const pedirConfirmarCancelacion = async (cita) => {
+        const primerNombre = obtenerPrimerNombre(cita.nombreCliente);
+        // Muy cerca de la hora: la barbería no deja cancelar por aquí; el barbero responde personalmente
+        if (cita.motivoNoModificable) {
+          await enviarMensajeHumano(sock, remitente,
+            `⏰ ${primerNombre}, tu cita es a las *${cita.hora}*. ${cita.motivoNoModificable.replace(/ Escríbele al barbero por WhatsApp\.$/, '')}\n\nEl barbero te responderá por este chat en cuanto pueda. 🙏`);
+          return;
+        }
+        estadoCliente.set(remitente, {
+          nivel: 'CONFIRMAR_CANCELACION',
+          desde: Date.now(),
+          citaId: cita.id,
+          citaFecha: cita.fecha,
+          citaHora: cita.hora,
+          citaNombre: primerNombre
+        });
+        await enviarMensajeHumano(sock, remitente,
+          `Hola ${primerNombre}, encontramos tu cita:\n\n` +
+          `${iconoCategoria(cita.servicio)} *${cita.servicio}*\n` +
+          `📅 ${fechaLegible(cita.fecha)}\n` +
+          `⏰ ${cita.hora}\n` +
+          `🔖 ${cita.codigoReserva}\n\n` +
+          `¿Seguro que quieres cancelarla?\n\n` +
+          `*1.* Sí, cancelar ❌\n` +
+          `*2.* No, mantener mi cita ✅`);
+      };
+
+      // Reagendar una cita: enlace para elegir el nuevo día y hora
+      const enviarEnlaceReagendar = async (cita) => {
+        if (cita.motivoNoModificable) {
+          await enviarMensajeHumano(sock, remitente,
+            `⏰ ${cita.motivoNoModificable.replace(/ Escríbele al barbero por WhatsApp\.$/, '')}\n\nEl barbero te responderá por este chat en cuanto pueda. 🙏`);
+          return;
+        }
+        const url = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${encodeURIComponent(cita.tokenPublico)}`;
+        await enviarMensajeHumano(sock, remitente,
+          `🔄 *Cambiar tu cita*\n\n` +
+          `Para elegir un nuevo día y hora de tu cita (*${cita.servicio}*, ${fechaLegible(cita.fecha)} a las ${cita.hora}), entra aquí:\n` +
+          `👉 ${url}\n\n` +
+          `_Cuando elijas el nuevo horario, tu cita anterior se libera sola._`);
+      };
+
+      // "Mis citas": lista de próximas citas del cliente (null = no se pudo consultar)
+      const buscarMisCitasAsync = async () => {
+        if (!telSoloDigitos) return null;
+        try {
+          const res = await apiBotFetch(`/bot/${BARBERIA_SLUG}/mis-citas/${telSoloDigitos}`);
+          if (res.ok) return await res.json();
+        } catch (e) {
+          console.error('[Mis citas]', e.message);
+        }
+        return null;
+      };
+
+      // Dentro de "Mis citas": 1 = reagendar, 2 = cancelar, 0 = menú (y luego, con varias citas, cuál)
+      if ((estado.nivel === 'MIS_CITAS' || estado.nivel === 'MIS_CITAS_CUAL') && ahora - (estado.desde || 0) < 30 * 60 * 1000) {
+        const citas = estado.citas || [];
+        if (soloNumeros === '0' || /^(menu|inicio|volver|opciones)$/.test(textoN)) {
+          estadoCliente.set(remitente, { nivel: 'INICIO' });
+          await enviarMensajeHumano(sock, remitente, menuPrincipal(barberia, `💈 *${barberia.nombre || 'Bienvenido'}*`));
+          return;
+        }
+        if (estado.nivel === 'MIS_CITAS') {
+          const accion = (soloNumeros === '1' || /reagend|cambiar|mover/.test(textoN)) ? 'reagendar'
+            : (soloNumeros === '2' || /cancel/.test(textoN)) ? 'cancelar' : null;
+          if (!accion) {
+            await enviarMensajeHumano(sock, remitente,
+              `🤔 Esa opción no es válida. Responde:\n\n*1* 🔄 para reagendar\n*2* ❌ para cancelar\n*0* 🏠 para volver al menú`);
+            return;
+          }
+          if (citas.length === 1) {
+            estadoCliente.set(remitente, { nivel: 'INICIO' });
+            await (accion === 'reagendar' ? enviarEnlaceReagendar : pedirConfirmarCancelacion)(citas[0]);
+            return;
+          }
+          estadoCliente.set(remitente, { nivel: 'MIS_CITAS_CUAL', accion, citas, desde: ahora });
+          await enviarMensajeHumano(sock, remitente, mensajeElegirCita(citas, accion));
+          return;
+        }
+        const indice = parseInt(soloNumeros, 10) - 1;
+        if (isNaN(indice) || indice < 0 || indice >= citas.length) {
+          await enviarMensajeHumano(sock, remitente,
+            `🤔 Esa opción no es válida. Escribe el número de la cita (del *1* al *${citas.length}*), o *0* para volver al menú.`);
+          return;
+        }
+        estadoCliente.set(remitente, { nivel: 'INICIO' });
+        await (estado.accion === 'reagendar' ? enviarEnlaceReagendar : pedirConfirmarCancelacion)(citas[indice]);
+        return;
+      }
+
       // 1. SOLICITUD DE CANCELACIÓN ("cancelar", "cancelar cita", etc.)
       if (texto.includes('cancelar') || texto.includes('cancelo') || INTENCION.cancelar.test(textoN)) {
         try {
           const cita = await buscarCitaClienteAsync();
           if (cita) {
-            const primerNombre = obtenerPrimerNombre(cita.nombreCliente);
-
-            // Muy cerca de la hora: la barbería no deja cancelar por aquí; el barbero responde personalmente
-            if (cita.motivoNoModificable) {
-              await enviarMensajeHumano(sock, remitente,
-                `⏰ ${primerNombre}, tu cita es a las *${cita.hora}*. ${cita.motivoNoModificable.replace(/ Escríbele al barbero por WhatsApp\.$/, '')}\n\nEl barbero te responderá por este chat en cuanto pueda. 🙏`);
-              return;
-            }
-
-            estadoCliente.set(remitente, {
-              nivel: 'CONFIRMAR_CANCELACION',
-              desde: Date.now(),
-              citaId: cita.id,
-              citaFecha: cita.fecha,
-              citaHora: cita.hora,
-              citaNombre: primerNombre
-            });
-
-            const msjConfirmacion =
-              `Hola ${primerNombre}, encontramos tu cita:\n\n` +
-              `${iconoCategoria(cita.servicio)} *${cita.servicio}*\n` +
-              `📅 ${fechaLegible(cita.fecha)}\n` +
-              `⏰ ${cita.hora}\n` +
-              `🔖 ${cita.codigoReserva}\n\n` +
-              `¿Seguro que quieres cancelarla?\n\n` +
-              `*1.* Sí, cancelar ❌\n` +
-              `*2.* No, mantener mi cita ✅`;
-
-            await enviarMensajeHumano(sock, remitente, msjConfirmacion);
+            await pedirConfirmarCancelacion(cita);
             return;
           } else if (!telSoloDigitos) {
             await enviarMensajeHumano(
@@ -1458,8 +1654,6 @@ export async function procesarMensajeEntrante(sock, m) {
       if (texto.includes('reagendar') || INTENCION.reagendar.test(textoN)) {
         try {
           const cita = await buscarCitaClienteAsync();
-          let urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
-          let detalle = '';
 
           // Sin cita activa no hay nada que cambiar: ofrecer reservar una nueva
           if (!cita || !cita.tokenPublico) {
@@ -1469,24 +1663,7 @@ export async function procesarMensajeEntrante(sock, m) {
             return;
           }
 
-          if (cita.motivoNoModificable) {
-            await enviarMensajeHumano(sock, remitente,
-              `⏰ ${cita.motivoNoModificable.replace(/ Escríbele al barbero por WhatsApp\.$/, '')}\n\nEl barbero te responderá por este chat en cuanto pueda. 🙏`);
-            return;
-          }
-
-          if (cita && cita.tokenPublico) {
-            urlReagendar = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${encodeURIComponent(cita.tokenPublico)}`;
-            detalle = ` de tu cita (*${cita.servicio}*, ${fechaLegible(cita.fecha)} a las ${cita.hora})`;
-          }
-
-          const msjReagendar =
-            `🔄 *Cambiar tu cita*\n\n` +
-            `Para elegir un nuevo día y hora${detalle}, entra aquí:\n` +
-            `👉 ${urlReagendar}\n\n` +
-            `_Cuando elijas el nuevo horario, tu cita anterior se libera sola._`;
-
-          await enviarMensajeHumano(sock, remitente, msjReagendar);
+          await enviarEnlaceReagendar(cita);
           return;
         } catch (e) {}
       }
@@ -1501,13 +1678,24 @@ export async function procesarMensajeEntrante(sock, m) {
           return;
         }
         const nombre = obtenerPrimerNombre(cita.nombreCliente);
-        const yaConfirmada = cita.estado === 'Confirmada';
-        if (!yaConfirmada) await cambiarEstadoCita(cita.id, 'Confirmada');
+        if (cita.estado !== 'Confirmada') await cambiarEstadoCita(cita.id, 'Confirmada');
+        // Siempre el mismo mensaje: para el cliente, responder SI es confirmar su asistencia
         await enviarMensajeHumano(sock, remitente,
-          `${yaConfirmada ? `¡Tu cita ya estaba confirmada, ${nombre}!` : `¡Listo ${nombre}! Tu cita quedó *confirmada* ✅`}\n\n` +
+          `¡Listo ${nombre}! Tu cita quedó *confirmada* ✅\n\n` +
           `${iconoCategoria(cita.servicio)} ${cita.servicio}\n📅 ${fechaLegible(cita.fecha)} a las ${cita.hora}\n\n` +
           `¡Te esperamos! 💈`);
         return;
+      }
+
+      // 3b. Respondió "No" (u otro "no" suelto): no es ninguna de las opciones. Si tiene una cita,
+      // se le explica qué responder en vez de mostrarle el menú general. Nada se cancela con un "no".
+      if (INTENCION.negacion.test(textoN)) {
+        const cita = await buscarCitaClienteAsync();
+        if (cita) {
+          saludoPendiente.delete(remitente);
+          await enviarMensajeHumano(sock, remitente, mensajeRespuestaNoValida(cita));
+          return;
+        }
       }
 
       // Agrupar categorías de servicios
@@ -1557,6 +1745,28 @@ export async function procesarMensajeEntrante(sock, m) {
           await enviarMensajeHumano(sock, remitente, lista);
           return;
         }
+      }
+
+      // 4b. Mis citas (opción 4): ver las próximas citas y reagendar o cancelar
+      if (soloNumeros === '4' || INTENCION.misCitas.test(textoN)) {
+        const citas = await buscarMisCitasAsync();
+        if (!citas) {
+          await enviarMensajeHumano(sock, remitente, telSoloDigitos
+            ? `😕 No pudimos consultar tus citas en este momento. Inténtalo de nuevo en unos minutos, o el barbero te ayudará por este chat.`
+            : `😕 No pudimos identificar tu número de WhatsApp para buscar tus citas. El barbero te ayudará personalmente por este chat en cuanto pueda.`);
+          return;
+        }
+        if (!citas.length) {
+          estadoCliente.set(remitente, { nivel: 'INICIO' });
+          await enviarMensajeHumano(sock, remitente,
+            `📭 No tienes citas próximas con este número.\n\n` +
+            `📅 Reserva aquí en menos de un minuto:\n👉 ${linkReservas()}\n\n` +
+            `_Escribe *MENÚ* para ver todas las opciones._`);
+          return;
+        }
+        estadoCliente.set(remitente, { nivel: 'MIS_CITAS', citas, desde: ahora });
+        await enviarMensajeHumano(sock, remitente, mensajeMisCitas(citas));
+        return;
       }
 
       // 5. Precios y Servicios (Abrir submenú de categorías)
@@ -1613,9 +1823,9 @@ export async function procesarMensajeEntrante(sock, m) {
         return;
       }
 
-      // 8. Métodos de Pago
+      // 8. Métodos de Pago (opción 5)
       if (
-        soloNumeros === '4' ||
+        soloNumeros === '5' ||
         INTENCION.pagos.test(textoN)
       ) {
         let msgPago = `💳 *Formas de pago*\n\n`;

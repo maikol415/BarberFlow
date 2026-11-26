@@ -28,6 +28,7 @@ const {
   avisoDeHoy,
   INTENCION,
   probarConversacion,
+  asegurarOpcionReagendar,
   horasDeRecordatorio,
   aplicarPlantilla,
   respuestaAgradecimiento,
@@ -199,16 +200,18 @@ r = await cliente(nuevo3, 'tienen parqueadero?');
 comprobar('Primer mensaje que no entiende: bienvenida + menú + aviso del barbero', r, ['Bienvenid', 'el barbero te responderá']);
 
 r = await cliente(bob, 'hola');
-comprobar('Saludo con menú principal', r, ['Escribe solo el número', '*1* 📅', 'Servicios y precios', 'CANCELAR']);
+comprobar('Saludo con menú principal', r, ['Escribe solo el número', '*1* 📅', 'Servicios y precios', '*4* 🗓️ Mis citas', '*5* 💳', 'MENÚ']);
 
 r = await cliente(bob, '2');
 comprobar('Menú de servicios con íconos por categoría', r, ['Servicios y precios', '✂️ Cortes']);
 
 const nuevo = { remoteJid: `5730077${base}@s.whatsapp.net` };
+r = await cliente(nuevo, '5');
+comprobar('Conversación que empieza con "5": primero saluda con el menú', r, ['Bienvenid', '*5* 💳']);
+r = await cliente(nuevo, '5');
+comprobar('Ya en la conversación, "5" muestra las formas de pago', r, ['Formas de pago']);
 r = await cliente(nuevo, '4');
-comprobar('Conversación que empieza con "4": primero saluda con el menú', r, ['Bienvenid', '*4* 💳']);
-r = await cliente(nuevo, '4');
-comprobar('Ya en la conversación, "4" muestra las formas de pago', r, ['Formas de pago']);
+comprobar('"4" sin citas: lo dice y ofrece reservar', r, ['No tienes citas próximas', 'index.html?b=']);
 r = await cliente(nuevo, 'a las 3 tienen cupo?');
 comprobar('"a las 3..." no abre la opción 3 por error', /Dónde estamos/.test(r) ? 'abrió ubicación' : 'ok', ['ok']);
 r = await cliente(nuevo, 'a qué hora abren?');
@@ -279,7 +282,11 @@ r = await cliente(telCarlaJid, 'Si');
 const estadoTrasSi = await (await fetch(`${API}/bot/${SLUG}/cita/${citaCarla.id}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY } })).json();
 comprobar('El cliente responde SI: la cita pasa a Confirmada', `${r} | ${estadoTrasSi.estado}`, ['quedó *confirmada*', '| Confirmada']);
 r = await cliente(telCarlaJid, 'sí');
-comprobar('Un segundo SI avisa que ya estaba confirmada', r, ['ya estaba confirmada']);
+comprobar('Un segundo SI vuelve a decir que quedó confirmada', r, ['quedó *confirmada*']);
+r = await cliente(telCarlaJid, 'No');
+comprobar('Un "No" suelto explica las opciones de su cita (no muestra el menú)', r, ['no es una de las opciones', citaCarla.hora, '*SI*', '*CANCELAR*', '*REAGENDAR*']);
+const estadoTrasNo = await (await fetch(`${API}/bot/${SLUG}/cita/${citaCarla.id}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY } })).json();
+comprobar('Un "No" no cancela la cita', estadoTrasNo.estado, ['Confirmada']);
 
 // Anuncio matutino
 const anuncio = armarAnuncioMatutino({ nombre: 'Barbería X', fecha: manana, citas: [
@@ -423,5 +430,60 @@ enviados.length = 0;
 await manejarNotificarListaEspera({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', nombreCliente: 'maria paz', telefonoCliente: telEspera, servicioId: 5, fecha: manana, hora: '03:20pm' });
 comprobar('Lista de espera: avisa el turno libre con enlace al día y servicio', enviados.map(e => e.texto).join(' | '), ['Hola Maria', 'Se liberó un turno', legible(manana), '3:20', 'lista de espera', `&fecha=${manana}&servicio=5`]);
 comprobar('Lista de espera: no avisa por otra barbería', (await manejarNotificarListaEspera({ barberiaSlug: 'otra', telefonoCliente: telEspera })).razon || '', ['otra barbería']);
+// Pregunta pendiente: tras la confirmación ("Responde SI / CANCELAR") solo valen esas opciones
+const telPepe = `+57304${base}`;
+const pepe = { remoteJid: `${telPepe.replace(/\D/g, '')}@s.whatsapp.net` };
+const citaPepe = await crearCita(telPepe, 'El Pepe', pasado, '06:00 PM');
+await manejarNotificarCita({ ...payloadBase, citaId: citaPepe.id, codigoReserva: citaPepe.codigoReserva, nombreCliente: 'El Pepe', telefonoCliente: telPepe, fecha: pasado, hora: citaPepe.hora });
+for (const t of ['Hola', 'amén', 'No', '1']) {
+  r = await cliente(pepe, t);
+  comprobar(`Pregunta pendiente: "${t}" recibe las opciones SI / CANCELAR`, r, ['no es una de las opciones', citaPepe.hora, '*SI*', '*CANCELAR*']);
+}
+const estadoPepe = await (await fetch(`${API}/bot/${SLUG}/cita/${citaPepe.id}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY } })).json();
+comprobar('Pregunta pendiente: otras palabras no cambian la cita (sigue por confirmar)', estadoPepe.estado, ['Pendiente']);
+r = await cliente(pepe, 'Si');
+comprobar('Pregunta pendiente: SI confirma la cita', r, ['quedó *confirmada*', 'El Pepe']);
+r = await cliente(pepe, 'Hola');
+comprobar('Ya respondió: un "hola" vuelve a mostrar el menú normal', r, ['Bienvenid']);
+// MENÚ sale de la pregunta pendiente
+await manejarNotificarCita({ ...payloadBase, citaId: citaPepe.id, codigoReserva: citaPepe.codigoReserva, nombreCliente: 'El Pepe', telefonoCliente: telPepe, fecha: pasado, hora: citaPepe.hora });
+r = await cliente(pepe, 'menú');
+comprobar('Pregunta pendiente: MENÚ muestra las opciones generales', r, ['Escribe solo el número']);
+// CANCELAR sí funciona con la pregunta pendiente
+await manejarNotificarCita({ ...payloadBase, citaId: citaPepe.id, codigoReserva: citaPepe.codigoReserva, nombreCliente: 'El Pepe', telefonoCliente: telPepe, fecha: pasado, hora: citaPepe.hora });
+r = await cliente(pepe, 'CANCELAR');
+comprobar('Pregunta pendiente: CANCELAR pide confirmar la cancelación', r, ['encontramos tu cita', citaPepe.hora]);
+r = await cliente(pepe, '2');
+
+// Mis citas (opción 4): con dos citas, elegir cuál reagendar o cancelar
+const citaPepe2 = await crearCita(telPepe, 'El Pepe', manana, '06:20 PM');
+r = await cliente(pepe, '4');
+comprobar('Mis citas: muestra sus próximas citas y las opciones', r, ['Tus próximas citas', citaPepe.hora, citaPepe2.hora, '*1* 🔄 Reagendar', '*2* ❌ Cancelar', '*0* 🏠']);
+r = await cliente(pepe, 'hola');
+comprobar('Mis citas: una palabra que no es opción recuerda las opciones', r, ['no es válida', '*1*', '*2*', '*0*']);
+r = await cliente(pepe, '1');
+comprobar('Mis citas: con varias, pregunta cuál reagendar', r, ['¿Cuál cita quieres *reagendar*', '*1.*', '*2.*']);
+r = await cliente(pepe, '9');
+comprobar('Mis citas: número que no existe', r, ['no es válida', 'del *1* al *2*']);
+r = await cliente(pepe, '2');
+comprobar('Mis citas: manda el enlace para reagendar la cita elegida', r, ['Cambiar tu cita', 'reagendar=', citaPepe.hora]);
+r = await cliente(pepe, 'mis citas');
+r = await cliente(pepe, '2');
+r = await cliente(pepe, '1');
+comprobar('Mis citas: cancelar la primera pide confirmar', r, ['¿Seguro que quieres cancelarla?', citaPepe2.hora]);
+r = await cliente(pepe, '1');
+comprobar('Mis citas: y la cancela', r, ['cancelada correctamente']);
+r = await cliente(pepe, '4');
+comprobar('Mis citas: con una sola cita, opciones directas', r, ['Tu próxima cita', citaPepe.hora, '(cambiar día u hora)']);
+r = await cliente(pepe, '0');
+comprobar('Mis citas: 0 vuelve al menú', r, ['Escribe solo el número']);
+
+// Plantilla del barbero sin REAGENDAR: se agrega debajo de CANCELAR con el mismo estilo
+const plantillaSinReagendar = '¿Necesitas gestionar tu turno?\n• Responde *SI* para reconfirmar asistencia ✅\n• Responde *CANCELAR* si se te presentó un imprevisto ❌\n━━━━━━━━━━\n¡Te esperamos!';
+comprobar('Plantilla sin REAGENDAR: se agrega debajo de CANCELAR', asegurarOpcionReagendar(plantillaSinReagendar),
+  ['❌\n• Responde *REAGENDAR* si quieres cambiar el día o la hora 🔄\n━━━━']);
+comprobar('Recordatorio sin CANCELAR ni REAGENDAR: se agrega antes de la última línea', asegurarOpcionReagendar('Hola\n━━━━━━\nResponde *CONFIRMO* ✅\n━━━━━━\n¡Nos vemos!'),
+  ['CONFIRMO* ✅\n👉 Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*.\n━━━━━━\n¡Nos vemos!']);
+
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);
