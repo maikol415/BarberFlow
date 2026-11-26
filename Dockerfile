@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends git ca-certific
 WORKDIR /bot
 COPY whatsapp-bot/package.json whatsapp-bot/package-lock.json ./
 RUN npm ci --omit=dev --no-audit --no-fund
-COPY whatsapp-bot/bot.js whatsapp-bot/auth-postgres.js ./
+COPY whatsapp-bot/bot.js whatsapp-bot/gestor.js whatsapp-bot/auth-postgres.js ./
 
 # Etapa 3: Entorno de ejecución (API + bot en el mismo servicio)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS final
