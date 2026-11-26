@@ -43,10 +43,17 @@
   window.PORTADAS_BARBERIA = PORTADAS;
 
   // Fondo CSS de una portada ("preset:puntos", una foto data:/https:, o vacío = degradado)
-  // posicion: "x y" en porcentaje ("50 30" = centrada y un poco hacia arriba)
+  // posicion: "x y" en porcentaje ("50 30" = centrada y un poco hacia arriba) y, opcional, el zoom: "50 30 150".
+  // Sin zoom la foto cubre la franja (cover); con zoom su ancho es ese % del ancho de la franja.
+  window.encuadrePortada = function (posicion) {
+    const m = /^(\d{1,3}) (\d{1,3})(?: (\d{3}))?$/.exec(String(posicion || '').trim());
+    if (!m) return { x: 50, y: 50, zoom: 100 };
+    return { x: Math.min(100, +m[1]), y: Math.min(100, +m[2]), zoom: Math.max(100, Math.min(300, +(m[3] || 100))) };
+  };
+  window.tamanoPortada = zoom => (zoom > 100 ? `${zoom}% auto` : 'cover');
   function posicionCss(posicion) {
-    const m = /^(\d{1,3}) (\d{1,3})$/.exec(String(posicion || '').trim());
-    return m ? `${Math.min(100, +m[1])}% ${Math.min(100, +m[2])}%` : 'center';
+    const e = window.encuadrePortada(posicion);
+    return `${e.x}% ${e.y}% / ${window.tamanoPortada(e.zoom)}`;
   }
 
   window.fondoPortada = function (portadaUrl, colorHex, posicion) {
@@ -57,7 +64,7 @@
       return p.css(rgb);
     }
     if (valor) {
-      return `linear-gradient(to bottom, rgba(11,15,25,.05), rgba(17,24,39,.95)), url("${valor.replace(/"/g, '%22')}") ${posicionCss(posicion)} / cover`;
+      return `linear-gradient(to bottom, rgba(11,15,25,.05), rgba(17,24,39,.95)), url("${valor.replace(/"/g, '%22')}") ${posicionCss(posicion)}`;
     }
     return PORTADAS.degradado.css(rgb);
   };

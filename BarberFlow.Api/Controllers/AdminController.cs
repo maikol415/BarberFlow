@@ -147,7 +147,7 @@ public class AdminController : ControllerBase
                  portada.StartsWith("data:image/webp;base64,") || portada.StartsWith("https://") || portada.StartsWith("/uploads/"));
             if (!valida) return BadRequest(new { message = "La imagen de portada no es válida o es demasiado grande." });
             if (barberia.PortadaUrl != portada) barberia.ReaccionesPortada = ""; // portada nueva: reacciones desde cero
-            if (dto.PortadaPosicion != null && System.Text.RegularExpressions.Regex.IsMatch(dto.PortadaPosicion, @"^(100|\d{1,2}) (100|\d{1,2})$"))
+            if (dto.PortadaPosicion != null && System.Text.RegularExpressions.Regex.IsMatch(dto.PortadaPosicion, @"^(100|\d{1,2}) (100|\d{1,2})( (1\d\d|2\d\d|300))?$"))
                 barberia.PortadaPosicion = dto.PortadaPosicion;
             barberia.PortadaUrl = portada;
         }

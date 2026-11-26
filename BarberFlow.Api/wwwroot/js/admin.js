@@ -257,19 +257,26 @@ function pintarPreviewPortada() {
   });
 }
 
-// Encuadre de la portada: arrastrar la foto o mover las barras cambia qué parte se ve ("x y" en %)
+// Encuadre de la portada: arrastrar la foto o mover las barras cambia qué parte se ve ("x y zoom", en %)
 function leerPosicionPortada() {
-  const m = /^(\d{1,3}) (\d{1,3})$/.exec(barberiaActual.portadaPosicion || '');
-  return m ? [Math.min(100, +m[1]), Math.min(100, +m[2])] : [50, 50];
+  const e = encuadrePortada(barberiaActual.portadaPosicion);
+  return [e.x, e.y, e.zoom];
 }
 
-function fijarPosicionPortada(x, y) {
+function fijarPosicionPortada(x, y, zoom = leerPosicionPortada()[2]) {
   const lim = v => Math.max(0, Math.min(100, Math.round(v)));
-  barberiaActual.portadaPosicion = `${lim(x)} ${lim(y)}`;
+  const z = Math.max(100, Math.min(300, Math.round(zoom / 5) * 5));
+  // Sin zoom la foto ocupa todo el ancho: a los lados no hay nada que mover
+  const px = z > 100 ? lim(x) : 50;
+  barberiaActual.portadaPosicion = z > 100 ? `${px} ${lim(y)} ${z}` : `${px} ${lim(y)}`;
   const prev = document.getElementById('preview-portada');
-  prev.style.backgroundPosition = `${lim(x)}% ${lim(y)}%`;
-  document.getElementById('portada-pos-x').value = lim(x);
+  prev.style.backgroundPosition = `${px}% ${lim(y)}%`;
+  prev.style.backgroundSize = `auto, ${tamanoPortada(z)}`; // capa 1: sombreado; capa 2: la foto
+  document.getElementById('portada-pos-x').value = px;
   document.getElementById('portada-pos-y').value = lim(y);
+  document.getElementById('portada-zoom').value = z;
+  document.getElementById('fila-portada-pos-x').classList.toggle('hidden', z <= 100);
+  document.getElementById('nota-portada-zoom').classList.toggle('hidden', z > 100);
 }
 
 function configurarEncuadrePortada(prev, esFoto) {
@@ -277,14 +284,14 @@ function configurarEncuadrePortada(prev, esFoto) {
   prev.style.cursor = esFoto ? 'grab' : '';
   prev.style.touchAction = esFoto ? 'none' : '';
   if (!esFoto) return;
-  const [x, y] = leerPosicionPortada();
-  document.getElementById('portada-pos-x').value = x;
-  document.getElementById('portada-pos-y').value = y;
+  const [x, y, z] = leerPosicionPortada();
+  fijarPosicionPortada(x, y, z);
   if (prev.dataset.encuadreListo) return;
   prev.dataset.encuadreListo = '1';
 
-  document.getElementById('portada-pos-x').oninput = e => fijarPosicionPortada(+e.target.value, leerPosicionPortada()[1]);
-  document.getElementById('portada-pos-y').oninput = e => fijarPosicionPortada(leerPosicionPortada()[0], +e.target.value);
+  document.getElementById('portada-pos-x').oninput = e => { const [, y, z] = leerPosicionPortada(); fijarPosicionPortada(+e.target.value, y, z); };
+  document.getElementById('portada-pos-y').oninput = e => { const [x, , z] = leerPosicionPortada(); fijarPosicionPortada(x, +e.target.value, z); };
+  document.getElementById('portada-zoom').oninput = e => { const [x, y] = leerPosicionPortada(); fijarPosicionPortada(x, y, +e.target.value); };
   // Arrastrar: mover el dedo hacia abajo baja la foto (se ve más de la parte de arriba)
   let inicio = null;
   prev.addEventListener('pointerdown', e => {
@@ -296,7 +303,7 @@ function configurarEncuadrePortada(prev, esFoto) {
   prev.addEventListener('pointermove', e => {
     if (!inicio) return;
     const r = prev.getBoundingClientRect();
-    fijarPosicionPortada(inicio.pos[0] - (e.clientX - inicio.px) / r.width * 100, inicio.pos[1] - (e.clientY - inicio.py) / r.height * 100);
+    fijarPosicionPortada(inicio.pos[0] - (e.clientX - inicio.px) / r.width * 100, inicio.pos[1] - (e.clientY - inicio.py) / r.height * 100, inicio.pos[2]);
   });
   const soltar = () => { if (inicio) { inicio = null; prev.style.cursor = 'grab'; } };
   prev.addEventListener('pointerup', soltar);

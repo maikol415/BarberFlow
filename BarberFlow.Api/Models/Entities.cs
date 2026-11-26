@@ -32,7 +32,7 @@ public class Barberia
     public string LogoUrl { get; set; } = "";
     public string ColorPrimario { get; set; } = "#2563EB"; // Color de marca de la página pública
     public string PortadaUrl { get; set; } = "";           // Imagen de fondo/portada de la página pública
-    public string PortadaPosicion { get; set; } = "50 50"; // Encuadre de la foto: "x y" en % (qué parte se ve)
+    public string PortadaPosicion { get; set; } = "50 50"; // Encuadre de la foto: "x y" en % (qué parte se ve) y, opcional, "x y zoom" (zoom 100–300 %)
     public string HorarioSemanal { get; set; } = "";       // JSON con los rangos de cada día (ver Services/HorarioSemanal.cs)
     public int DiasMaximoReserva { get; set; } = 30;       // Hasta cuántos días adelante se puede reservar
     public int HorasLimiteCancelar { get; set; } = 2;      // El cliente cancela/reprograma hasta X horas antes (0 = siempre)
