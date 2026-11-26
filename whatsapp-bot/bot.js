@@ -234,6 +234,17 @@ export function estadoPausa(jids, barberia, ahoraMs = Date.now()) {
   if (!ultima || pasado >= minutos * 60 * 1000) return null;
   return pasado < MINUTOS_PAUSA_TOTAL * 60 * 1000 ? 'total' : 'parcial';
 }
+// El cliente pide el MENÚ: "Menú", "MENU", "menù", "Menuuu", "el menú", "pásame el menú", "menú porfa", "meni"...
+// (el texto ya viene normalizado: minúsculas, sin tildes, sin signos ni emojis). Funciona aunque el barbero esté
+// hablando en el chat. No cuenta si el menú es parte de una frase ("ese menú no sirve", "el menú de hoy").
+const PALABRA_MENU = '(menu+s?|meni|mneu|mebu|nemu|mrnu)';
+const PEDIR_MENU = '(ver|mostrar|muestrame|muestreme|mandame|mandeme|enviame|envieme|pasame|paseme|dame|deme|quiero|quiero ver|necesito|necesito ver|me muestras|me mandas|me pasas|me envias)';
+const CORTESIA_MENU = '(por favor|porfa|porfavor|plis|pliss|pls|please|pues|ps|ya|gracias)';
+const RE_PIDE_MENU = new RegExp(`^(${PEDIR_MENU} )?(el |un )?${PALABRA_MENU}( ${PALABRA_MENU})*( principal)?( ${CORTESIA_MENU})*$`);
+export function pideMenuExplicito(textoN) {
+  return RE_PIDE_MENU.test(String(textoN || '').trim());
+}
+
 // ¿El barbero escribió a mano en este chat (por su número o por su @lid) desde ese momento?
 export function barberoEscribioDesde(jid, desdeMs) {
   const relacionados = [jid];
@@ -254,9 +265,18 @@ export function retomaConversacionBot(texto, textoN = normalizarTexto(texto)) {
   const palabras = textoN.split(' ').filter(Boolean);
   if (INTENCION.confirmar.test(textoN)) return true;
   if (/\bcancel/.test(textoN) || /\breagend/.test(textoN) || INTENCION.cancelar.test(textoN) || INTENCION.reagendar.test(textoN)) return true;
-  if (/^(menu|inicio|opciones|volver)$/.test(textoN)) return true;
+  if (pideMenuExplicito(textoN) || /^(inicio|opciones|volver)$/.test(textoN)) return true;
   return palabras.length <= 4 && INTENCION.saludo.test(textoN) && !INTENCION.gracias.test(textoN);
 }
+// Después de "2. No, mantener mi cita", durante estos minutos un "1" se toma como que se arrepintió
+export const MINUTOS_ARREPENTIRSE = 5;
+export function mensajeCambioDeOpinion(cita) {
+  return `🤔 ¿Cambiaste de opinión${cita.citaNombre ? `, ${cita.citaNombre}` : ''}?\n\n` +
+    `Responde *1* para *cancelar* tu cita del *${fechaLegible(cita.citaFecha)} a las ${cita.citaHora}*, ` +
+    `o *2* para *mantenerla*. ✂️\n\n` +
+    `_¿Querías otra cosa? Escribe *MENÚ* para ver todas las opciones._`;
+}
+
 // Menú mostrado por chat: otro saludo seguido ("Oe" "Oe") no lo repite durante 2 minutos
 const ultimoMenuMostrado = new Map();
 export const MINUTOS_SIN_REPETIR_MENU = 2;
@@ -1412,7 +1432,12 @@ export async function procesarMensajeEntrante(sock, m) {
       // El barbero está hablando personalmente con este cliente: no interrumpir
       const jidsDelChat = [remitente, telSoloDigitos && `${telSoloDigitos}@s.whatsapp.net`, telSoloDigitos && lidPorTelefono.get(telSoloDigitos)];
       const pausa = sock.esPrueba ? null : estadoPausa(jidsDelChat, barberia);
-      if (pausa === 'total' || (pausa === 'parcial' && !retomaConversacionBot(texto, textoN))) {
+      if (pausa && pideMenuExplicito(textoN)) {
+        // "MENÚ" sola es una orden clara para el bot (a veces el mismo barbero le dice al cliente que la escriba):
+        // funciona siempre y el bot retoma el chat, así el cliente puede seguir con el número de la opción
+        liberarPausa(jidsDelChat);
+        console.log(`[Atención humana] ${remitente} pidió el MENÚ: el bot retoma la conversación.`);
+      } else if (pausa === 'total' || (pausa === 'parcial' && !retomaConversacionBot(texto, textoN))) {
         saludoPendiente.delete(remitente);
         console.log(`[Atención humana] ${remitente} escribió, pero el barbero está atendiendo ese chat: el bot no responde.`);
         return;
@@ -1423,7 +1448,7 @@ export async function procesarMensajeEntrante(sock, m) {
         console.log(`[Atención humana] ${remitente} escribió "${texto}" y el barbero no escribe hace más de ${MINUTOS_PAUSA_TOTAL} min: el bot retoma la conversación.`);
       }
 
-      const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
+      let estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };
 
       // Saludo de bienvenida con el menú (personalizado si ya es cliente)
       const saludarConMenu = async (notaFinal = '') => {
@@ -1460,7 +1485,7 @@ export async function procesarMensajeEntrante(sock, m) {
           const esSi = INTENCION.confirmar.test(textoN);
           const esCancelar = textoN.includes('cancel') || INTENCION.cancelar.test(textoN);
           const esReagendar = textoN.includes('reagend') || INTENCION.reagendar.test(textoN);
-          const esMenu = /^(menu|inicio|opciones|volver|0)$/.test(textoN);
+          const esMenu = pideMenuExplicito(textoN) || /^(inicio|opciones|volver|0)$/.test(textoN);
           if (esMenu) {
             borrarPreguntaCita(jidsDelChat);
             await saludarConMenu();
@@ -1481,11 +1506,24 @@ export async function procesarMensajeEntrante(sock, m) {
         return;
       }
 
+      // ¿Acaba de elegir "2. Mantener mi cita" y se arrepintió ("1")? Se le vuelve a preguntar antes de cancelar
+      if (estado.nivel === 'CITA_MANTENIDA') {
+        const reciente = ahora - (estado.desde || 0) < MINUTOS_ARREPENTIRSE * 60 * 1000;
+        if (reciente && soloNumeros === '1') {
+          estadoCliente.set(remitente, { ...estado, nivel: 'CONFIRMAR_CANCELACION', desde: ahora });
+          console.log(`[Cancelar] ${remitente} eligió mantener su cita y luego escribió "1": se le vuelve a preguntar.`);
+          await enviarMensajeHumano(sock, remitente, mensajeCambioDeOpinion(estado));
+          return;
+        }
+        estadoCliente.set(remitente, { nivel: 'INICIO' });
+        estado = { nivel: 'INICIO' };
+      }
+
       // ----------------- FLUJO DE CANCELACIÓN CON CONFIRMACIÓN SEGURA -----------------
       if (estado.nivel === 'CONFIRMAR_CANCELACION') {
         const palabras = texto.split(/[^a-z0-9áéíóúñü]+/).filter(Boolean);
         const vencido = ahora - (estado.desde || 0) > 10 * 60 * 1000;
-        const quiereMenu = soloNumeros === '0' || ['menu', 'menú', 'inicio', 'volver'].includes(texto);
+        const quiereMenu = soloNumeros === '0' || pideMenuExplicito(textoN) || ['inicio', 'volver'].includes(textoN);
 
         if (vencido || quiereMenu) {
           // La pregunta caducó (10 min) o pidió el menú: seguir con el flujo normal
@@ -1548,7 +1586,8 @@ export async function procesarMensajeEntrante(sock, m) {
           }
 
           if (dijoNo) {
-            estadoCliente.set(remitente, { nivel: 'INICIO' });
+            // Por unos minutos se recuerda la cita: si se arrepiente y escribe "1", se le vuelve a preguntar
+            estadoCliente.set(remitente, { ...estado, nivel: 'CITA_MANTENIDA', desde: ahora });
             await enviarMensajeHumano(
               sock,
               remitente,
@@ -1650,7 +1689,7 @@ export async function procesarMensajeEntrante(sock, m) {
       // Dentro de "Mis citas": 1 = reagendar, 2 = cancelar, 0 = menú (y luego, con varias citas, cuál)
       if ((estado.nivel === 'MIS_CITAS' || estado.nivel === 'MIS_CITAS_CUAL') && ahora - (estado.desde || 0) < 30 * 60 * 1000) {
         const citas = estado.citas || [];
-        if (soloNumeros === '0' || /^(menu|inicio|volver|opciones)$/.test(textoN)) {
+        if (soloNumeros === '0' || pideMenuExplicito(textoN) || /^(inicio|volver|opciones)$/.test(textoN)) {
           estadoCliente.set(remitente, { nivel: 'INICIO' });
           await enviarMensajeHumano(sock, remitente, menuPrincipal(barberia, `💈 *${barberia.nombre || 'Bienvenido'}*`));
           return;
@@ -1779,8 +1818,9 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       // Regresar al menú principal con 0 o inicio
-      if (soloNumeros === '0' || texto === 'menu' || texto === 'menú' || texto === 'volver' || texto === 'inicio') {
+      if (soloNumeros === '0' || pideMenuExplicito(textoN) || textoN === 'volver' || textoN === 'inicio') {
         estadoCliente.set(remitente, { nivel: 'INICIO' });
+        ultimoMenuMostrado.set(remitente, Date.now());
         await enviarMensajeHumano(sock, remitente, menuPrincipal(barberia, `💈 *${barberia.nombre || 'Bienvenido'}*`));
         return;
       }

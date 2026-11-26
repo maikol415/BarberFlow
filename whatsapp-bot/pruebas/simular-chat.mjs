@@ -39,6 +39,7 @@ const {
   manejarNotificarListaEspera,
   guardarMensajeEnviado,
   mensajeEnviadoParaReenviar,
+  pideMenuExplicito,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -191,6 +192,10 @@ comprobar('Rechaza reseña antes de la cita', String(g.status), ['400']);
 g = await postJson(`${API}/calificar-cita`, { citaId: citaAnaPasado.id, estrellas: 5 });
 comprobar('Rechaza reseña por id (sin token)', g.status === 400 || g.status === 404 ? 'ok' : String(g.status), ['ok']);
 
+// Bob acaba de mantener su cita: un "1" suelto podría ser "me arrepentí, cancela" → se le vuelve a preguntar
+r = await cliente(bob, '1');
+comprobar('Tras mantener la cita, "1" vuelve a preguntar y ofrece MENÚ', r, ['¿Cambiaste de opinión', 'Escribe *MENÚ*']);
+r = await cliente(bob, 'menú');
 r = await cliente(bob, '1');
 comprobar('Opción 1 envía el enlace de reserva (no repite el menú)', r, ['Reserva tu cita en línea', `/${SLUG}`]);
 
@@ -201,8 +206,9 @@ const nuevo3 = { remoteJid: `5730099${base}@s.whatsapp.net` };
 r = await cliente(nuevo3, 'tienen parqueadero?');
 comprobar('Primer mensaje que no entiende: bienvenida + menú + aviso del barbero', r, ['Bienvenid', 'el barbero te responderá']);
 
-r = await cliente(bob, 'hola');
-comprobar('Saludo con menú principal', r, ['Escribe solo el número', '*1* 📅', 'Servicios y precios', '*4* 🗓️ Mis citas', '*5* 💳', 'MENÚ']);
+// (un "hola" aquí no repetiría el menú: Bob lo acaba de ver; MENÚ sí lo muestra siempre)
+r = await cliente(bob, 'menú');
+comprobar('MENÚ muestra el menú principal', r, ['Escribe solo el número', '*1* 📅', 'Servicios y precios', '*4* 🗓️ Mis citas', '*5* 💳', 'MENÚ']);
 
 r = await cliente(bob, '2');
 comprobar('Menú de servicios con íconos por categoría', r, ['Servicios y precios', '✂️ Cortes']);
@@ -512,6 +518,44 @@ await procesarMensajeEntrante(sockBarberoRapido, { type: 'notify', messages: [{
   key: { remoteJid: chatRapido.remoteJid, fromMe: false, id: `SIM${++contador}` }, message: { conversation: 'deje de ser tan serio jaja' } }] });
 comprobar('Si el barbero responde mientras el bot escribe, el bot no envía su aviso',
   enviadosRapido.map(e => e.texto).join(' ') || 'silencio', ['silencio']);
+
+// ---------- Se arrepiente: eligió "2. Mantener" y luego escribe "1" ----------
+const telMayer2 = `+57312${base}`;
+const chatMayer2 = { remoteJid: `${dig(telMayer2)}@s.whatsapp.net` };
+const citaMayer2 = await crearCita(telMayer2, 'Mayerli Rv', pasado, '05:00 PM');
+await cliente(chatMayer2, 'Hola');
+r = await cliente(chatMayer2, 'Cancelar');
+comprobar('Arrepentida: CANCELAR pide confirmar', r, ['¿Seguro que quieres cancelarla?']);
+r = await cliente(chatMayer2, '2');
+comprobar('Arrepentida: "2" mantiene la cita', r, ['sigue firme']);
+r = await cliente(chatMayer2, '1');
+comprobar('Arrepentida: un "1" enseguida vuelve a preguntar (no cancela de una)', r, ['¿Cambiaste de opinión, Mayerli Rv?', '*1*', '*2*', citaMayer2.hora]);
+let estadoMayer2 = await (await fetch(`${API}/bot/${SLUG}/cita/${citaMayer2.id}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY } })).json();
+comprobar('Arrepentida: la cita sigue activa mientras no confirme', estadoMayer2.estado === 'Cancelada' ? 'cancelada' : 'activa', ['activa']);
+r = await cliente(chatMayer2, '1');
+comprobar('Arrepentida: con el segundo "1" sí se cancela', r, ['cancelada correctamente']);
+
+// ---------- MENÚ funciona aunque el barbero esté hablando en el chat ----------
+const chatMenuPausa = { remoteJid: `5731177${base}@s.whatsapp.net` };
+await escribeBarbero(chatMenuPausa.remoteJid, 'Pero amor pon menú a ver');
+r = await cliente(chatMenuPausa, 'jajaja');
+comprobar('Con el barbero hablando, una charla normal no activa el bot', r || 'silencio', ['silencio']);
+r = await cliente(chatMenuPausa, 'Menu');
+comprobar('Con el barbero hablando, MENÚ sí muestra las opciones', r, ['Mis citas', 'Formas de pago']);
+r = await cliente(chatMenuPausa, '3');
+comprobar('Y luego el número de la opción también funciona', r, ['Dónde estamos']);
+const chatManu = { remoteJid: `5731166${base}@s.whatsapp.net` };
+await escribeBarbero(chatManu.remoteJid, 'Ya te atiendo');
+r = await cliente(chatManu, 'Manù');
+comprobar('Con el barbero hablando, "Manù" no se toma como MENÚ (puede ser un nombre)', r || 'silencio', ['silencio']);
+r = await cliente(chatManu, 'ver el menú!');
+comprobar('"ver el menú" también cuenta como MENÚ', r, ['Mis citas']);
+
+// MENÚ escrito de muchas formas (mayúsculas, tildes, letras repetidas, signos, cortesía, errores de dedo)
+const formasMenu = ['MENÚ', 'Menù', 'menü', 'Menuuu', '¿Menú?', 'menú 🙏', 'el menú', 'ver el menu', 'pásame el menú', 'menú porfa', 'menu pues', 'meni', 'Menu Menu'];
+comprobar('MENÚ se reconoce escrito de muchas formas', formasMenu.filter(t => !pideMenuExplicito(normalizarTexto(t))).join(', ') || 'todas', ['todas']);
+const noMenu = ['Manù', 'menudo', 'el menú de hoy está rico', 'ese menu no sirve', 'ojalá tuvieras un meno'];
+comprobar('Frases que solo mencionan el menú no cuentan', noMenu.filter(t => pideMenuExplicito(normalizarTexto(t))).join(', ') || 'ninguna', ['ninguna']);
 
 // ---------- Copia de lo enviado, para reenviarlo si un celular no lo pudo leer ----------
 guardarMensajeEnviado({ key: { id: 'BOT-COPIA-1', remoteJid: '573000000000@s.whatsapp.net' }, message: { conversation: '☀️ Buenos días' } });
