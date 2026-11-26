@@ -253,6 +253,7 @@ using (var scope = app.Services.CreateScope())
                 );
                 CREATE UNIQUE INDEX IF NOT EXISTS ""IX_SuscripcionesPush_Endpoint"" ON ""SuscripcionesPush"" (""Endpoint"");
                 CREATE INDEX IF NOT EXISTS ""IX_SuscripcionesPush_BarberiaId"" ON ""SuscripcionesPush"" (""BarberiaId"");
+                ALTER TABLE ""SuscripcionesPush"" ADD COLUMN IF NOT EXISTS ""FallandoDesdeUtc"" timestamp with time zone NULL;
                 CREATE TABLE IF NOT EXISTS ""Configuracion"" (
                     ""Clave"" text NOT NULL,
                     ""Valor"" text NOT NULL,
@@ -385,6 +386,7 @@ using (var scope = app.Services.CreateScope())
                 );
                 CREATE INDEX IF NOT EXISTS ""IX_ListaEspera_BarberiaId_Fecha"" ON ""ListaEspera"" (""BarberiaId"", ""Fecha"");
             ");
+            try { db.Database.ExecuteSqlRaw(@"ALTER TABLE ""SuscripcionesPush"" ADD COLUMN ""FallandoDesdeUtc"" TEXT NULL"); } catch { /* ya existía */ }
         }
     }
 

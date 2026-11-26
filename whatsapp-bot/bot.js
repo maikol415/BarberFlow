@@ -160,11 +160,41 @@ function nuevoIdMensajeBot() {
   return id;
 }
 
-// Todos los envíos del bot llevan un ID propio conocido
+// ----- Mensajes enviados, por si un celular pide que se los reenvíen -----
+// Cuando un celular no logra leer un mensaje del bot (se ve "Esperando el mensaje. Esto puede tomar tiempo"),
+// WhatsApp le pide al bot que lo vuelva a enviar. Sin una copia, no hay qué reenviar y el mensaje nunca aparece.
+// Se guarda una copia de cada mensaje enviado durante 1 día (máximo 1000).
+const mensajesEnviados = new Map(); // id -> { mensaje, cuando }
+const HORAS_COPIA_ENVIADOS = 24;
+const MAX_COPIAS_ENVIADOS = 1000;
+
+export function guardarMensajeEnviado(resultado, ahoraMs = Date.now()) {
+  const id = resultado?.key?.id;
+  if (!id || !resultado.message) return;
+  mensajesEnviados.set(id, { mensaje: resultado.message, cuando: ahoraMs });
+  while (mensajesEnviados.size > MAX_COPIAS_ENVIADOS) mensajesEnviados.delete(mensajesEnviados.keys().next().value);
+}
+
+// Lo usa Baileys (getMessage) cuando un celular pide reenviar un mensaje
+export function mensajeEnviadoParaReenviar(key, ahoraMs = Date.now()) {
+  const copia = mensajesEnviados.get(key?.id);
+  if (!copia) return undefined;
+  if (ahoraMs - copia.cuando > HORAS_COPIA_ENVIADOS * 60 * 60 * 1000) {
+    mensajesEnviados.delete(key.id);
+    return undefined;
+  }
+  console.log(`[Reenvío] Un celular pidió de nuevo el mensaje ${key.id} (${key.remoteJid}): se reenvía.`);
+  return copia.mensaje;
+}
+
+// Todos los envíos del bot llevan un ID propio conocido y dejan una copia para reenviarlos si hace falta
 function marcarEnviosDelBot(sock) {
   const enviarOriginal = sock.sendMessage.bind(sock);
-  sock.sendMessage = (jid, contenido, opciones = {}) =>
-    enviarOriginal(jid, contenido, { ...opciones, messageId: opciones.messageId || nuevoIdMensajeBot() });
+  sock.sendMessage = async (jid, contenido, opciones = {}) => {
+    const resultado = await enviarOriginal(jid, contenido, { ...opciones, messageId: opciones.messageId || nuevoIdMensajeBot() });
+    guardarMensajeEnviado(resultado);
+    return resultado;
+  };
   return sock;
 }
 
@@ -204,6 +234,13 @@ export function estadoPausa(jids, barberia, ahoraMs = Date.now()) {
   if (!ultima || pasado >= minutos * 60 * 1000) return null;
   return pasado < MINUTOS_PAUSA_TOTAL * 60 * 1000 ? 'total' : 'parcial';
 }
+// ¿El barbero escribió a mano en este chat (por su número o por su @lid) desde ese momento?
+export function barberoEscribioDesde(jid, desdeMs) {
+  const relacionados = [jid];
+  if (jid?.endsWith('@lid') && telefonoPorLid.get(jid)) relacionados.push(`${telefonoPorLid.get(jid)}@s.whatsapp.net`);
+  if (jid?.endsWith('@s.whatsapp.net') && lidPorTelefono.get(digitosDeJid(jid))) relacionados.push(lidPorTelefono.get(digitosDeJid(jid)));
+  return relacionados.some(j => (atencionHumana.get(j) || 0) >= desdeMs);
+}
 function botEnPausa(jids, barberia, ahoraMs = Date.now()) {
   return estadoPausa(jids, barberia, ahoraMs) !== null;
 }
@@ -219,6 +256,14 @@ export function retomaConversacionBot(texto, textoN = normalizarTexto(texto)) {
   if (/\bcancel/.test(textoN) || /\breagend/.test(textoN) || INTENCION.cancelar.test(textoN) || INTENCION.reagendar.test(textoN)) return true;
   if (/^(menu|inicio|opciones|volver)$/.test(textoN)) return true;
   return palabras.length <= 4 && INTENCION.saludo.test(textoN) && !INTENCION.gracias.test(textoN);
+}
+// Menú mostrado por chat: otro saludo seguido ("Oe" "Oe") no lo repite durante 2 minutos
+const ultimoMenuMostrado = new Map();
+export const MINUTOS_SIN_REPETIR_MENU = 2;
+function menuMostradoHacePoco(jid, ahoraMs = Date.now()) {
+  const ultimo = ultimoMenuMostrado.get(jid) || 0;
+  if (ultimoMenuMostrado.size > 2000) for (const [k, t] of ultimoMenuMostrado) if (ahoraMs - t > 10 * 60 * 1000) ultimoMenuMostrado.delete(k);
+  return ahoraMs - ultimo < MINUTOS_SIN_REPETIR_MENU * 60 * 1000;
 }
 const ultimaDerivacionMap = new Map(); // Para registrar el tiempo exacto de derivación por remitente
 const estadoCliente = new Map(); // Menús o confirmaciones de cancelación
@@ -328,8 +373,15 @@ const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
     const delayAleatorio = Math.floor(Math.random() * 800); // 0 a 800ms de variación natural
     const tiempoTotal = MODO_PRUEBA || sock.esPrueba ? 0 : delayBase + delayExtraPorLongitud + delayAleatorio; // aprox 3 a 4.5 segundos
 
+    const inicio = Date.now();
     await sock.sendPresenceUpdate('composing', remitente);
     await new Promise(r => setTimeout(r, tiempoTotal));
+    // Mientras el bot "escribía", ¿el barbero respondió a mano en ese chat? Entonces el bot no se mete
+    if (barberoEscribioDesde(remitente, inicio)) {
+      await sock.sendPresenceUpdate('paused', remitente).catch(() => {});
+      console.log(`[Atención humana] El barbero respondió en ${remitente} mientras el bot escribía: el bot no envía su mensaje.`);
+      return false;
+    }
     await sock.sendMessage(remitente, { text: textoRespuesta });
     await sock.sendPresenceUpdate('paused', remitente);
     return true;
@@ -1102,6 +1154,7 @@ export async function probarConversacion({ slug, texto, reiniciar } = {}) {
     estadoCliente.delete(JID_CHAT_PRUEBA);
     saludoPendiente.delete(JID_CHAT_PRUEBA);
     ultimaDerivacionMap.delete(JID_CHAT_PRUEBA);
+    ultimoMenuMostrado.delete(JID_CHAT_PRUEBA);
   }
   const mensaje = String(texto || '').slice(0, 500).trim();
   if (!mensaje) return { respuestas: [] };
@@ -1191,6 +1244,8 @@ async function iniciarBot() {
     printQRInTerminal: false,
     markOnlineOnConnect: false,          // si el bot aparece "en línea", al barbero dejan de sonarle las notificaciones
     shouldSyncHistoryMessage: () => false, // no descargar el historial de chats (menos memoria)
+    // Si un celular no pudo leer un mensaje del bot y pide que se lo reenvíen, se le manda la copia guardada
+    getMessage: async (key) => mensajeEnviadoParaReenviar(key),
     logger: loggerBaileys
   }));
   socketActivo = sock;
@@ -1372,6 +1427,7 @@ export async function procesarMensajeEntrante(sock, m) {
 
       // Saludo de bienvenida con el menú (personalizado si ya es cliente)
       const saludarConMenu = async (notaFinal = '') => {
+        ultimoMenuMostrado.set(remitente, Date.now());
         estadoCliente.set(remitente, { nivel: 'INICIO' });
         let saludoPersonalizado = `💈 *¡Hola! Bienvenido a ${barberia.nombre || 'la barbería'}*`;
         let nombreConocido = '';
@@ -1805,7 +1861,9 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       // 6. Saludos / Menú principal
+      // Si escribe "Oe" "Oe" seguido, el menú sale una sola vez (con MENÚ sí se le repite siempre)
       if (INTENCION.saludo.test(textoN) && !INTENCION.gracias.test(textoN)) {
+        if (menuMostradoHacePoco(remitente, ahora)) return;
         await saludarConMenu();
         return;
       }

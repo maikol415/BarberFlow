@@ -95,10 +95,14 @@ public static class NotificacionesPush
         });
     }
 
-    public static async Task<(int Enviadas, int Fallidas)> EnviarAsync(int barberiaId, string tipo, string titulo, string cuerpo,
+    // Si el servicio de push dice que un celular "no existe" durante este tiempo seguido, se borra su suscripción
+    public static readonly TimeSpan PlazoBorrarSuscripcion = TimeSpan.FromDays(3);
+
+    public static async Task<(int Enviadas, int Fallidas, List<int> IdsFallidos)> EnviarAsync(int barberiaId, string tipo, string titulo, string cuerpo,
         string? etiqueta = null, ICollection<int>? soloIds = null, string url = "/admin.html")
     {
-        if (Scopes == null) return (0, 0);
+        var idsFallidos = new List<int>();
+        if (Scopes == null) return (0, 0, idsFallidos);
         using var scope = Scopes.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
 
@@ -113,7 +117,7 @@ public static class NotificacionesPush
                 _ => true
             })
             .ToList();
-        if (suscripciones.Count == 0) return (0, 0);
+        if (suscripciones.Count == 0) return (0, 0, idsFallidos);
 
         var vapid = await VapidAsync(db);
         var payload = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(new { titulo, cuerpo, url, etiqueta = etiqueta ?? tipo }));
@@ -121,6 +125,7 @@ public static class NotificacionesPush
         var ttl = tipo == Resumen ? 4 * 3600 : 24 * 3600;
 
         int enviadas = 0, fallidas = 0;
+        var cambios = false;
         var vencidas = new List<SuscripcionPush>();
         foreach (var s in suscripciones)
         {
@@ -130,27 +135,37 @@ public static class NotificacionesPush
                 if (estado is HttpStatusCode.Created or HttpStatusCode.OK or HttpStatusCode.Accepted)
                 {
                     enviadas++;
+                    if (s.FallandoDesdeUtc != null) { s.FallandoDesdeUtc = null; cambios = true; }
                 }
                 else
                 {
                     fallidas++;
-                    // 404/410: el barbero desinstaló la app o quitó el permiso
-                    if (estado is HttpStatusCode.Gone or HttpStatusCode.NotFound) vencidas.Add(s);
-                    else Console.WriteLine($"[Push] El servicio de push respondió {(int)estado} a la suscripción {s.Id}");
+                    idsFallidos.Add(s.Id);
+                    Console.WriteLine($"[Push] El servicio de push respondió {(int)estado} al aviso '{tipo}' de la suscripción {s.Id} ({s.Dispositivo})");
+                    // 404/410: el celular quitó el permiso o la suscripción venció. Pero un solo error puede ser
+                    // pasajero (así se perdió un resumen de la mañana): se borra solo si sigue fallando varios días.
+                    if (estado is HttpStatusCode.Gone or HttpStatusCode.NotFound)
+                    {
+                        if (s.FallandoDesdeUtc == null) { s.FallandoDesdeUtc = DateTime.UtcNow; cambios = true; }
+                        else if (DateTime.UtcNow - s.FallandoDesdeUtc.Value > PlazoBorrarSuscripcion) vencidas.Add(s);
+                    }
                 }
             }
             catch (Exception ex)
             {
                 fallidas++;
-                Console.WriteLine($"[Push] No se pudo enviar a la suscripción {s.Id}: {ex.Message}");
+                idsFallidos.Add(s.Id);
+                Console.WriteLine($"[Push] No se pudo enviar el aviso '{tipo}' a la suscripción {s.Id}: {ex.Message}");
             }
         }
         if (vencidas.Count > 0)
         {
+            Console.WriteLine($"[Push] Se borran {vencidas.Count} suscripción(es) que llevan más de {PlazoBorrarSuscripcion.TotalDays} días fallando.");
             db.SuscripcionesPush.RemoveRange(vencidas);
-            await db.SaveChangesAsync();
+            cambios = true;
         }
-        return (enviadas, fallidas);
+        if (cambios) await db.SaveChangesAsync();
+        return (enviadas, fallidas, idsFallidos);
     }
 
     private static async Task<HttpStatusCode> EnviarUnaAsync(SuscripcionPush s, byte[] payload, LlavesVapid vapid, int ttl)
@@ -268,6 +283,9 @@ public class ResumenMatutinoService : BackgroundService
 
     // Si la API estaba dormida a esa hora, el resumen aún se envía hasta 3 horas después
     private const int VentanaMinutos = 180;
+    // Si el envío a un celular falla, se reintenta cada 10 minutos (dentro de esas 3 horas)
+    private static readonly TimeSpan EsperaReintento = TimeSpan.FromMinutes(10);
+    private readonly Dictionary<int, DateTime> _reintentarDesde = new();
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -296,19 +314,34 @@ public class ResumenMatutinoService : BackgroundService
                 var hora = EstadosCitas.HoraAMinutos(s.HoraResumen);
                 return minutos >= hora && minutos < hora + VentanaMinutos;
             })
+            .Where(s => !_reintentarDesde.TryGetValue(s.Id, out var desde) || DateTime.UtcNow >= desde)
             .ToList();
         if (pendientes.Count == 0) return;
 
         foreach (var grupo in pendientes.GroupBy(s => s.BarberiaId))
         {
-            // Se marca antes de enviar: si algo falla, no se repite cada 2 minutos
+            // Se marca antes de enviar para no mandarlo dos veces; si a un celular no le llega, se desmarca y se reintenta
             foreach (var s in grupo) s.UltimoResumen = hoy;
             await db.SaveChangesAsync();
 
             var mensaje = await ArmarResumenAsync(db, grupo.Key, ahora);
-            if (mensaje == null) continue; // día cerrado: no se molesta
-            await NotificacionesPush.EnviarAsync(grupo.Key, NotificacionesPush.Resumen, mensaje.Value.Titulo, mensaje.Value.Cuerpo,
-                "resumen-" + hoy, grupo.Select(s => s.Id).ToList());
+            if (mensaje == null)
+            {
+                Console.WriteLine($"[Push] Barbería {grupo.Key}: hoy no atiende, no se envía el resumen de la mañana.");
+                continue;
+            }
+            var (enviadas, _, idsFallidos) = await NotificacionesPush.EnviarAsync(grupo.Key, NotificacionesPush.Resumen,
+                mensaje.Value.Titulo, mensaje.Value.Cuerpo, "resumen-" + hoy, grupo.Select(s => s.Id).ToList());
+            Console.WriteLine($"[Push] Resumen de la mañana de la barbería {grupo.Key}: enviado a {enviadas} celular(es)" +
+                              (idsFallidos.Count > 0 ? $", falló en {idsFallidos.Count} (se reintenta en {EsperaReintento.TotalMinutes} min)" : ""));
+
+            foreach (var s in grupo) _reintentarDesde.Remove(s.Id);
+            if (idsFallidos.Count > 0)
+            {
+                foreach (var id in idsFallidos) _reintentarDesde[id] = DateTime.UtcNow + EsperaReintento;
+                await db.SuscripcionesPush.Where(s => idsFallidos.Contains(s.Id))
+                    .ExecuteUpdateAsync(u => u.SetProperty(s => s.UltimoResumen, ""));
+            }
         }
     }
 

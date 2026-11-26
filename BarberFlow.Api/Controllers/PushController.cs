@@ -65,6 +65,7 @@ public class PushController : ControllerBase
         s.BarberiaId = barberiaId; // si el celular cambió de cuenta, pasa a la nueva
         s.P256dh = dto.P256dh;
         s.Auth = dto.Auth;
+        s.FallandoDesdeUtc = null; // el celular volvió a registrarse: se da por bueno
         var dispositivo = (dto.Dispositivo ?? "").Trim();
         s.Dispositivo = dispositivo.Length > 80 ? dispositivo[..80] : dispositivo;
         await _context.SaveChangesAsync();
@@ -108,7 +109,7 @@ public class PushController : ControllerBase
         var s = await _context.SuscripcionesPush.FirstOrDefaultAsync(x => x.Endpoint == dto.Endpoint && x.BarberiaId == barberiaId);
         if (s == null) return NotFound(new { message = "Este celular no tiene las notificaciones activadas." });
 
-        var (enviadas, _) = await NotificacionesPush.EnviarAsync(barberiaId, NotificacionesPush.Prueba,
+        var (enviadas, _, _) = await NotificacionesPush.EnviarAsync(barberiaId, NotificacionesPush.Prueba,
             "🔔 ¡Funciona!", "Así te llegarán los avisos de citas nuevas, cancelaciones y el resumen de la mañana.",
             "prueba", new[] { s.Id });
         return enviadas > 0

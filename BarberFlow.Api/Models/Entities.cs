@@ -200,6 +200,9 @@ public class SuscripcionPush
     public string HoraResumen { get; set; } = "07:00";
     public string UltimoResumen { get; set; } = string.Empty; // fecha (yyyy-MM-dd) del último resumen enviado
     public DateTime CreadoUtc { get; set; } = DateTime.UtcNow;
+    // Desde cuándo el servicio de push dice que este celular "no existe" (null = funciona).
+    // Un solo error puede ser pasajero: la suscripción solo se borra si sigue fallando varios días.
+    public DateTime? FallandoDesdeUtc { get; set; }
 }
 
 // Valores internos del sistema (ej. las llaves VAPID de las notificaciones push)

@@ -37,6 +37,8 @@ const {
   manejarNotificarCambioHora,
   manejarEnviarCodigo,
   manejarNotificarListaEspera,
+  guardarMensajeEnviado,
+  mensajeEnviadoParaReenviar,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -484,6 +486,41 @@ comprobar('Plantilla sin REAGENDAR: se agrega debajo de CANCELAR', asegurarOpcio
   ['❌\n• Responde *REAGENDAR* si quieres cambiar el día o la hora 🔄\n━━━━']);
 comprobar('Recordatorio sin CANCELAR ni REAGENDAR: se agrega antes de la última línea', asegurarOpcionReagendar('Hola\n━━━━━━\nResponde *CONFIRMO* ✅\n━━━━━━\n¡Nos vemos!'),
   ['CONFIRMO* ✅\n👉 Si no puedes asistir, responde *CANCELAR* o *REAGENDAR*.\n━━━━━━\n¡Nos vemos!']);
+
+// ---------- "Oe" "Oe": el menú sale una sola vez ----------
+const chatOe = { remoteJid: `5731188${base}@s.whatsapp.net` };
+r = await cliente(chatOe, 'Oe');
+comprobar('Primer "Oe": saluda con el menú', r, ['Bienvenid', 'Mis citas']);
+r = await cliente(chatOe, 'Oe');
+comprobar('Segundo "Oe" seguido: no repite el menú', r || 'silencio', ['silencio']);
+r = await cliente(chatOe, 'Hola');
+comprobar('Un "Hola" enseguida tampoco lo repite', r || 'silencio', ['silencio']);
+r = await cliente(chatOe, 'MENÚ');
+comprobar('Con MENÚ sí lo vuelve a mostrar', r, ['Mis citas', 'Formas de pago']);
+
+// ---------- El barbero responde mientras el bot está "escribiendo..." ----------
+const chatRapido = { remoteJid: `5731199${base}@s.whatsapp.net` };
+await cliente(chatRapido, 'Hola');
+const enviadosRapido = [];
+const sockBarberoRapido = {
+  ...sockFalso,
+  sendMessage: async (jid, contenido) => { enviadosRapido.push({ jid, texto: contenido.text || '' }); },
+  // Justo cuando el bot empieza a "escribir", el barbero contesta desde su celular
+  sendPresenceUpdate: async (estado, jid) => { if (estado === 'composing') await escribeBarbero(jid, 'Quiubo parce, yo te atiendo'); }
+};
+await procesarMensajeEntrante(sockBarberoRapido, { type: 'notify', messages: [{
+  key: { remoteJid: chatRapido.remoteJid, fromMe: false, id: `SIM${++contador}` }, message: { conversation: 'deje de ser tan serio jaja' } }] });
+comprobar('Si el barbero responde mientras el bot escribe, el bot no envía su aviso',
+  enviadosRapido.map(e => e.texto).join(' ') || 'silencio', ['silencio']);
+
+// ---------- Copia de lo enviado, para reenviarlo si un celular no lo pudo leer ----------
+guardarMensajeEnviado({ key: { id: 'BOT-COPIA-1', remoteJid: '573000000000@s.whatsapp.net' }, message: { conversation: '☀️ Buenos días' } });
+comprobar('Si un celular pide reenviar un mensaje, el bot tiene la copia',
+  mensajeEnviadoParaReenviar({ id: 'BOT-COPIA-1', remoteJid: '573000000000@s.whatsapp.net' })?.conversation || 'nada', ['Buenos días']);
+comprobar('La copia se guarda solo 1 día',
+  String(mensajeEnviadoParaReenviar({ id: 'BOT-COPIA-1' }, Date.now() + 25 * 3600 * 1000) ?? 'vencida'), ['vencida']);
+comprobar('Un mensaje que el bot no envió no se inventa',
+  String(mensajeEnviadoParaReenviar({ id: 'NO-EXISTE' }) ?? 'nada'), ['nada']);
 
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);
