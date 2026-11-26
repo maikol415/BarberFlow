@@ -10,9 +10,9 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/bf-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="/icons/bf-64.png">
   <link rel="apple-touch-icon" href="/icons/bf-apple-180.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261125a">
-  <link rel="stylesheet" href="/css/tema.css?v=20261125a">
-  <script src="/js/iconos.js?v=20261125a"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261125b">
+  <link rel="stylesheet" href="/css/tema.css?v=20261125b">
+  <script src="/js/iconos.js?v=20261125b"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="/js/confetti.browser.min.js"></script>
   <style>
@@ -184,6 +184,7 @@
         <button type="submit" id="btn-confirmar-final" class="w-full py-3.5 rounded-2xl font-extrabold text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-60 flex items-center justify-center gap-2 shadow-lg shadow-blue-600/25 text-base transition">
           <i data-lucide="check-circle" class="w-5 h-5"></i> <span>Confirmar cita</span>
         </button>
+        <p class="text-[11px] text-gray-500 text-center leading-relaxed">Al reservar autorizas el uso de tu nombre y tu WhatsApp para gestionar tu cita, según la <a id="link-privacidad-reserva" href="/privacidad.html" target="_blank" class="underline hover:text-gray-300">política de privacidad</a>.</p>
       </form>
     </section>
 
@@ -277,13 +278,26 @@
     </div>
   </div>
 
-  <footer class="py-6 text-center text-xs text-gray-600">
-    <p class="flex items-center justify-center gap-1.5"><img src="/icons/bf-32.png" alt="" width="16" height="16" class="w-4 h-4 rounded"> Reservas con BarberFlow</p>
-    <a href="/login.html" class="text-gray-600 hover:text-blue-400 mt-1 inline-block">¿Eres el barbero? Ingresa aquí</a>
+  <footer class="mt-6 border-t border-gray-800/70">
+    <div class="max-w-3xl mx-auto px-4 py-8 text-center">
+      <div class="inline-flex items-center gap-2.5">
+        <img src="/icons/bf-64.png" alt="" width="32" height="32" class="w-8 h-8 rounded-lg ring-1 ring-cyan-400/30 shadow-lg shadow-cyan-500/10">
+        <span class="text-left leading-tight">
+          <span class="block text-[10px] uppercase tracking-[0.2em] text-gray-500">Reservas con</span>
+          <span class="block text-base font-extrabold tracking-tight text-gray-100">Barber<span class="text-cyan-300">Flow</span></span>
+        </span>
+      </div>
+      <nav class="mt-4 flex items-center justify-center flex-wrap gap-x-3 gap-y-1 text-xs">
+        <a id="pie-link-privacidad" href="/privacidad.html" class="text-gray-400 hover:text-white transition">Política de privacidad</a>
+        <span class="text-gray-700" aria-hidden="true">•</span>
+        <a href="/login.html" class="text-gray-400 hover:text-white transition">¿Eres el barbero? Ingresa aquí</a>
+      </nav>
+      <p class="mt-3 text-[11px] text-gray-600">© <span class="anio-actual">2026</span> <span id="pie-barberia">BarberFlow</span>. Todos los derechos reservados.</p>
+    </div>
   </footer>
 
-  <script src="/js/tema.js?v=20261125a"></script>
-  <script src="/js/avisos.js?v=20261125a"></script>
-  <script src="/js/client.js?v=20261125a"></script>
+  <script src="/js/tema.js?v=20261125b"></script>
+  <script src="/js/avisos.js?v=20261125b"></script>
+  <script src="/js/client.js?v=20261125b"></script>
 </body>
 </html>

@@ -42,6 +42,9 @@ public class AuthController : ControllerBase
     [HttpPost("register")]
     public async Task<IActionResult> Register([FromBody] RegisterDto dto)
     {
+        if (!dto.AceptaPrivacidad)
+            return BadRequest(new { message = "Para crear tu barbería debes aceptar la política de privacidad." });
+
         var emailLower = dto.Email.Trim().ToLowerInvariant();
 
         if (!EsEmailValido(emailLower))
@@ -68,7 +71,8 @@ public class AuthController : ControllerBase
         {
             NombreCompleto = dto.NombreCompleto.Trim(),
             Email = emailLower,
-            PasswordHash = passwordHash
+            PasswordHash = passwordHash,
+            AceptoPrivacidadUtc = DateTime.UtcNow
         };
 
         var barberia = new Barberia

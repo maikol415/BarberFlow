@@ -155,6 +155,7 @@ async function hacerRegistro(e) {
     nombreBarberia: $('reg-barberia').value.trim(),
     telefonoWhatsApp: telefono,
     email,
-    password: $('reg-pass').value
+    password: $('reg-pass').value,
+    aceptaPrivacidad: $('reg-privacidad').checked
   }, $('btn-register'), 'Creando tu barbería...', 'Crear mi barbería');
 }

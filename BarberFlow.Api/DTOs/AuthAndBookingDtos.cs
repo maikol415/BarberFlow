@@ -7,7 +7,8 @@ public record RegisterDto(
     [Required][EmailAddress] string Email,
     [Required][MinLength(6)] string Password,
     [Required] string NombreBarberia,
-    [Required] string TelefonoWhatsApp
+    [Required] string TelefonoWhatsApp,
+    bool AceptaPrivacidad = false
 );
 
 public record LoginDto(
@@ -124,7 +125,8 @@ public record ClienteRegisterDto(
     [Required] string Nombre,
     [Required] string Telefono,
     [Required] string Password,
-    string? Genero = "Hombre"
+    string? Genero = "Hombre",
+    bool AceptaPrivacidad = false
 );
 
 public record ClienteLoginDto(

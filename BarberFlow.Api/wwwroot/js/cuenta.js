@@ -167,7 +167,8 @@ async function crearCuenta(e) {
       nombre: $('reg-nombre').value.trim(),
       telefono: `${$('reg-pais').value}${$('reg-tel').value.replace(/\D/g, '')}`,
       genero: $('reg-genero').value,
-      password: $('reg-pass').value
+      password: $('reg-pass').value,
+      aceptaPrivacidad: $('reg-privacidad').checked
     })
   });
   btn.disabled = false; btn.textContent = 'Crear mi cuenta';
@@ -420,6 +421,8 @@ async function iniciar() {
   llenarPaises('reg-pais');
   llenarPaises('rc-pais');
   const linkReservar = `/index.html?b=${encodeURIComponent(slug)}`;
+  ['pie-link-privacidad', 'link-privacidad-registro'].forEach(id => { const el = $(id); if (el) el.href = `/privacidad.html?b=${encodeURIComponent(slug)}`; });
+  document.querySelectorAll('.anio-actual').forEach(e => { e.textContent = new Date().getFullYear(); });
   ['link-volver', 'btn-nueva-cita', 'link-reservar-sin-cuenta'].forEach(id => { $(id).href = linkReservar; });
 
   try {
@@ -428,6 +431,7 @@ async function iniciar() {
       const b = await res.json();
       if (window.aplicarTemaBarberia) aplicarTemaBarberia(b);
       $('header-barberia').textContent = b.nombre;
+      if ($('pie-barberia')) $('pie-barberia').textContent = b.nombre;
       // Logo de la barbería en el encabezado (si tiene uno propio)
       if (b.logoUrl && !b.logoUrl.startsWith('data:image/svg')) {
         const logo = $('header-logo');

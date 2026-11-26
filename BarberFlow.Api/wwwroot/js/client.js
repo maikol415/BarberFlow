@@ -115,6 +115,11 @@ async function initClient() {
   todosLosServicios = barberia.servicios || [];
   const linkCuenta = `/cuenta.html?b=${encodeURIComponent(barberia.slug)}`;
   ['btn-portal-cliente', 'link-exito-mis-citas', 'link-ingresar-datos'].forEach(id => { const el = $(id); if (el) el.href = linkCuenta; });
+  // Pie de página y enlaces de privacidad de esta barbería
+  const linkPrivacidad = `/privacidad.html?b=${encodeURIComponent(barberia.slug)}`;
+  ['pie-link-privacidad', 'link-privacidad-reserva'].forEach(id => { const el = $(id); if (el) el.href = linkPrivacidad; });
+  if ($('pie-barberia')) $('pie-barberia').textContent = barberia.nombre;
+  document.querySelectorAll('.anio-actual').forEach(e => { e.textContent = new Date().getFullYear(); });
   // Sin cuenta: invitarlo a crearla (antes solo se llegaba por "Mis citas")
   mostrar('aviso-cuenta-datos', !clienteSesion);
 

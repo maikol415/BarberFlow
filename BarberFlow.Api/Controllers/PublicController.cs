@@ -920,6 +920,10 @@ public class PublicController : ControllerBase
         {
             return BadRequest(new { message = "La contraseña debe tener al menos 4 caracteres." });
         }
+        if (!dto.AceptaPrivacidad)
+        {
+            return BadRequest(new { message = "Para crear tu cuenta debes autorizar el tratamiento de tus datos (política de privacidad)." });
+        }
 
         if (await BuscarClientePorTelefono(barberia.Id, telLimpio) != null)
         {
@@ -933,7 +937,8 @@ public class PublicController : ControllerBase
             Telefono = telLimpio,
             Genero = string.IsNullOrWhiteSpace(dto.Genero) ? "Hombre" : dto.Genero,
             PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.Password),
-            FechaRegistro = DateTime.UtcNow
+            FechaRegistro = DateTime.UtcNow,
+            AceptoPrivacidadUtc = DateTime.UtcNow
         };
 
         _context.Clientes.Add(cliente);
