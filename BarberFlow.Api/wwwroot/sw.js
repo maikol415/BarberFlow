@@ -10,7 +10,8 @@ self.addEventListener('activate', (e) => {
 });
 
 self.addEventListener('fetch', (e) => {
-  // Red de paso normal para que siempre tenga datos frescos de citas y servicios
+  // Solo las páginas pasan por aquí; la API, los envíos y los archivos van directo (más rápido)
+  if (e.request.method !== 'GET' || e.request.mode !== 'navigate') return;
   e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
 });
 

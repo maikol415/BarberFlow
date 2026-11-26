@@ -173,6 +173,7 @@ public class PublicController : ControllerBase
         var json = System.Text.Json.JsonSerializer.Serialize(reacciones);
         if (esPortada) await _context.Barberias.Where(b => b.Id == datos.Id).ExecuteUpdateAsync(s => s.SetProperty(b => b.ReaccionesPortada, json));
         else await _context.Barberias.Where(b => b.Id == datos.Id).ExecuteUpdateAsync(s => s.SetProperty(b => b.ReaccionesLogo, json));
+        CachePublica.Invalidar(datos.Id);
         return Ok(reacciones);
     }
 
@@ -183,13 +184,42 @@ public class PublicController : ControllerBase
         {
             // Solo lo necesario para reservar: servicios y equipo activos, y bloqueos/citas de hoy en adelante
             var hoy = FechaHoyColombia();
+            var slugNormal = (slug ?? "").ToLower();
+
+            // Lo que cambia a cada rato (qué horas están libres) se consulta siempre
+            async Task<IActionResult> ResponderConDisponibilidad(int barberiaId, System.Text.Json.Nodes.JsonObject datos)
+            {
+                var bloqueos = await _context.Bloqueos.AsNoTracking()
+                    .Where(bl => bl.BarberiaId == barberiaId && string.Compare(bl.Fecha, hoy) >= 0)
+                    .Select(bl => new { bl.Id, bl.Fecha, bl.Hora, bl.Motivo })
+                    .ToListAsync();
+                var ocupadas = await _context.Citas.AsNoTracking()
+                    .Where(c => c.BarberiaId == barberiaId && c.Estado != "Cancelada" && c.Estado != "No Confirmada"
+                                && string.Compare(c.Fecha, hoy) >= 0)
+                    .Select(c => new
+                    {
+                        c.Id,
+                        c.Fecha,
+                        c.Hora,
+                        c.MiembroEquipoId,
+                        DuracionMinutos = c.Servicio != null ? c.Servicio.DuracionMinutos : 40
+                    })
+                    .ToListAsync();
+                var opciones = new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web);
+                datos["bloqueos"] = System.Text.Json.JsonSerializer.SerializeToNode(bloqueos, opciones);
+                datos["citasOcupadas"] = System.Text.Json.JsonSerializer.SerializeToNode(ocupadas, opciones);
+                return Content(datos.ToJsonString(), "application/json; charset=utf-8");
+            }
+
+            if (CachePublica.Obtener(slugNormal, out var idCache, out var datosCache))
+                return await ResponderConDisponibilidad(idCache, datosCache);
+
             var barberia = await _context.Barberias
                 .AsNoTracking()
                 .Include(b => b.Servicios.Where(s => s.Activo))
                 .Include(b => b.Miembros.Where(m => m.Activo))
-                .Include(b => b.Bloqueos.Where(bl => string.Compare(bl.Fecha, hoy) >= 0))
                 .AsSplitQuery()
-                .FirstOrDefaultAsync(b => b.Slug == slug.ToLower());
+                .FirstOrDefaultAsync(b => b.Slug == slugNormal);
 
             if (barberia == null)
             {
@@ -199,20 +229,6 @@ public class PublicController : ControllerBase
             var botReglas = await _context.BotReglas
                 .Where(r => r.BarberiaId == barberia.Id && r.Activo)
                 .Select(r => new { r.Id, r.PalabrasClave, r.Respuesta })
-                .ToListAsync();
-
-            // Turnos ya tomados (de hoy en adelante) para no permitir sobreposiciones, con la duración real del servicio
-            var citasOcupadas = await _context.Citas
-                .Where(c => c.BarberiaId == barberia.Id && c.Estado != "Cancelada" && c.Estado != "No Confirmada"
-                            && string.Compare(c.Fecha, hoy) >= 0)
-                .Select(c => new
-                {
-                    c.Id,
-                    c.Fecha,
-                    c.Hora,
-                    c.MiembroEquipoId,
-                    DuracionMinutos = c.Servicio != null ? c.Servicio.DuracionMinutos : 40
-                })
                 .ToListAsync();
 
             // Conteo real de agendamientos históricos en el sistema
@@ -255,7 +271,7 @@ public class PublicController : ControllerBase
                 Console.WriteLine($"Nota: Valoraciones no consultadas todavía: {ex.Message}");
             }
 
-            return Ok(new
+            var fija = new
             {
                 barberia.Id,
                 barberia.Nombre,
@@ -316,19 +332,15 @@ public class PublicController : ControllerBase
                     FotoUrl = UrlImagen(m.FotoUrl, "miembro", m.Id),
                     HorarioSemanal = HorarioSemanal.DeMiembro(m)   // null = usa el de la barbería
                 }),
-                Bloqueos = barberia.Bloqueos.Select(bl => new
-                {
-                    bl.Id,
-                    bl.Fecha,
-                    bl.Hora,
-                    bl.Motivo
-                }),
-                CitasOcupadas = citasOcupadas,
                 TotalAgendamientos = totalAgendamientosReales,
                 TotalValoraciones = totalValoraciones,
                 Calificacion = calificacion,
                 UltimasValoraciones = ultimasValoraciones
-            });
+            };
+            var nodo = (System.Text.Json.Nodes.JsonObject)System.Text.Json.JsonSerializer.SerializeToNode(fija,
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web))!;
+            CachePublica.Guardar(slugNormal, barberia.Id, nodo);
+            return await ResponderConDisponibilidad(barberia.Id, nodo);
         }
         catch (Exception ex)
         {
@@ -340,9 +352,15 @@ public class PublicController : ControllerBase
     [HttpPost("citas")]
     public async Task<IActionResult> CrearCita([FromBody] CrearCitaPublicaDto dto)
     {
+        // Límite anti-abuso (cada cita envía un WhatsApp): máx. 5 reservas por hora al mismo número y 150 por conexión
+        var ipReserva = IpVisitante();
+        if (User.Identity?.IsAuthenticated != true && ipReserva is not ("127.0.0.1" or "::1") && !RecuperacionClave.PermitirIp($"{ipReserva}|reservar", 400))
+            return StatusCode(429, new { message = "Hiciste muchas reservas seguidas. Espera un rato o escríbele a la barbería por WhatsApp." });
+
         var barberia = await _context.Barberias
+            .AsSplitQuery()
             .Include(b => b.Servicios)
-            .Include(b => b.Bloqueos)
+            .Include(b => b.Bloqueos.Where(bl => bl.Fecha == dto.Fecha))
             .Include(b => b.Miembros.Where(m => m.Activo))
             .FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
 
@@ -417,7 +435,7 @@ public class PublicController : ControllerBase
             {
                 return BadRequest(new { message = "No pudimos verificar la cita que quieres reagendar. Usa el mismo número de WhatsApp con el que reservaste." });
             }
-            if (citaAnterior.Estado == "Cancelada")
+            if (citaAnterior.Estado == "Cancelada" || citaAnterior.Estado == EstadosCitas.Completada || citaAnterior.Estado == EstadosCitas.NoConfirmada)
             {
                 return BadRequest(new { message = "Esta cita ya fue cancelada o reagendada. Si quieres otro turno, reserva uno nuevo." });
             }
@@ -507,6 +525,11 @@ public class PublicController : ControllerBase
             }
         }
         var nombreBarbero = miembrosActivos.FirstOrDefault(m => m.Id == miembroAsignado)?.Nombre ?? "";
+
+        // Máx. 5 reservas por hora al mismo número (solo cuentan las que sí se crean; cada una envía un WhatsApp)
+        var digitosReserva = TelefonoHelper.SoloDigitos(dto.TelefonoCliente ?? "");
+        if (!esBarberoDeEstaBarberia && !RecuperacionClave.PermitirIp($"reservar|{barberia.Id}|{digitosReserva}", 5))
+            return StatusCode(429, new { message = "Ya hiciste varias reservas seguidas con este número. Espera un rato o escríbele a la barbería por WhatsApp." });
 
         var codigoReserva = $"#BF-{Random.Shared.Next(1000, 9999)}";
 
@@ -627,6 +650,9 @@ public class PublicController : ControllerBase
     [HttpPost("lista-espera")]
     public async Task<IActionResult> AnotarseListaEspera([FromBody] ListaEsperaDto dto)
     {
+        var digitosEspera = TelefonoHelper.SoloDigitos(dto.TelefonoCliente ?? "");
+        if (!RecuperacionClave.PermitirIp($"lista-espera|{dto.BarberiaSlug}|{digitosEspera}", 5) || !RecuperacionClave.PermitirIp($"{IpVisitante()}|lista-espera", 100))
+            return StatusCode(429, new { message = "Demasiados intentos seguidos. Espera un rato e inténtalo de nuevo." });
         var barberia = await _context.Barberias
             .Include(b => b.Servicios)
             .Include(b => b.Miembros.Where(m => m.Activo))
@@ -650,6 +676,7 @@ public class PublicController : ControllerBase
         var digitos = new string(telefono.Where(char.IsDigit).ToArray());
         var delDia = await _context.ListaEspera.Where(l => l.BarberiaId == barberia.Id && l.Fecha == dto.Fecha).ToListAsync();
         var existente = delDia.FirstOrDefault(l => new string(l.TelefonoCliente.Where(char.IsDigit).ToArray()) == digitos);
+        var esNuevo = existente == null || existente.Estado == ListaEsperaAvisos.Reservo;
         if (existente == null)
         {
             if (delDia.Count(l => l.Estado != ListaEsperaAvisos.Reservo) >= 30)
@@ -666,7 +693,7 @@ public class PublicController : ControllerBase
         existente.CreadoUtc = existente.Id == 0 ? DateTime.UtcNow : existente.CreadoUtc;
         await _context.SaveChangesAsync();
 
-        NotificacionesPush.Avisar(barberia.Id, NotificacionesPush.Nueva,
+        if (esNuevo) NotificacionesPush.Avisar(barberia.Id, NotificacionesPush.Nueva,
             $"📋 Lista de espera: {existente.NombreCliente}",
             $"Quiere turno {NotificacionesPush.TextoFecha(dto.Fecha)} {ListaEsperaAvisos.TextoFranja(franja)} · {servicio.Nombre}",
             $"espera-{existente.Id}");
@@ -732,6 +759,7 @@ public class PublicController : ControllerBase
 
         _context.Valoraciones.Add(val);
         await _context.SaveChangesAsync();
+        CachePublica.Invalidar(val.BarberiaId);
 
         return Ok(new { message = "¡Gracias por tu valoración!" });
     }
@@ -835,6 +863,7 @@ public class PublicController : ControllerBase
         });
         await _context.SaveChangesAsync();
         await tx.CommitAsync();
+        CachePublica.Invalidar(cita.BarberiaId);
 
         return Ok(new { message = "¡Gracias por calificar tu servicio!" });
     }
@@ -976,7 +1005,6 @@ public class PublicController : ControllerBase
             .Include(c => c.Servicio)
             .Include(c => c.MiembroEquipo)
             .Where(c => c.BarberiaId == barberia.Id && c.Fecha == fechaFiltro && c.Estado != "Cancelada")
-            .OrderBy(c => c.Hora)
             .Select(c => new
             {
                 c.Id,
@@ -990,6 +1018,7 @@ public class PublicController : ControllerBase
                 Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "Master Barber"
             })
             .ToListAsync();
+        citas = citas.OrderBy(c => EstadosCitas.HoraAMinutos(c.Hora)).ToList();
 
         return Ok(new
         {
@@ -1078,6 +1107,9 @@ public class PublicController : ControllerBase
     {
         var barberia = await _context.Barberias.FirstOrDefaultAsync(b => b.Slug == dto.BarberiaSlug.ToLower());
         if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+        var digitosLogin = TelefonoHelper.SoloDigitos(dto.Telefono ?? "");
+        if (!RecuperacionClave.PermitirIp($"{IpVisitante()}|login-cliente", 200) || !RecuperacionClave.PermitirIp($"login-cliente|{barberia.Id}|{digitosLogin}", 10))
+            return StatusCode(429, new { message = "Demasiados intentos. Espera un rato o usa \"¿Olvidaste tu contraseña?\"." });
 
         var cliente = await BuscarClientePorTelefono(barberia.Id, dto.Telefono);
 

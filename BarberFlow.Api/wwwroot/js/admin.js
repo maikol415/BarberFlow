@@ -722,7 +722,7 @@ function renderListaServicios(servicios) {
     (servicios || []).forEach(s => {
       if (s.categoria && s.categoria.trim()) cats.add(s.categoria.trim());
     });
-    datalist.innerHTML = Array.from(cats).map(c => `<option value="${c}">`).join('');
+    datalist.innerHTML = Array.from(cats).map(c => `<option value="${escapeHtml(c)}">`).join('');
   }
 
   if (!servicios || servicios.length === 0) {
@@ -737,7 +737,7 @@ function renderListaServicios(servicios) {
       <div class="flex-1">
         <div class="flex items-center gap-2">
           <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">${s.categoria || 'Cortes'}</span>
-          <h5 class="font-bold text-white text-sm">${s.nombre}</h5>
+          <h5 class="font-bold text-white text-sm">${escapeHtml(s.nombre)}</h5>
         </div>
         <p class="text-xs text-gray-400 mt-0.5">$ ${Number(s.precio).toLocaleString()} • ${s.duracionMinutos} min</p>
       </div>
@@ -766,8 +766,8 @@ function renderListaMiembros(miembros) {
       <div class="flex items-center gap-3">
         <img src="${foto}" class="w-11 h-11 rounded-full object-cover border border-blue-400/30 bg-gray-900 p-0.5">
         <div>
-          <h5 class="font-bold text-white text-sm">${m.nombre}</h5>
-          <p class="text-xs text-gray-400">${m.rol}</p>
+          <h5 class="font-bold text-white text-sm">${escapeHtml(m.nombre)}</h5>
+          <p class="text-xs text-gray-400">${escapeHtml(m.rol)}</p>
         </div>
       </div>
       <div class="flex items-center gap-1.5">
@@ -865,6 +865,9 @@ async function guardarPerfilBarberia(e) {
     if (res.ok) {
       avisar('¡Información de la barbería actualizada!');
       cargarPerfil();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      avisar(data.message || 'No se pudieron guardar los cambios.', 'error');
     }
   } catch (err) {
     avisar('Error al guardar cambios.');
@@ -1120,6 +1123,9 @@ async function agregarServicio(e) {
     if (res.ok) {
       document.getElementById('form-nuevo-servicio').reset();
       cargarPerfil();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      avisar(data.message || 'No se pudo agregar el servicio.', 'error');
     }
   } catch (err) {
     avisar('Error agregando servicio.');
@@ -1129,10 +1135,11 @@ async function agregarServicio(e) {
 async function eliminarServicio(id) {
   if (!(await confirmar('¿Seguro que deseas eliminar este servicio?'))) return;
   try {
-    await fetch(`/api/admin/servicios/${id}`, {
+    const res = await fetch(`/api/admin/servicios/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
+    if (!res.ok) avisar('No se pudo eliminar el servicio.', 'error');
     cargarPerfil();
   } catch (err) {
     avisar('Error eliminando servicio.');
@@ -1206,6 +1213,9 @@ async function agregarMiembro(e) {
       document.getElementById('preview-foto-miembro').src = DEFAULT_AVATAR;
       tempMiembroFotoUrl = '';
       cargarPerfil();
+    } else {
+      const data = await res.json().catch(() => ({}));
+      avisar(data.message || 'No se pudo agregar el barbero.', 'error');
     }
   } catch (err) {
     avisar('Error agregando barbero.');
@@ -1215,10 +1225,11 @@ async function agregarMiembro(e) {
 async function eliminarMiembro(id) {
   if (!(await confirmar('¿Seguro que deseas eliminar este barbero?'))) return;
   try {
-    await fetch(`/api/admin/miembros/${id}`, {
+    const res = await fetch(`/api/admin/miembros/${id}`, {
       method: 'DELETE',
       headers: getAuthHeaders()
     });
+    if (!res.ok) avisar('No se pudo eliminar el barbero.', 'error');
     cargarPerfil();
   } catch (err) {
     avisar('Error eliminando barbero.');
@@ -2113,11 +2124,11 @@ function renderListaReglasBot(reglas) {
       <div class="flex-1">
         <div class="flex items-center gap-2 flex-wrap">
           <span class="text-[10px] uppercase font-bold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
-            Palabras: ${r.palabrasClave}
+            Palabras: ${escapeHtml(r.palabrasClave)}
           </span>
         </div>
         <p class="text-xs text-gray-200 mt-1 leading-relaxed">
-          <strong class="text-emerald-400">Respuesta:</strong> ${r.respuesta}
+          <strong class="text-emerald-400">Respuesta:</strong> ${escapeHtml(r.respuesta)}
         </p>
       </div>
       <button onclick="eliminarReglaBot(${r.id})" class="text-xs px-2.5 py-1.5 rounded-lg bg-red-500/10 text-red-400 border border-red-500/20 hover:bg-red-500/20 flex items-center gap-1 transition">

@@ -12,8 +12,10 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/bf-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="/icons/bf-64.png">
   <link rel="apple-touch-icon" href="/icons/bf-apple-180.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126d">
-  <script src="/js/iconos.js?v=20261126d"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261126f">
+  <script src="/js/iconos.js?v=20261126f"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -855,7 +857,7 @@
 
   <!-- MODAL PARA EDITAR SERVICIO -->
   <div id="modal-editar-servicio" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-gray-900 border border-gray-800 max-w-lg w-full rounded-2xl p-6 shadow-2xl relative">
+    <div class="bg-gray-900 border border-gray-800 max-w-lg w-full rounded-2xl p-6 shadow-2xl relative max-h-[92dvh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-800">
         <h3 class="font-bold text-white text-base flex items-center gap-2">
           <i data-lucide="edit-3" class="w-4 h-4 text-blue-400"></i> Editar Servicio
@@ -951,7 +953,7 @@
 
   <!-- MODAL PARA AGENDAR CITA MANUALMENTE (DESDE TABLET / LOCAL) -->
   <div id="modal-cita-manual" class="fixed inset-0 bg-black/85 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-gray-900 border border-gray-800 max-w-md w-full rounded-2xl p-6 shadow-2xl relative">
+    <div class="bg-gray-900 border border-gray-800 max-w-md w-full rounded-2xl p-6 shadow-2xl relative max-h-[92dvh] overflow-y-auto">
       <div class="flex items-center justify-between mb-4 pb-2 border-b border-gray-800">
         <h3 class="font-bold text-white text-base flex items-center gap-2">
           <i data-lucide="plus-circle" class="w-4 h-4 text-blue-400"></i> Agendar Cita en Local
@@ -1090,11 +1092,11 @@
     </div>
   </div>
 
-  <script src="/js/tema.js?v=20261126d"></script>
-  <script src="/js/avisos.js?v=20261126d"></script>
-  <script src="/js/turnos.js?v=20261126d"></script>
-  <script src="/js/admin.js?v=20261126d"></script>
-  <script src="/js/notificaciones.js?v=20261126d"></script>
+  <script src="/js/tema.js?v=20261126f"></script>
+  <script src="/js/avisos.js?v=20261126f"></script>
+  <script src="/js/turnos.js?v=20261126f"></script>
+  <script src="/js/admin.js?v=20261126f"></script>
+  <script src="/js/notificaciones.js?v=20261126f"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

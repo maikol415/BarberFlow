@@ -53,7 +53,7 @@ public static class EstadosCitas
         var hoy = ahora.ToString("yyyy-MM-dd");
 
         var query = db.Citas.Include(c => c.Servicio)
-            .Where(c => c.Estado == Pendiente || c.Estado == Confirmada);
+            .Where(c => (c.Estado == Pendiente || c.Estado == Confirmada) && string.Compare(c.Fecha, hoy) <= 0);
         if (barberiaId.HasValue) query = query.Where(c => c.BarberiaId == barberiaId.Value);
 
         var candidatas = (await query.ToListAsync())

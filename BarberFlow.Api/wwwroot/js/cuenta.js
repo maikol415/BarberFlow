@@ -38,7 +38,12 @@ function borrarSesion() {
 async function api(ruta, opciones = {}) {
   const headers = { 'Content-Type': 'application/json', ...(opciones.headers || {}) };
   if (sesion?.token) headers.Authorization = `Bearer ${sesion.token}`;
-  const res = await fetch(`/api/public${ruta}`, { ...opciones, headers });
+  let res;
+  try {
+    res = await fetch(`/api/public${ruta}`, { ...opciones, headers });
+  } catch (e) {
+    return { ok: false, status: 0, data: { message: 'No hay conexión. Revisa tu internet e inténtalo de nuevo.' } };
+  }
   let data = null;
   try { data = await res.json(); } catch (e) {}
   if (res.status === 401 && sesion) {
@@ -407,7 +412,11 @@ async function cargarCitas() {
 
 async function cargarCuenta() {
   const { ok, data } = await api('/clientes/me');
-  if (!ok) { if (!sesion) mostrarVista('auth'); return; }
+  if (!ok) {
+    if (!sesion) return mostrarVista('auth');
+    avisar((data && data.message) || 'No pudimos cargar tu cuenta. Revisa tu conexión y recarga la página.', 'error');
+    return;
+  }
   $('perfil-nombre').textContent = `Hola, ${String(data.nombre || '').split(' ')[0]} 👋`;
   $('perfil-tel').textContent = separarTelefono(data.telefono);
   $('perfil-inicial').textContent = String(data.nombre || '?').trim().charAt(0).toUpperCase();

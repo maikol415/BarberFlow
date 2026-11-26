@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, generateMessageIDV2 } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, generateMessageIDV2, DEFAULT_CONNECTION_CONFIG } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import http from 'http';
 import fetch from 'node-fetch';
@@ -19,6 +19,7 @@ if (!BOT_API_KEY) {
 // fetch hacia los endpoints /bot/* de la API, siempre con la clave del bot
 function apiBotFetch(ruta, opciones = {}) {
   return fetch(`${API_BASE_URL}${ruta}`, {
+    signal: AbortSignal.timeout(15000),
     ...opciones,
     headers: { ...(opciones.headers || {}), 'X-Bot-Key': BOT_API_KEY }
   });
@@ -266,9 +267,27 @@ async function resolverJidDestinatario(sock, telefono) {
 // Clientes que acaban de iniciar conversación: a su primera respuesta se le antepone un saludo
 const saludoPendiente = new Set();
 
+// Máximo 6 mensajes del bot a un mismo chat cada 10 minutos (si otro bot le responde, no se arma un bucle)
+const enviosPorChat = new Map(); // jid -> [instantes]
+const MAX_ENVIOS_POR_CHAT = 6;
+function cupoDeEnvio(jid) {
+  const ahora = Date.now();
+  const recientes = (enviosPorChat.get(jid) || []).filter(t => ahora - t < 10 * 60 * 1000);
+  if (recientes.length >= MAX_ENVIOS_POR_CHAT) {
+    enviosPorChat.set(jid, recientes);
+    if (recientes.length === MAX_ENVIOS_POR_CHAT) console.warn(`[Tope] Demasiados mensajes seguidos a ${digitosDeJid(jid)}: el bot se calla 10 minutos en ese chat.`);
+    return false;
+  }
+  recientes.push(ahora);
+  enviosPorChat.set(jid, recientes);
+  if (enviosPorChat.size > 2000) for (const [k, v] of enviosPorChat) if (!v.some(t => ahora - t < 10 * 60 * 1000)) enviosPorChat.delete(k);
+  return true;
+}
+
 const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
   try {
     if (!sock || (!estaConectado && !MODO_PRUEBA && !sock.esPrueba)) return false;
+    if (!MODO_PRUEBA && !sock.esPrueba && !cupoDeEnvio(remitente)) return false;
 
     if (saludoPendiente.has(remitente)) {
       saludoPendiente.delete(remitente);
@@ -300,7 +319,7 @@ async function obtenerDatosBarberia(forzar = false) {
   const ahoraTs = Date.now();
   if (forzar || !cacheBarberia || ahoraTs - ultimaCargaCache > 60000) {
     try {
-      const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`, { timeout: 4000 });
+      const res = await fetch(`${API_BASE_URL}/barberia/${BARBERIA_SLUG}`, { signal: AbortSignal.timeout(10000) });
       if (res.ok) {
         const data = await res.json();
         cacheBarberia = data.barberia || data;
@@ -401,6 +420,14 @@ const servidorHttp = http.createServer(async (req, res) => {
   res.end(`BarberFlow bot activo. WhatsApp ${estaConectado ? 'conectado' : 'sin conectar'}.`);
 });
 
+if (!MODO_PRUEBA) {
+  process.on('unhandledRejection', err => console.error('[Error sin manejar]', err?.message || err));
+}
+if (process.env.BOT_HIJO === '1') {
+  // Si el gestor se cae, esta copia se apaga: el gestor nuevo enciende otra y nunca quedan dos con el mismo WhatsApp
+  process.on('disconnect', () => process.exit(0));
+  servidorHttp.on('error', err => { console.error('[Servidor del bot]', err.message); process.exit(1); });
+}
 if (!MODO_PRUEBA && !MODO_GESTOR) {
   // Las copias por barbería solo las usa el gestor: escuchan únicamente por dentro (127.0.0.1)
   servidorHttp.listen(PORT, process.env.BOT_HIJO === '1' ? '127.0.0.1' : '0.0.0.0', () => {
@@ -810,6 +837,7 @@ export function urlCalificarCita(tokenPublico) {
   return `${BASE_WEB_URL}/index.html?b=${encodeURIComponent(BARBERIA_SLUG)}&calificar=${encodeURIComponent(tokenPublico)}`;
 }
 
+const encuestasProgramadas = new Map(); // citaId -> temporizador
 function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barberiaNombre, fecha, hora, duracionMinutos) {
   const inicio = instanteCita(fecha, hora);
   if (!inicio || !citaId || !tokenPublico) return null;
@@ -817,7 +845,9 @@ function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barber
   const espera = envio - Date.now();
   if (espera < 0 || espera > MAX_ESPERA_MS) return null;
 
-  setTimeout(async () => {
+  clearTimeout(encuestasProgramadas.get(citaId));
+  encuestasProgramadas.set(citaId, setTimeout(async () => {
+    encuestasProgramadas.delete(citaId);
     try {
       if (!socketActivo || !estaConectado) return;
       if ((await obtenerDatosBarberia()).pedirOpinionActivo === false) return; // el barbero lo apagó en el panel
@@ -832,13 +862,21 @@ function agendarEncuestaPostCita(jid, primerNombre, citaId, tokenPublico, barber
     } catch (e) {
       console.log('Error enviando encuesta post-cita:', e.message);
     }
-  }, espera);
+  }, espera));
   return Math.round(espera / 60000);
 }
 
 // Recordatorios automáticos: el barbero elige en el panel uno o varios momentos (2 días, 1 día, 12, 6, 3, 2 o 1 hora antes).
 // Se apagan desde el panel o con RECORDATORIOS_ACTIVOS=0. Se recuerda en memoria qué recordatorio de cada cita ya salió.
 const HORAS_RECORDATORIO_VALIDAS = [48, 24, 12, 6, 3, 2, 1];
+
+// Marcas guardadas junto a la sesión de WhatsApp (PostgreSQL): así un reinicio no repite recordatorios ni el anuncio
+async function marcaGuardada(tipo, id) {
+  try { return !!(await almacenClavesSesion?.get(tipo, [id]))?.[id]; } catch (e) { return false; }
+}
+function guardarMarca(tipo, id) {
+  almacenClavesSesion?.set({ [tipo]: { [id]: Date.now() } }).catch(e => console.error('No se pudo guardar la marca:', e.message));
+}
 const recordatoriosEnviados = new Set(); // "citaId:horas"
 const confirmacionEnviada = new Map();   // citaId -> cuándo se le mandó la confirmación de la reserva
 
@@ -882,11 +920,13 @@ export async function revisarRecordatorios(ahoraMs = Date.now()) {
       // (p. ej. "2 horas antes" sale entre 2:00 y 1:00 antes; con la revisión cada 5 min, a las ~2 h justas)
       const horas = listaHoras.find(h => minutosFaltan <= h * 60 && minutosFaltan > h * 60 - 60);
       if (!horas || recordatoriosEnviados.has(`${c.id}:${horas}`)) continue;
+      if (await marcaGuardada('bf-rec', `${c.id}:${horas}`)) { recordatoriosEnviados.add(`${c.id}:${horas}`); continue; }
       // Si acaba de reservar (le llegó la confirmación hace menos de 1 h y media), no recordarle todavía
       const desdeConfirmacion = ahoraMs - (confirmacionEnviada.get(c.id) ?? -Infinity);
       if (desdeConfirmacion >= 0 && desdeConfirmacion < 90 * 60 * 1000) continue;
 
       recordatoriosEnviados.add(`${c.id}:${horas}`);
+      guardarMarca('bf-rec', `${c.id}:${horas}`);
       const jid = await resolverJidDestinatario(socketActivo, c.telefonoCliente);
       const plantillaRec = (barberiaDatos.plantillaRecordatorio || '').trim();
       if (plantillaRec) {
@@ -972,6 +1012,9 @@ function obtenerAlmacenSesion() {
 // Cada socket recibe un número; un reset lo incrementa para que el socket viejo
 // (y sus reconexiones pendientes) dejen de actuar.
 let generacionBot = 0;
+let reconexionesSeguidas = 0;
+const loggerBaileys = DEFAULT_CONNECTION_CONFIG.logger.child({});
+loggerBaileys.level = process.env.BOT_LOG_NIVEL || 'warn';
 function reintentarBot(generacion, ms) {
   setTimeout(() => { if (generacion === generacionBot) iniciarBot(); }, ms);
 }
@@ -979,7 +1022,11 @@ function reintentarBot(generacion, ms) {
 async function resetearSesionWhatsApp() {
   generacionBot++;
   const anterior = socketActivo;
+  const estabaConectado = estaConectado;
   socketActivo = null;
+  if (estabaConectado) {
+    try { await Promise.race([anterior?.logout(), new Promise(r => setTimeout(r, 5000))]); } catch (e) { /* ya estaba cerrada */ }
+  }
   try { anterior?.end(undefined); } catch (e) {}
   ultimoQrDataUrl = '';
   estaConectado = false;
@@ -1006,10 +1053,16 @@ async function iniciarBot() {
 
   const { state, saveCreds } = estadoAuth;
   almacenClavesSesion = state.keys;
-  const sock = marcarEnviosDelBot(makeWASocket({ auth: state, printQRInTerminal: false }));
+  const sock = marcarEnviosDelBot(makeWASocket({
+    auth: state,
+    printQRInTerminal: false,
+    markOnlineOnConnect: false,          // si el bot aparece "en línea", al barbero dejan de sonarle las notificaciones
+    shouldSyncHistoryMessage: () => false, // no descargar el historial de chats (menos memoria)
+    logger: loggerBaileys
+  }));
   socketActivo = sock;
 
-  sock.ev.on('creds.update', saveCreds);
+  sock.ev.on('creds.update', () => Promise.resolve(saveCreds()).catch(e => console.error('No se pudo guardar la sesión de WhatsApp:', e.message)));
 
   sock.ev.on('connection.update', async (update) => {
     if (generacion !== generacionBot) return; // socket reemplazado por un reset
@@ -1030,7 +1083,11 @@ async function iniciarBot() {
 
       if (shouldReconnect) {
         estadoConexion = 'Reconectando automáticamente...';
-        reintentarBot(generacion, 3000);
+        reconexionesSeguidas++;
+        const espera = statusCode === DisconnectReason.connectionReplaced
+          ? 60000
+          : Math.min(60000, 3000 * 2 ** Math.min(reconexionesSeguidas - 1, 5));
+        reintentarBot(generacion, espera);
       } else {
         estadoConexion = 'Sesión expirada. Generando nuevo código QR...';
         try {
@@ -1041,6 +1098,7 @@ async function iniciarBot() {
         reintentarBot(generacion, 2000);
       }
     } else if (connection === 'open') {
+      reconexionesSeguidas = 0;
       estaConectado = true;
       ultimoQrDataUrl = '';
       estadoConexion = 'Conectado';
@@ -1055,6 +1113,11 @@ async function iniciarBot() {
 export async function procesarMensajeEntrante(sock, m) {
     try {
       if (!m.messages || m.messages.length === 0) return;
+      // Al reconectar pueden llegar varios mensajes juntos: se atiende cada uno
+      if (m.messages.length > 1) {
+        for (const uno of m.messages) await procesarMensajeEntrante(sock, { ...m, messages: [uno] });
+        return;
+      }
       const msg = m.messages[0];
       if (!msg.message) return;
 
@@ -1066,10 +1129,13 @@ export async function procesarMensajeEntrante(sock, m) {
 
       // Solo mensajes nuevos: al reconectar llegan mensajes de historial (type 'append') que no se deben contestar
       if (m.type && m.type !== 'notify') return;
+      // Mensajes de hace más de 10 minutos (llegaron mientras el bot estaba desconectado): no se contestan
+      const enviadoMs = marcaDeTiempoMs(msg);
+      if (!MODO_PRUEBA && enviadoMs > 0 && Date.now() - enviadoMs > 10 * 60 * 1000) return;
 
       const remitente = msg.key.remoteJid;
       // 🛡️ REGLA 1: Ignorar grupos y difusiones
-      if (!remitente || remitente.includes('@g.us') || remitente.includes('broadcast')) return;
+      if (!remitente || remitente.includes('@g.us') || remitente.includes('broadcast') || remitente.includes('@newsletter')) return;
 
       // ⚠️ Ignorar mensajes propios
       if (msg.key.fromMe) return;
@@ -1083,6 +1149,8 @@ export async function procesarMensajeEntrante(sock, m) {
       ).toLowerCase().trim();
 
       if (!texto) return;
+      // Respuesta de otro bot de BarberFlow (trae nuestros enlaces o menús): no contestar para no armar un bucle
+      if (texto.includes('index.html?b=') || texto.includes('escribe solo el número')) return;
       // Versión sin tildes ni letras alargadas ("Holaaa", "Quiubooo", "Buenaaas") para reconocer cómo escribe la gente
       const textoN = normalizarTexto(texto);
 
@@ -1383,7 +1451,7 @@ export async function procesarMensajeEntrante(sock, m) {
       // 4. Preguntas Frecuentes personalizadas desde el panel
       const reglas = barberia.botReglas || [];
       for (const regla of reglas) {
-        const palabras = regla.palabrasClave.split(',').map(p => p.trim().toLowerCase());
+        const palabras = String(regla.palabrasClave || '').split(',').map(p => p.trim().toLowerCase());
         if (palabras.some(p => p && texto.includes(p))) {
           await enviarMensajeHumano(sock, remitente, regla.respuesta);
           return;
@@ -1609,20 +1677,28 @@ export async function revisarAnuncioMatutino(ahoraMs = Date.now()) {
   const jidBarbero = formatearJidWhatsApp(data.telefonoWhatsApp);
   if (!jidBarbero) return null;
 
+  if (await marcaGuardada('bf-anuncio', fechaIso)) { ultimoDiaAnuncioEnviado = fechaIso; return null; }
+  ultimoDiaAnuncioEnviado = fechaIso;
+  guardarMarca('bf-anuncio', fechaIso);
   const texto = armarAnuncioMatutino(data);
   await enviarMensajeHumano(socketActivo, jidBarbero, texto);
-  ultimoDiaAnuncioEnviado = fechaIso;
   console.log(`[Anuncio Matutino Enviado] ${fechaIso}`);
   return texto;
 }
 
+let revisandoAnuncio = false;
 const cronAnuncioMatutino = setInterval(() => {
-  revisarAnuncioMatutino().catch(err => console.error('Error en anuncio matutino:', err.message));
+  if (revisandoAnuncio) return;
+  revisandoAnuncio = true;
+  revisarAnuncioMatutino().catch(err => console.error('Error en anuncio matutino:', err.message)).finally(() => { revisandoAnuncio = false; });
 }, 60 * 1000);
 
 // ----------------- CRON: RECORDATORIOS ANTES DE LA CITA -----------------
+let revisandoRecordatorios = false;
 const cronRecordatorios = setInterval(() => {
-  revisarRecordatorios().catch(err => console.error('Error en recordatorios:', err.message));
+  if (revisandoRecordatorios) return;
+  revisandoRecordatorios = true;
+  revisarRecordatorios().catch(err => console.error('Error en recordatorios:', err.message)).finally(() => { revisandoRecordatorios = false; });
 }, 5 * 60 * 1000);
 
 if (MODO_PRUEBA || MODO_GESTOR) {

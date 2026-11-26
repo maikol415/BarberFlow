@@ -30,11 +30,12 @@ const MINUTOS_QR_SIN_USO = 6;
 
 const SLUG_VALIDO = /^[a-z0-9][a-z0-9-]{0,79}$/;
 const hijos = new Map(); // slug -> { proceso, puerto, inicio, ultimaConsulta, detenido, caidas: [] }
+const puertosEnUso = new Set(); // puertos de procesos que todavía no han salido
 
 function log(...a) { console.log('[Gestor]', ...a); }
 
 function puertoLibre() {
-  const usados = new Set([...hijos.values()].map(h => h.puerto));
+  const usados = new Set([...hijos.values()].map(h => h.puerto).concat([...puertosEnUso]));
   for (let p = PUERTO_BASE_HIJOS; p < PUERTO_BASE_HIJOS + 200; p++) if (!usados.has(p)) return p;
   throw new Error('Sin puertos libres');
 }
@@ -46,6 +47,7 @@ function arrancarHijo(slug, puerto = puertoLibre()) {
     env: { ...process.env, BOT_HIJO: '1', BARBERIA_SLUG: slug, PORT: String(puerto), BOT_PORT: String(puerto) },
     stdio: ['ignore', 'pipe', 'pipe', 'ipc']
   });
+  puertosEnUso.add(puerto);
   const anterior = hijos.get(slug);
   const hijo = { proceso, puerto, inicio: Date.now(), ultimaConsulta: Date.now(), detenido: false, caidas: anterior?.caidas || [] };
   hijos.set(slug, hijo);
@@ -53,6 +55,7 @@ function arrancarHijo(slug, puerto = puertoLibre()) {
   proceso.stdout.on('data', d => process.stdout.write(String(d).split('\n').filter(Boolean).map(l => `${prefijo} ${l}`).join('\n') + '\n'));
   proceso.stderr.on('data', d => process.stderr.write(String(d).split('\n').filter(Boolean).map(l => `${prefijo} ${l}`).join('\n') + '\n'));
   proceso.on('exit', (codigo, senal) => {
+    puertosEnUso.delete(puerto);
     if (hijos.get(slug) !== hijo) return;
     if (hijo.detenido) { hijos.delete(slug); return; }
     // Se cayó solo: se vuelve a encender (más despacio si se cae seguido)
@@ -169,9 +172,9 @@ const servidor = http.createServer(async (req, res) => {
 
     if (ruta === '/api/desvincular') {
       const h = hijos.get(slug) || (await asegurarHijo(slug)).hijo;
-      if (h) await reenviar(h, 'POST', '/api/reset').catch(() => {});
+      const ok = h ? await reenviar(h, 'POST', '/api/reset').then(r => r.status < 300).catch(() => false) : false;
       detenerHijo(slug);
-      return responder(res, 200, { ok: true });
+      return ok ? responder(res, 200, { ok: true }) : responder(res, 503, { error: 'No se pudo desvincular ahora. Intenta en un minuto.' });
     }
 
     if (ruta === '/api/reset' || ruta === '/api/probar') {
@@ -187,9 +190,13 @@ const servidor = http.createServer(async (req, res) => {
     if (req.method === 'POST' && (ruta.startsWith('/api/notificar-') || ruta === '/api/enviar-codigo')) {
       const h = hijos.get(slug);
       if (!h) return responder(res, 200, { enviado: false, razon: 'Esa barbería no tiene el bot de WhatsApp vinculado' });
-      const fw = await reenviar(h, 'POST', ruta, cuerpo);
-      res.writeHead(fw.status, { 'Content-Type': 'application/json' });
-      return res.end(fw.texto);
+      try {
+        const fw = await reenviar(h, 'POST', ruta, cuerpo);
+        res.writeHead(fw.status, { 'Content-Type': 'application/json' });
+        return res.end(fw.texto);
+      } catch (e) {
+        return responder(res, 200, { enviado: false, razon: 'El bot de esa barbería se está reiniciando' });
+      }
     }
 
     return responder(res, 404, { error: 'Ruta desconocida' });

@@ -10,11 +10,17 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/bf-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="/icons/bf-64.png">
   <link rel="apple-touch-icon" href="/icons/bf-apple-180.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126d">
-  <link rel="stylesheet" href="/css/tema.css?v=20261126d">
-  <script src="/js/iconos.js?v=20261126d"></script>
+  <script>
+    // Pide los datos de la barbería desde el primer instante (mientras se descargan estilos y código)
+    window.__cargaBarberia = fetch('/api/public/barberia/' + encodeURIComponent((new URLSearchParams(location.search).get('b') || 'barberia-jr').toLowerCase()));
+  </script>
+  <link rel="stylesheet" href="/css/app.css?v=20261126f">
+  <link rel="stylesheet" href="/css/tema.css?v=20261126f">
+  <script src="/js/iconos.js?v=20261126f"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="/js/confetti.browser.min.js"></script>
+  <script src="/js/confetti.browser.min.js?v=20261126f" defer></script>
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; }
     .campo { width: 100%; background: #030712; border: 1px solid #374151; border-radius: 0.75rem; padding: 0.7rem 0.9rem; font-size: 0.9rem; color: #fff; outline: none; transition: border-color .15s; }
@@ -103,7 +109,7 @@
         <input type="search" id="input-buscar-servicio" oninput="filtrarServiciosPorTexto(this.value)" placeholder="Buscar servicio..." class="campo pl-10">
       </div>
 
-      <div id="categorias-container" class="flex items-start justify-center gap-4 sm:gap-6 overflow-x-auto sin-scroll pt-3 pb-2 mb-2" role="tablist"></div>
+      <div id="categorias-container" class="flex items-start justify-start sm:justify-center gap-4 sm:gap-6 overflow-x-auto sin-scroll pt-3 pb-2 mb-2" role="tablist"></div>
       <h3 id="titulo-categoria-activa" class="text-center font-extrabold text-blue-400 text-lg mb-3"></h3>
       <div id="services-cards-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5"></div>
     </section>
@@ -330,9 +336,9 @@
     </div>
   </footer>
 
-  <script src="/js/tema.js?v=20261126d"></script>
-  <script src="/js/avisos.js?v=20261126d"></script>
-  <script src="/js/turnos.js?v=20261126d"></script>
-  <script src="/js/client.js?v=20261126d"></script>
+  <script src="/js/tema.js?v=20261126f"></script>
+  <script src="/js/avisos.js?v=20261126f"></script>
+  <script src="/js/turnos.js?v=20261126f"></script>
+  <script src="/js/client.js?v=20261126f"></script>
 </body>
 </html>

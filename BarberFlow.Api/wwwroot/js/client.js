@@ -108,7 +108,11 @@ async function initClient() {
   llenarPaises();
   cargarSesionCliente();
   try {
-    const res = await fetch(`/api/public/barberia/${encodeURIComponent(slugUrl)}`);
+    // La petición ya salió desde el <head> (index.html); si falló, se intenta de nuevo aquí
+    const url = `/api/public/barberia/${encodeURIComponent(slugUrl)}`;
+    const temprana = window.__cargaBarberia;
+    window.__cargaBarberia = null;
+    const res = temprana ? await temprana.catch(() => fetch(url)) : await fetch(url);
     if (!res.ok) return mostrarBarberiaNoEncontrada();
     barberia = await res.json();
   } catch (err) {
@@ -768,6 +772,7 @@ function mostrarErrorReserva(texto) {
 }
 
 // ================== Confirmar ==================
+let enviandoReserva = false;
 async function confirmarReservaFinal(e) {
   e.preventDefault();
   mostrarErrorReserva('');
@@ -779,6 +784,8 @@ async function confirmarReservaFinal(e) {
   if (hayVariosBarberos() && reservaActual.barberoId == null) return mostrarErrorReserva('Elige con qué barbero quieres tu cita.');
   if (!reservaActual.fechaSeleccionada || !reservaActual.horaSeleccionada) return mostrarErrorReserva('Elige el día y la hora de tu cita.');
 
+  if (enviandoReserva) return;
+  enviandoReserva = true;
   const btn = $('btn-confirmar-final');
   btn.disabled = true;
   btn.querySelector('span').textContent = 'Reservando...';
@@ -824,6 +831,7 @@ async function confirmarReservaFinal(e) {
     console.error('Error al confirmar:', err);
     mostrarErrorReserva('No pudimos conectar con el servidor. Revisa tu conexión e intenta de nuevo.');
   } finally {
+    enviandoReserva = false;
     btn.disabled = false;
     btn.querySelector('span').textContent = 'Confirmar cita';
   }
@@ -860,7 +868,7 @@ async function verificarParametrosUrl() {
     const s = todosLosServicios.find(x => x.id === servicioParam);
     if (s) seleccionarServicio(s, false);
   }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(fechaParam) && fechaParam >= ahoraBogota().iso) {
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fechaParam) && fechaParam >= ahoraBogota().iso && fechaParam < sumarDias(ahoraBogota().iso, diasAMostrar())) {
     reservaActual.fechaSeleccionada = fechaParam;
     reservaActual.horaSeleccionada = null;
     renderCalendario();
@@ -902,7 +910,10 @@ async function verificarParametrosUrl() {
         return;
       }
       const serv = todosLosServicios.find(s => s.nombre.toLowerCase() === String(info.servicio).toLowerCase());
-      if (!serv) return;
+      if (!serv) {
+        avisar('Ese servicio ya no está disponible para reagendar. Escríbele a la barbería por WhatsApp o reserva uno nuevo.', 'error');
+        return;
+      }
       citaTokenReagendar = reagendarToken;
       citaReagendarInfo = { fecha: info.fecha, hora: info.hora };
       $('reagendar-nombre-servicio').textContent = info.servicio;

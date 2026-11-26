@@ -11,6 +11,7 @@ namespace BarberFlow.Api.Controllers;
 [Authorize(Policy = PoliticasAuth.Barbero)]
 [ApiController]
 [Route("api/[controller]")]
+[InvalidaCachePublica] // lo que el barbero guarda se ve al instante en su página
 public class AdminController : ControllerBase
 {
     private readonly AppDbContext _context;
@@ -129,6 +130,8 @@ public class AdminController : ControllerBase
         barberia.HorarioTexto = dto.HorarioTexto.Trim();
         if (!string.IsNullOrWhiteSpace(dto.LogoUrl))
         {
+            // Solo se revisa si cambió (un logo antiguo grande no debe impedir guardar lo demás)
+            if (barberia.LogoUrl != dto.LogoUrl.Trim() && !ImagenValida(dto.LogoUrl.Trim())) return BadRequest(new { message = "La foto de perfil no es válida o es demasiado grande." });
             if (barberia.LogoUrl != dto.LogoUrl.Trim()) barberia.ReaccionesLogo = ""; // logo nuevo: reacciones desde cero
             barberia.LogoUrl = dto.LogoUrl.Trim();
         }
@@ -308,10 +311,10 @@ public class AdminController : ControllerBase
             .Include(c => c.MiembroEquipo)
             .Where(c => c.BarberiaId == barberiaId);
 
-        var hoy = DateTime.UtcNow.Date;
+        var hoy = EstadosCitas.AhoraColombia().Date;
         if (filtro == "semana")
         {
-            var lunes = hoy.AddDays(-(int)hoy.DayOfWeek + (int)DayOfWeek.Monday);
+            var lunes = hoy.AddDays(-(((int)hoy.DayOfWeek + 6) % 7));
             var domingo = lunes.AddDays(6);
             var startIso = lunes.ToString("yyyy-MM-dd");
             var endIso = domingo.ToString("yyyy-MM-dd");
@@ -361,9 +364,20 @@ public class AdminController : ControllerBase
         return Ok(citas);
     }
 
+    // Imagen guardada en la base: data:image (máx. ~900 KB) o enlace https / subida propia (no "//otro-sitio")
+    internal static bool ImagenValida(string valor) =>
+        valor.Length <= 900_000 &&
+        (valor.StartsWith("data:image/jpeg;base64,") || valor.StartsWith("data:image/png;base64,") ||
+         valor.StartsWith("data:image/webp;base64,") || (valor.StartsWith("data:image/svg+xml;utf8,") && valor.Length < 3000 && !valor.Contains("script", StringComparison.OrdinalIgnoreCase) && !valor.Contains("on", StringComparison.Ordinal) ) ||
+         valor.StartsWith("https://") || valor.StartsWith("/uploads/"));
+
+    private static readonly string[] EstadosValidos =
+        { EstadosCitas.Pendiente, EstadosCitas.Confirmada, EstadosCitas.NoConfirmada, EstadosCitas.Completada, EstadosCitas.Cancelada };
+
     [HttpPatch("citas/{id}/estado")]
     public async Task<IActionResult> CambiarEstadoCita(int id, [FromBody] CambiarEstadoCitaDto dto)
     {
+        if (!EstadosValidos.Contains(dto.Estado)) return BadRequest(new { message = "Estado no válido." });
         var barberiaId = ObtenerBarberiaId();
         var cita = await _context.Citas
             .Include(c => c.Servicio)
@@ -491,7 +505,7 @@ public class AdminController : ControllerBase
             BarberiaId = barberiaId,
             Nombre = dto.Nombre,
             Rol = dto.Rol,
-            FotoUrl = string.IsNullOrWhiteSpace(dto.FotoUrl) ? defaultAvatar : dto.FotoUrl,
+            FotoUrl = string.IsNullOrWhiteSpace(dto.FotoUrl) || !ImagenValida(dto.FotoUrl.Trim()) ? defaultAvatar : dto.FotoUrl.Trim(),
             Activo = true
         };
         _context.Miembros.Add(miembro);
@@ -531,7 +545,7 @@ public class AdminController : ControllerBase
         miembro.Rol = dto.Rol.Trim();
         if (!string.IsNullOrWhiteSpace(dto.FotoUrl))
         {
-            miembro.FotoUrl = dto.FotoUrl;
+            if (miembro.FotoUrl == dto.FotoUrl || ImagenValida((dto.FotoUrl ?? "").Trim())) miembro.FotoUrl = dto.FotoUrl;
         }
 
         await _context.SaveChangesAsync();

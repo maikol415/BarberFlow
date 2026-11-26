@@ -107,6 +107,8 @@ public class AuthController : ControllerBase
     public async Task<IActionResult> Login([FromBody] LoginDto dto)
     {
         var emailLower = dto.Email.Trim().ToLowerInvariant();
+        if (!RecuperacionClave.PermitirIp($"{IpCliente()}|login-barbero", 200) || !RecuperacionClave.PermitirIp($"login-barbero|{emailLower}", 15))
+            return StatusCode(429, new { message = "Demasiados intentos. Espera un rato e inténtalo de nuevo, o usa \"¿Olvidaste tu contraseña?\"." });
         var barbero = await _context.Barberos
             .Include(u => u.Barberia)
             .FirstOrDefaultAsync(u => u.Email == emailLower);
