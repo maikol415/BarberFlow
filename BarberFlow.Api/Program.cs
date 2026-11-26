@@ -170,7 +170,7 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasRecordatorio"" integer NOT NULL DEFAULT 2;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PedirOpinionActivo"" boolean NOT NULL DEFAULT true;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasRecordatorios"" text NOT NULL DEFAULT '24,2';
-                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MinutosPausaBot"" integer NOT NULL DEFAULT 120;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""MinutosPausaBot"" integer NOT NULL DEFAULT 30;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""ReaccionesPortada"" text NOT NULL DEFAULT '';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PortadaPosicion"" text NOT NULL DEFAULT '50 50';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""ReaccionesLogo"" text NOT NULL DEFAULT '';
@@ -315,7 +315,7 @@ using (var scope = app.Services.CreateScope())
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorasRecordatorio"" INTEGER NOT NULL DEFAULT 2",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""PedirOpinionActivo"" INTEGER NOT NULL DEFAULT 1",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorasRecordatorios"" TEXT NOT NULL DEFAULT '24,2'",
-                @"ALTER TABLE ""Barberias"" ADD COLUMN ""MinutosPausaBot"" INTEGER NOT NULL DEFAULT 120",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""MinutosPausaBot"" INTEGER NOT NULL DEFAULT 30",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""ReaccionesPortada"" TEXT NOT NULL DEFAULT ''",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""PortadaPosicion"" TEXT NOT NULL DEFAULT '50 50'",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorarioSemanal"" TEXT NOT NULL DEFAULT ''",
@@ -386,6 +386,23 @@ using (var scope = app.Services.CreateScope())
                 CREATE INDEX IF NOT EXISTS ""IX_ListaEspera_BarberiaId_Fecha"" ON ""ListaEspera"" (""BarberiaId"", ""Fecha"");
             ");
         }
+    }
+
+    // Una sola vez: la pausa del bot pasó de 2 horas a 30 minutos por defecto.
+    // Las barberías que tenían el valor anterior por defecto (2 horas) quedan en 30 minutos.
+    try
+    {
+        const string marcaPausa = "migracion-pausa-bot-30";
+        if (!db.Configuracion.Any(c => c.Clave == marcaPausa))
+        {
+            db.Database.ExecuteSqlRaw(@"UPDATE ""Barberias"" SET ""MinutosPausaBot"" = 30 WHERE ""MinutosPausaBot"" = 120");
+            db.Configuracion.Add(new ConfiguracionSistema { Clave = marcaPausa, Valor = DateTime.UtcNow.ToString("o") });
+            db.SaveChanges();
+        }
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"Error pasando la pausa del bot a 30 minutos: {ex.Message}");
     }
 
     if (!db.Barberos.Any())

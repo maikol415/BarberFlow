@@ -678,13 +678,13 @@
             <h5 class="text-xs font-bold text-amber-400 flex items-center gap-1.5 mb-1">
               <i data-lucide="hand" class="w-4 h-4"></i> Cuando tú respondes en un chat
             </h5>
-            <p class="text-[11px] text-gray-400 mb-3">Si escribes tú mismo en un chat desde tu celular, el bot deja de responder en ese chat por un rato, para no interrumpir tu conversación. Los avisos de citas y recordatorios sí siguen llegando.</p>
+            <p class="text-[11px] text-gray-400 mb-3">Si escribes tú mismo en un chat desde tu celular, el bot deja de responder en ese chat por un rato, para no interrumpir tu conversación. Pasados 10 minutos desde tu último mensaje, si el cliente escribe "hola", SI, CANCELAR o REAGENDAR, el bot vuelve a atenderlo. Los avisos de citas y recordatorios sí siguen llegando.</p>
             <div class="flex items-center gap-2 flex-wrap p-3.5 rounded-xl bg-gray-950 border border-gray-800">
               <label for="conf-pausa-bot" class="text-xs text-gray-300 font-semibold">El bot se queda callado en ese chat durante</label>
               <select id="conf-pausa-bot" class="bg-gray-900 border border-gray-700 rounded-lg px-3 py-2 text-xs text-white cursor-pointer">
-                <option value="30">30 minutos</option>
+                <option value="30" selected>30 minutos</option>
                 <option value="60">1 hora</option>
-                <option value="120" selected>2 horas</option>
+                <option value="120">2 horas</option>
                 <option value="240">4 horas</option>
                 <option value="480">8 horas</option>
                 <option value="1440">1 día</option>
@@ -1095,7 +1095,7 @@
   <script src="/js/tema.js?v=20261126g"></script>
   <script src="/js/avisos.js?v=20261126g"></script>
   <script src="/js/turnos.js?v=20261126g"></script>
-  <script src="/js/admin.js?v=20261126g"></script>
+  <script src="/js/admin.js?v=20261126h"></script>
   <script src="/js/notificaciones.js?v=20261126g"></script>
   <script>
     if ('serviceWorker' in navigator) {

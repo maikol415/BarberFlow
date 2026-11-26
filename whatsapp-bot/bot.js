@@ -145,7 +145,8 @@ export function respuestaAgradecimiento(nombre = '', azar = Math.random()) {
 
 // ----- Cuando el barbero responde a mano, el bot se calla en ese chat -----
 // El bot usa el mismo WhatsApp del barbero. Si él escribe en un chat desde su celular, el bot no debe
-// meterse en la conversación durante un rato (lo elige el barbero en el panel; por defecto 2 horas).
+// meterse en la conversación durante un rato (lo elige el barbero en el panel; por defecto 30 minutos).
+// Pasados 10 minutos sin que él escriba, un "hola" o un comando claro del cliente le devuelve el chat al bot.
 const idsDelBot = new Set();           // IDs de los mensajes que manda el bot (para no confundirlos con los del barbero)
 const atencionHumana = new Map();      // chat -> cuándo escribió el barbero por última vez
 export const MINUTOS_PAUSA_VALIDOS = [30, 60, 120, 240, 480, 1440];
@@ -190,9 +191,33 @@ export function registrarRespuestaDelBarbero(msg, ahoraMs = Date.now()) {
   return true;
 }
 
+// Pausa del bot en un chat donde el barbero escribió a mano:
+//   'total'   -> el barbero escribió hace menos de 10 minutos: el bot no dice nada
+//   'parcial' -> ya pasaron 10 minutos sin que el barbero escriba: el bot solo atiende saludos y comandos
+//   null      -> pasó el tiempo elegido en el panel (30 min por defecto): el bot funciona normal
+export const MINUTOS_PAUSA_TOTAL = 10;
+export function estadoPausa(jids, barberia, ahoraMs = Date.now()) {
+  const minutos = MINUTOS_PAUSA_VALIDOS.includes(Number(barberia?.minutosPausaBot)) ? Number(barberia.minutosPausaBot) : 30;
+  const ultima = Math.max(0, ...jids.filter(Boolean).map(j => atencionHumana.get(j) || 0));
+  const pasado = ahoraMs - ultima;
+  if (!ultima || pasado >= minutos * 60 * 1000) return null;
+  return pasado < MINUTOS_PAUSA_TOTAL * 60 * 1000 ? 'total' : 'parcial';
+}
 function botEnPausa(jids, barberia, ahoraMs = Date.now()) {
-  const minutos = MINUTOS_PAUSA_VALIDOS.includes(Number(barberia?.minutosPausaBot)) ? Number(barberia.minutosPausaBot) : 120;
-  return jids.filter(Boolean).some(j => ahoraMs - (atencionHumana.get(j) || 0) < minutos * 60 * 1000);
+  return estadoPausa(jids, barberia, ahoraMs) !== null;
+}
+function liberarPausa(jids) {
+  for (const j of jids.filter(Boolean)) atencionHumana.delete(j);
+}
+
+// Con la pausa parcial, ¿este mensaje le devuelve la conversación al bot?
+// Un saludo corto ("hola", "buenas") o un comando claro (SI, CANCELAR, REAGENDAR, menú). Otra charla se le deja al barbero.
+export function retomaConversacionBot(texto, textoN = normalizarTexto(texto)) {
+  const palabras = textoN.split(' ').filter(Boolean);
+  if (INTENCION.confirmar.test(textoN)) return true;
+  if (/\bcancel/.test(textoN) || /\breagend/.test(textoN) || INTENCION.cancelar.test(textoN) || INTENCION.reagendar.test(textoN)) return true;
+  if (/^(menu|inicio|opciones|volver)$/.test(textoN)) return true;
+  return palabras.length <= 4 && INTENCION.saludo.test(textoN) && !INTENCION.gracias.test(textoN);
 }
 const ultimaDerivacionMap = new Map(); // Para registrar el tiempo exacto de derivación por remitente
 const estadoCliente = new Map(); // Menús o confirmaciones de cancelación
@@ -208,11 +233,11 @@ let socketActivo = null;
 let ultimoDiaAnuncioEnviado = '';
 
 // Utilidad para extraer solo el primer nombre
-function obtenerPrimerNombre(nombreCompleto) {
-  if (!nombreCompleto) return 'Cliente';
-  const partes = nombreCompleto.trim().split(/\s+/);
-  const primer = partes[0] || 'Cliente';
-  return primer.charAt(0).toUpperCase() + primer.slice(1).toLowerCase();
+// Las dos primeras palabras del nombre: "luz andrea gómez" -> "Luz Andrea", "El Pepe" -> "El Pepe", "Carlos" -> "Carlos"
+export function obtenerPrimerNombre(nombreCompleto) {
+  const partes = String(nombreCompleto || '').trim().split(/\s+/).filter(Boolean);
+  if (!partes.length) return 'Cliente';
+  return partes.slice(0, 2).map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
 }
 
 // Formatear teléfono a JID de Baileys (ej: 573001234567@s.whatsapp.net o 17747126594@s.whatsapp.net)
@@ -248,12 +273,11 @@ async function resolverJidDestinatario(sock, telefono) {
       // cuando responde desde un chat @lid que no trae su número (p. ej. "SI" o "CANCELAR")
       const lidCliente = normalizarLid(res[0].lid);
       if (lidCliente) {
-        recordarTelefonoDeLid(lidCliente, limpio);
-        // Si ya nos escribió desde ese chat @lid, la respuesta va a ese mismo chat
-        if (ultimaInteraccionCliente.has(lidCliente)) {
-          recordarLid(lidCliente, limpio);
-          return lidCliente;
-        }
+        // Siempre al chat @lid: el cliente responde desde ese ID. Si el aviso se envía a su número, el cifrado
+        // queda guardado bajo el número y su respuesta ("SI", "No"…) llega imposible de leer
+        // ("No matching sessions found for message") y el bot no contesta.
+        recordarLid(lidCliente, limpio);
+        return lidCliente;
       }
       return res[0].jid;
     }
@@ -1109,6 +1133,44 @@ async function iniciarBot() {
   sock.ev.on('messages.upsert', (m) => procesarMensajeEntrante(sock, m));
 }
 
+// ----- Mensaje que WhatsApp entregó pero no se pudo descifrar -----
+// Pasa cuando el cifrado con ese cliente quedó guardado bajo su número y él escribe desde su ID @lid
+// ("No matching sessions found for message"). Al escribirle al chat @lid se crea un cifrado nuevo,
+// así que se le pide que lo reenvíe y desde ahí el bot sí lo lee. Máximo una vez cada 30 min por chat.
+const avisosIlegible = new Map();
+const CIFRADO_PERDIDO = /no matching sessions|no session/i;
+export function debeAvisarIlegible(msg, ahoraMs = Date.now()) {
+  const jid = msg?.key?.remoteJid || '';
+  if (msg?.message || msg?.key?.fromMe || msg?.messageStubType !== 2) return false; // 2 = CIPHERTEXT
+  if (!jid.endsWith('@lid') && !jid.endsWith('@s.whatsapp.net')) return false;
+  if (!CIFRADO_PERDIDO.test(String(msg.messageStubParameters?.[0] || ''))) return false;
+  const enviadoMs = marcaDeTiempoMs(msg);
+  if (enviadoMs > 0 && ahoraMs - enviadoMs > 10 * 60 * 1000) return false;
+  if (ahoraMs - (avisosIlegible.get(jid) || 0) < 30 * 60 * 1000) return false;
+  avisosIlegible.set(jid, ahoraMs);
+  return true;
+}
+
+async function avisarMensajeIlegible(sock, msg) {
+  try {
+    if (!debeAvisarIlegible(msg)) return;
+    const jid = msg.key.remoteJid;
+    console.warn(`[Cifrado] No se pudo leer un mensaje de ${jid}: se le pide reenviarlo.`);
+    const desde = Date.now();
+    // WhatsApp reintenta solo: si en unos segundos el mensaje sí se pudo leer, no hace falta escribirle
+    await new Promise(r => setTimeout(r, MODO_PRUEBA ? 0 : 8000));
+    if ((ultimaInteraccionCliente.get(jid) || 0) >= desde) return;
+    const barberia = await obtenerDatosBarberia();
+    if (barberia.botActivo === false) return;
+    const tel = await telefonoDelRemitenteAsync(msg.key);
+    if (botEnPausa([jid, tel && `${tel}@s.whatsapp.net`], barberia)) return;
+    await enviarMensajeHumano(sock, jid,
+      `😅 Perdona, no alcanzamos a leer tu último mensaje. ¿Nos lo puedes enviar de nuevo, por favor?`);
+  } catch (e) {
+    console.error('Error avisando mensaje ilegible:', e.message);
+  }
+}
+
 // ----------------- LÓGICA DE CONVERSACIÓN -----------------
 export async function procesarMensajeEntrante(sock, m) {
     try {
@@ -1119,7 +1181,10 @@ export async function procesarMensajeEntrante(sock, m) {
         return;
       }
       const msg = m.messages[0];
-      if (!msg.message) return;
+      if (!msg.message) {
+        if (m.type === 'notify' || m.type === undefined) avisarMensajeIlegible(sock, msg);
+        return;
+      }
 
       // ¿Lo escribió el barbero desde su celular? Entonces el bot se calla un rato en ese chat
       if (msg.key?.fromMe) {
@@ -1181,10 +1246,17 @@ export async function procesarMensajeEntrante(sock, m) {
       }
 
       // El barbero está hablando personalmente con este cliente: no interrumpir
-      if (!sock.esPrueba && botEnPausa([remitente, telSoloDigitos && `${telSoloDigitos}@s.whatsapp.net`, telSoloDigitos && lidPorTelefono.get(telSoloDigitos)], barberia)) {
+      const jidsDelChat = [remitente, telSoloDigitos && `${telSoloDigitos}@s.whatsapp.net`, telSoloDigitos && lidPorTelefono.get(telSoloDigitos)];
+      const pausa = sock.esPrueba ? null : estadoPausa(jidsDelChat, barberia);
+      if (pausa === 'total' || (pausa === 'parcial' && !retomaConversacionBot(texto, textoN))) {
         saludoPendiente.delete(remitente);
         console.log(`[Atención humana] ${remitente} escribió, pero el barbero está atendiendo ese chat: el bot no responde.`);
         return;
+      }
+      if (pausa === 'parcial') {
+        // El barbero lleva más de 10 minutos sin escribir y el cliente saludó o pidió algo claro: el bot retoma el chat
+        liberarPausa(jidsDelChat);
+        console.log(`[Atención humana] ${remitente} escribió "${texto}" y el barbero no escribe hace más de ${MINUTOS_PAUSA_TOTAL} min: el bot retoma la conversación.`);
       }
 
       const estado = estadoCliente.get(remitente) || { nivel: 'INICIO' };

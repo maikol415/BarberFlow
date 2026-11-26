@@ -52,7 +52,7 @@ public class Barberia
     public int HorasRecordatorio { get; set; } = 2;        // (anterior: un solo recordatorio) se conserva por compatibilidad
     public string HorasRecordatorios { get; set; } = "24,2"; // Uno o varios: horas antes de la cita (48, 24, 12, 6, 3, 2, 1)
     public bool PedirOpinionActivo { get; set; } = true;   // Pedir calificación 1 hora después de la cita
-    public int MinutosPausaBot { get; set; } = 120;        // Si el barbero responde a mano en un chat, el bot se calla ese tiempo
+    public int MinutosPausaBot { get; set; } = 30;       // Si el barbero responde a mano en un chat, el bot se calla ese tiempo
     public string DiasLaborales { get; set; } = "1,2,3,4,5,6"; // 1=Lun, 2=Mar, 3=Mié, 4=Jue, 5=Vie, 6=Sáb, 0=Dom
 
     // Activar o desactivar selector de barbero
