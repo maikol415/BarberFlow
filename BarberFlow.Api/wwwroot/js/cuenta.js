@@ -286,6 +286,7 @@ async function cambiarClaveCliente(e) {
   });
   boton.disabled = false;
   if (!ok) return avisar(data?.message || 'No se pudo cambiar la clave.', 'error');
+  if (data?.token) guardarSesion({ ...sesion, token: data.token }); // las demás sesiones quedaron cerradas
   $('form-cambiar-clave').reset();
   mostrar('form-cambiar-clave', false);
   avisar('¡Listo! Tu clave quedó cambiada.');

@@ -1,5 +1,5 @@
 // Lógica del Panel de Administración del Barbero
-const token = localStorage.getItem('bf_token');
+let token = localStorage.getItem('bf_token');
 let barberiaActual = null;
 let todasLasCitas = [];
 let subTabActual = 'activas';
@@ -1889,6 +1889,8 @@ async function cambiarClaveBarbero(e) {
     const res = await fetch('/api/auth/cambiar-clave', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ claveActual: actual, nuevaClave: nueva }) });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return avisar(data.message || 'No se pudo cambiar la contraseña.', 'error');
+    // Sesión nueva para este celular (las demás quedaron cerradas)
+    if (data.token) { token = data.token; localStorage.setItem('bf_token', data.token); }
     document.getElementById('form-cambiar-clave').reset();
     avisar('¡Listo! Tu contraseña quedó cambiada.');
   } catch (err) {

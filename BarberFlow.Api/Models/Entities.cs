@@ -8,6 +8,7 @@ public class BarberoUser
     public string NombreCompleto { get; set; } = string.Empty;
     public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
     public DateTime? AceptoPrivacidadUtc { get; set; } // Prueba de la autorización (Ley 1581 de 2012)
+    public int SesionVersion { get; set; } // sube al cambiar la contraseña: cierra las sesiones anteriores
 
     // Recuperación de contraseña por WhatsApp (código de 6 dígitos cifrado)
     public string? CodigoRecuperacionHash { get; set; }
@@ -175,6 +176,7 @@ public class ClienteUsuario
     public string PasswordHash { get; set; } = string.Empty;
     public DateTime FechaRegistro { get; set; } = DateTime.UtcNow;
     public DateTime? AceptoPrivacidadUtc { get; set; } // Prueba de la autorización (Ley 1581 de 2012)
+    public int SesionVersion { get; set; } // sube al cambiar la contraseña: cierra las sesiones anteriores
 
     // Recuperación de contraseña por WhatsApp (código de 6 dígitos cifrado)
     public string? CodigoRecuperacionHash { get; set; }

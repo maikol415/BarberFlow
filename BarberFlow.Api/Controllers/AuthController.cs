@@ -190,7 +190,9 @@ public class AuthController : ControllerBase
         barbero.CodigoRecuperacionHash = null;
         barbero.CodigoRecuperacionVence = null;
         barbero.CodigoRecuperacionIntentos = 0;
+        barbero.SesionVersion++; // cierra las sesiones abiertas con la contraseña anterior
         await _context.SaveChangesAsync();
+        VersionesSesion.Fijar("b", barbero.Id, barbero.SesionVersion);
 
         var token = _tokens.GenerarTokenBarbero(barbero, barbero.Barberia);
         return Ok(new AuthResponseDto(token, barbero.NombreCompleto, barbero.Email, barbero.Barberia.Slug, barbero.Barberia.Nombre));
@@ -212,8 +214,12 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "La contraseña nueva debe ser diferente a la actual." });
 
         barbero.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NuevaClave);
+        barbero.SesionVersion++; // los otros celulares con la sesión abierta quedan por fuera
         await _context.SaveChangesAsync();
-        return Ok(new { message = "Contraseña actualizada." });
+        VersionesSesion.Fijar("b", barbero.Id, barbero.SesionVersion);
+        var barberiaActual = await _context.Barberias.FirstAsync(b => b.BarberoUserId == barbero.Id);
+        // Este celular sigue adentro con una sesión nueva
+        return Ok(new { message = "Contraseña actualizada.", token = _tokens.GenerarTokenBarbero(barbero, barberiaActual) });
     }
 
     private static string GenerarSlug(string phrase)

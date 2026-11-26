@@ -39,7 +39,8 @@ public class TokenService
             new Claim(ClaimTypes.Email, user.Email),
             new Claim(ClaimTypes.Name, user.NombreCompleto),
             new Claim(PoliticasAuth.ClaimBarberiaId, barberia.Id.ToString()),
-            new Claim("BarberiaSlug", barberia.Slug)
+            new Claim("BarberiaSlug", barberia.Slug),
+            new Claim(VersionesSesion.Claim, user.SesionVersion.ToString())
         };
         return Firmar(claims, TimeSpan.FromDays(30)); // el barbero no debe volver a escribir la contraseña cada semana
     }
@@ -50,7 +51,8 @@ public class TokenService
         {
             new Claim(ClaimTypes.NameIdentifier, cliente.Id.ToString()),
             new Claim(PoliticasAuth.ClaimClienteId, cliente.Id.ToString()),
-            new Claim(PoliticasAuth.ClaimClienteBarberiaId, cliente.BarberiaId.ToString())
+            new Claim(PoliticasAuth.ClaimClienteBarberiaId, cliente.BarberiaId.ToString()),
+            new Claim(VersionesSesion.Claim, cliente.SesionVersion.ToString())
         };
         return Firmar(claims, TimeSpan.FromDays(30));
     }

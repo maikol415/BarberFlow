@@ -237,6 +237,17 @@ public class AdminController : ControllerBase
         if (barberia == null) return NotFound();
 
         var user = barberia.BarberoUser;
+        // Datos personales que no tienen borrado en cascada en la base: se borran a mano
+        var clientes = await _context.Clientes.Where(c => c.BarberiaId == barberiaId).ToListAsync();
+        _context.Clientes.RemoveRange(clientes);
+        _context.BotReglas.RemoveRange(await _context.BotReglas.Where(r => r.BarberiaId == barberiaId).ToListAsync());
+        _context.ListaEspera.RemoveRange(await _context.ListaEspera.Where(l => l.BarberiaId == barberiaId).ToListAsync());
+        _context.SuscripcionesPush.RemoveRange(await _context.SuscripcionesPush.Where(s => s.BarberiaId == barberiaId).ToListAsync());
+        _context.Valoraciones.RemoveRange(await _context.Valoraciones.Where(v => v.BarberiaId == barberiaId).ToListAsync());
+        _context.Bloqueos.RemoveRange(await _context.Bloqueos.Where(b => b.BarberiaId == barberiaId).ToListAsync());
+        _context.Citas.RemoveRange(await _context.Citas.Where(c => c.BarberiaId == barberiaId).ToListAsync());
+        foreach (var c in clientes) VersionesSesion.Olvidar("c", c.Id);
+        if (user != null) VersionesSesion.Olvidar("b", user.Id);
         _context.Barberias.Remove(barberia);
         if (user != null)
         {

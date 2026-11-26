@@ -151,6 +151,10 @@ public class PublicController : ControllerBase
             (_, v) => ahoraUtc - v.Desde > TimeSpan.FromHours(1) ? (ahoraUtc, 1) : (v.Desde, v.Cuenta + 1));
         if (uso.Cuenta > 30) return StatusCode(429, new { message = "Demasiadas reacciones seguidas. Intenta más tarde." });
 
+        var candado = _candadosReaccion.GetOrAdd(slugN, _ => new SemaphoreSlim(1, 1));
+        await candado.WaitAsync();
+        try
+        {
         // Solo se leen los datos necesarios (no las fotos completas en base64)
         var esPortada = foto == "portada";
         var datos = await _context.Barberias.AsNoTracking()
@@ -175,7 +179,11 @@ public class PublicController : ControllerBase
         else await _context.Barberias.Where(b => b.Id == datos.Id).ExecuteUpdateAsync(s => s.SetProperty(b => b.ReaccionesLogo, json));
         CachePublica.Invalidar(datos.Id);
         return Ok(reacciones);
+        }
+        finally { candado.Release(); }
     }
+
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _candadosReaccion = new();
 
     [HttpGet("barberia/{slug}")]
     public async Task<IActionResult> ObtenerBarberia(string slug)
@@ -1188,7 +1196,9 @@ public class PublicController : ControllerBase
         cliente.CodigoRecuperacionHash = null;
         cliente.CodigoRecuperacionVence = null;
         cliente.CodigoRecuperacionIntentos = 0;
+        cliente.SesionVersion++; // cierra las sesiones abiertas con la clave anterior
         await _context.SaveChangesAsync();
+        VersionesSesion.Fijar("c", cliente.Id, cliente.SesionVersion);
         return Ok(RespuestaSesionCliente(cliente, "¡Listo! Tu clave quedó cambiada."));
     }
 
@@ -1205,8 +1215,10 @@ public class PublicController : ControllerBase
         if (dto.NuevaClave == dto.ClaveActual)
             return BadRequest(new { message = "La clave nueva debe ser diferente a la actual." });
         cliente.PasswordHash = BCrypt.Net.BCrypt.HashPassword(dto.NuevaClave);
+        cliente.SesionVersion++;
         await _context.SaveChangesAsync();
-        return Ok(new { message = "Clave actualizada." });
+        VersionesSesion.Fijar("c", cliente.Id, cliente.SesionVersion);
+        return Ok(RespuestaSesionCliente(cliente, "Clave actualizada.")); // este celular sigue adentro
     }
 
     [Authorize(Policy = PoliticasAuth.Cliente)]
