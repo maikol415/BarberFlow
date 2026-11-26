@@ -57,8 +57,13 @@ public record UpdateBarberiaDto(
     bool? PedirOpinionActivo = null,
     string? HorasRecordatorios = null,
     int? MinutosPausaBot = null,
-    string? PortadaPosicion = null
+    string? PortadaPosicion = null,
+    string? HorarioSemanal = null,
+    int? DiasMaximoReserva = null,
+    int? HorasLimiteCancelar = null
 );
+
+public record HorarioMiembroDto(string? HorarioSemanal);
 
 public record CrearBotReglaDto(
     string PalabrasClave,

@@ -65,15 +65,11 @@ public class PublicController : ControllerBase
 
         var hoy = FechaHoyColombia();
         if (string.CompareOrdinal(fecha, hoy) < 0) return "No puedes reservar en una fecha que ya pasó.";
-        if (dia > DateTime.UtcNow.AddDays(120)) return "Solo puedes reservar con máximo 4 meses de anticipación.";
-
-        var diasLaborales = (barberia.DiasLaborales ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        if (diasLaborales.Length > 0 && !diasLaborales.Contains(((int)dia.DayOfWeek).ToString()))
-            return "La barbería no atiende ese día. Elige otro día.";
+        var maximoDias = barberia.DiasMaximoReserva > 0 ? barberia.DiasMaximoReserva : 30;
+        var diasHastaCita = (dia - DateTime.ParseExact(hoy, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture)).TotalDays;
+        if (diasHastaCita > maximoDias) return $"Esta barbería recibe reservas con máximo {maximoDias} días de anticipación.";
 
         var inicio = ConvertirHoraAMinutos(hora);
-        if (inicio < ConvertirHoraAMinutos(barberia.HoraApertura) || inicio >= ConvertirHoraAMinutos(barberia.HoraCierre))
-            return "Esa hora está fuera del horario de atención.";
         if (fecha == hoy && inicio <= MinutosAhoraColombia())
             return "Esa hora ya pasó. Elige un horario más tarde.";
         // Anticipación mínima configurada por la barbería (5 min de tolerancia por el tiempo que tarda el cliente en confirmar)
@@ -280,6 +276,9 @@ public class PublicController : ControllerBase
                 barberia.HoraCierre,
                 barberia.IntervaloMinutos,
                 barberia.MinutosAnticipacion,
+                HorarioSemanal = HorarioSemanal.DeBarberia(barberia),
+                barberia.DiasMaximoReserva,
+                barberia.HorasLimiteCancelar,
                 barberia.RecordatoriosActivos,
                 barberia.HorasRecordatorio,
                 barberia.HorasRecordatorios,
@@ -314,7 +313,8 @@ public class PublicController : ControllerBase
                     m.Id,
                     m.Nombre,
                     m.Rol,
-                    FotoUrl = UrlImagen(m.FotoUrl, "miembro", m.Id)
+                    FotoUrl = UrlImagen(m.FotoUrl, "miembro", m.Id),
+                    HorarioSemanal = HorarioSemanal.DeMiembro(m)   // null = usa el de la barbería
                 }),
                 Bloqueos = barberia.Bloqueos.Select(bl => new
                 {
@@ -421,6 +421,8 @@ public class PublicController : ControllerBase
             {
                 return BadRequest(new { message = "Esta cita ya fue cancelada o reagendada. Si quieres otro turno, reserva uno nuevo." });
             }
+            var motivoReagendar = esBarberoDeEstaBarberia ? null : MotivoNoModificable(citaAnterior, barberia);
+            if (motivoReagendar != null) return BadRequest(new { message = motivoReagendar });
         }
 
         var nuevoTurnoInicio = ConvertirHoraAMinutos(dto.Hora);
@@ -430,10 +432,22 @@ public class PublicController : ControllerBase
             return BadRequest(new { message = "Ese horario termina después del cierre de la barbería. Elige una hora más temprano." });
         }
 
+        // Si dos personas reservan a la vez en la misma barbería, la segunda espera a que termine la primera
+        // y ve su cita ya guardada (así nadie se queda con el mismo turno). En PostgreSQL con un candado por barbería;
+        // en SQLite (local) las escrituras ya van una por una.
+        await using var transaccion = await _context.Database.BeginTransactionAsync();
+        if (_context.Database.IsNpgsql())
+            await _context.Database.ExecuteSqlRawAsync("SELECT pg_advisory_xact_lock({0})", 7_000_000 + barberia.Id);
+
         var citasDia = await _context.Citas
             .Include(c => c.Servicio)
             .Where(c => c.BarberiaId == barberia.Id && c.Fecha == dto.Fecha && c.Estado != "Cancelada" && c.Estado != "No Confirmada")
             .ToListAsync();
+
+        // Horario del día: el de cada barbero si tiene uno propio, si no el de la barbería
+        var diaSemana = DateTime.ParseExact(dto.Fecha, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture).DayOfWeek;
+        bool AtiendeA(MiembroEquipo? m) =>
+            esBarberoDeEstaBarberia || HorarioSemanal.Cabe(HorarioSemanal.RangosDelDia(barberia, m, diaSemana), nuevoTurnoInicio, nuevoTurnoFin);
 
         // ¿Choca con alguna cita? miembroId = null revisa todas (barbería de una sola silla).
         // Con un barbero concreto, solo chocan sus citas y las que no tienen barbero asignado.
@@ -460,7 +474,7 @@ public class PublicController : ControllerBase
         if (miembroAsignado == null && variosBarberos)
         {
             miembroAsignado = miembrosActivos
-                .Where(m => !Choca(m.Id))
+                .Where(m => AtiendeA(m) && !Choca(m.Id))
                 .OrderBy(m => citasDia.Count(c => c.MiembroEquipoId == m.Id))
                 .Select(m => (int?)m.Id)
                 .FirstOrDefault();
@@ -470,6 +484,11 @@ public class PublicController : ControllerBase
         else
         {
             if (miembroAsignado == null && miembrosActivos.Count == 1) miembroAsignado = miembrosActivos[0].Id;
+            var miembroElegido = variosBarberos ? miembrosActivos.FirstOrDefault(m => m.Id == miembroAsignado) : null;
+            if (!AtiendeA(miembroElegido))
+                return BadRequest(new { message = variosBarberos
+                    ? "Ese barbero no atiende a esa hora. Elige otro horario u otro barbero."
+                    : "Esa hora está fuera del horario de atención. Elige otro horario." });
             if (variosBarberos ? Choca(miembroAsignado) : Choca(null))
             {
                 // El barbero, desde el local, puede correr las citas siguientes de esa agenda para hacerle espacio
@@ -514,6 +533,7 @@ public class PublicController : ControllerBase
 
         _context.Citas.Add(cita);
         await _context.SaveChangesAsync();
+        await transaccion.CommitAsync();
 
         // 🚀 NOTIFICACIÓN AUTOMÁTICA AL BOT DE WHATSAPP (segundo plano, solo la barbería del bot)
         NotificarBot("/api/notificar-cita", barberia, new
@@ -758,7 +778,9 @@ public class PublicController : ControllerBase
             cita.Total,
             cita.Estado,
             Servicio = cita.Servicio?.Nombre ?? "Servicio",
-            Barbero = cita.MiembroEquipo?.Nombre ?? "Master Barber"
+            Barbero = cita.MiembroEquipo?.Nombre ?? "Master Barber",
+            MotivoNoModificable = MotivoNoModificable(cita, barberia),
+            barberia.HorasLimiteCancelar
         });
     }
 
@@ -774,6 +796,8 @@ public class PublicController : ControllerBase
             .FirstOrDefaultAsync(c => c.Id == id && c.BarberiaId == barberia.Id);
 
         if (cita == null) return NotFound(new { message = "Cita no encontrada." });
+        var motivoBot = MotivoNoModificable(cita, barberia);
+        if (motivoBot != null) return BadRequest(new { message = motivoBot, fueraDeLimite = true });
 
         cita.Estado = "Cancelada";
         await _context.SaveChangesAsync();
@@ -1072,6 +1096,17 @@ public class PublicController : ControllerBase
     }
 
     // Una cita es "próxima" si no está cancelada ni completada y su hora aún no ha pasado (hora Colombia)
+    // El cliente puede cancelar o reprogramar hasta X horas antes (lo define la barbería; 0 = siempre)
+    private static string? MotivoNoModificable(Cita c, Barberia b)
+    {
+        if (b.HorasLimiteCancelar <= 0) return null;
+        var inicio = EstadosCitas.InicioCita(c.Fecha, c.Hora);
+        if (inicio == null) return null;
+        if ((inicio.Value - EstadosCitas.AhoraColombia()).TotalMinutes >= b.HorasLimiteCancelar * 60) return null;
+        var h = b.HorasLimiteCancelar;
+        return $"Faltan menos de {h} {(h == 1 ? "hora" : "horas")} para tu cita, así que ya no se puede cambiar ni cancelar por aquí. Escríbele al barbero por WhatsApp.";
+    }
+
     private static bool EsCitaProxima(Cita c)
     {
         if (c.Estado == "Cancelada" || c.Estado == "Completada" || c.Estado == "No Confirmada") return false;
@@ -1099,6 +1134,10 @@ public class PublicController : ControllerBase
         var cliente = await ObtenerClienteAutenticado();
         if (cliente == null) return Unauthorized(new { message = "Tu sesión expiró. Inicia sesión de nuevo." });
 
+        var barberiaCliente = await _context.Barberias.AsNoTracking()
+            .Where(b => b.Id == cliente.BarberiaId)
+            .Select(b => new Barberia { Id = b.Id, HorasLimiteCancelar = b.HorasLimiteCancelar })
+            .FirstOrDefaultAsync() ?? new Barberia();
         var citas = (await CitasDelCliente(cliente))
             .OrderByDescending(c => c.Fecha)
             .ThenByDescending(c => ConvertirHoraAMinutos(c.Hora))
@@ -1112,6 +1151,7 @@ public class PublicController : ControllerBase
                 c.Estado,
                 c.TokenPublico, // solo para el dueño autenticado: arma el enlace de reagendar
                 Proxima = EsCitaProxima(c),
+                MotivoNoModificable = EsCitaProxima(c) ? MotivoNoModificable(c, barberiaCliente) : null,
                 Servicio = c.Servicio?.Nombre ?? "Servicio",
                 DuracionMinutos = c.Servicio?.DuracionMinutos ?? 0,
                 Barbero = c.MiembroEquipo?.Nombre ?? "Master Barber"
@@ -1131,12 +1171,14 @@ public class PublicController : ControllerBase
         var cita = (await CitasDelCliente(cliente)).FirstOrDefault(c => c.Id == id);
         if (cita == null) return NotFound(new { message = "No encontramos esa cita en tu cuenta." });
         if (!EsCitaProxima(cita)) return BadRequest(new { message = "Esta cita ya no se puede cancelar." });
+        var barberia = await _context.Barberias.FindAsync(cita.BarberiaId);
+        var motivoWeb = barberia == null ? null : MotivoNoModificable(cita, barberia);
+        if (motivoWeb != null) return BadRequest(new { message = motivoWeb });
 
         cita.Estado = "Cancelada";
         await _context.SaveChangesAsync();
 
         // Avisar al barbero por WhatsApp (solo si el bot atiende esta barbería)
-        var barberia = await _context.Barberias.FindAsync(cita.BarberiaId);
         if (barberia != null) NotificarBot("/api/notificar-cancelacion", barberia, new
         {
             citaId = cita.Id,

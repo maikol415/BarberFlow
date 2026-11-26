@@ -1131,7 +1131,15 @@ export async function procesarMensajeEntrante(sock, m) {
             try {
               const resCanc = await apiBotFetch(`/bot/${BARBERIA_SLUG}/cancelar-cita/${estado.citaId}`, { method: 'POST' });
               cancelada = resCanc.ok;
-              if (!resCanc.ok) console.error(`[Cancelar] La API respondió ${resCanc.status} para la cita ${estado.citaId}`);
+              if (!resCanc.ok) {
+                const datosError = await resCanc.json().catch(() => ({}));
+                // Pasó el límite mientras confirmaba: se le explica en vez del error genérico
+                if (datosError.fueraDeLimite) {
+                  await enviarMensajeHumano(sock, remitente, `⏰ ${datosError.message}\n\nEl barbero te responderá por este chat en cuanto pueda. 🙏`);
+                  return;
+                }
+                console.error(`[Cancelar] La API respondió ${resCanc.status} para la cita ${estado.citaId}`);
+              }
             } catch (e) {
               console.error('Error cancelando cita en API:', e);
             }
@@ -1222,6 +1230,13 @@ export async function procesarMensajeEntrante(sock, m) {
           if (cita) {
             const primerNombre = obtenerPrimerNombre(cita.nombreCliente);
 
+            // Muy cerca de la hora: la barbería no deja cancelar por aquí; el barbero responde personalmente
+            if (cita.motivoNoModificable) {
+              await enviarMensajeHumano(sock, remitente,
+                `⏰ ${primerNombre}, tu cita es a las *${cita.hora}*. ${cita.motivoNoModificable.replace(/ Escríbele al barbero por WhatsApp\.$/, '')}\n\nEl barbero te responderá por este chat en cuanto pueda. 🙏`);
+              return;
+            }
+
             estadoCliente.set(remitente, {
               nivel: 'CONFIRMAR_CANCELACION',
               desde: Date.now(),
@@ -1275,6 +1290,12 @@ export async function procesarMensajeEntrante(sock, m) {
             await enviarMensajeHumano(sock, remitente,
               `No encontramos una cita activa con este número para cambiar.\n\n` +
               `📅 Si quieres, reserva una nueva aquí:\n👉 ${linkReservas()}`);
+            return;
+          }
+
+          if (cita.motivoNoModificable) {
+            await enviarMensajeHumano(sock, remitente,
+              `⏰ ${cita.motivoNoModificable.replace(/ Escríbele al barbero por WhatsApp\.$/, '')}\n\nEl barbero te responderá por este chat en cuanto pueda. 🙏`);
             return;
           }
 

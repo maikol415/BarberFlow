@@ -8,7 +8,7 @@ const PAISES = [
 const DEFAULT_AVATAR = "data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2364748B'><rect width='24' height='24' fill='%231F2937'/><circle cx='12' cy='9' r='4'/><path d='M4 21c0-4 4-6 8-6s8 2 8 6'/></svg>";
 const DIAS_CORTOS = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 const DIAS_LARGOS = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
-const DIAS_A_MOSTRAR = 30;
+const diasAMostrar = () => Math.min(91, (barberia?.diasMaximoReserva || 30) + 1);
 
 let barberia = null;
 let todosLosServicios = [];
@@ -95,6 +95,10 @@ function diasLaborales() {
 }
 
 function esDiaLaborable(iso) {
+  return TurnosBF.diaLaborable(barberia, iso, hayVariosBarberos() ? reservaActual.barberoId : null);
+}
+
+function esDiaLaborableAntes(iso) {
   const bloqueado = (barberia.bloqueos || []).some(b => b.fecha === iso && (!b.hora || b.hora === 'TODO_EL_DIA'));
   return diasLaborales().includes(diaSemana(iso)) && !bloqueado;
 }
@@ -152,20 +156,17 @@ function llenarPaises() {
 // ================== Encabezado de la barbería ==================
 function estadoApertura() {
   const ahora = ahoraBogota();
-  const abre = convertirHoraAMinutos(barberia.horaApertura || '09:00');
-  const cierra = convertirHoraAMinutos(barberia.horaCierre || '20:00');
-
-  if (esDiaLaborable(ahora.iso) && ahora.minutos >= abre && ahora.minutos < cierra) {
-    return { abierto: true, texto: `Abierto · cierra a las ${minutosATexto(cierra)}` };
-  }
-  if (esDiaLaborable(ahora.iso) && ahora.minutos < abre) {
-    return { abierto: false, texto: `Cerrado · abre hoy a las ${minutosATexto(abre)}` };
-  }
+  const hoy = TurnosBF.diaCerrado(barberia, ahora.iso) ? [] : TurnosBF.rangosDelDia(barberia, ahora.iso);
+  const actual = hoy.find(r => ahora.minutos >= r.ini && ahora.minutos < r.fin);
+  if (actual) return { abierto: true, texto: `Abierto · cierra a las ${minutosATexto(actual.fin)}` };
+  const despues = hoy.find(r => r.ini > ahora.minutos);
+  if (despues) return { abierto: false, texto: `Cerrado · abre hoy a las ${minutosATexto(despues.ini)}` };
   for (let i = 1; i <= 14; i++) {
     const dia = sumarDias(ahora.iso, i);
-    if (esDiaLaborable(dia)) {
+    const rangos = TurnosBF.diaCerrado(barberia, dia) ? [] : TurnosBF.rangosDelDia(barberia, dia);
+    if (rangos.length) {
       const cuando = i === 1 ? 'mañana' : `el ${DIAS_LARGOS[diaSemana(dia)]}`;
-      return { abierto: false, texto: `Cerrado · abre ${cuando} a las ${minutosATexto(abre)}` };
+      return { abierto: false, texto: `Cerrado · abre ${cuando} a las ${minutosATexto(rangos[0].ini)}` };
     }
   }
   return { abierto: false, texto: 'Cerrado' };
@@ -479,65 +480,15 @@ function hayVariosBarberos() {
 
 // Turnos libres del día. Con varios barberos y "Cualquiera": los turnos en los que al menos uno está libre.
 function generarTurnos(iso) {
-  if (hayVariosBarberos() && reservaActual.barberoId == null) {
-    const todos = new Set();
-    barberia.miembros.forEach(m => generarTurnosDe(iso, m.id).forEach(t => todos.add(t)));
-    return [...todos].sort((a, b) => a - b);
-  }
-  return generarTurnosDe(iso, hayVariosBarberos() ? reservaActual.barberoId : null);
-}
-
-// barberoId = null: una sola agenda para toda la barbería
-function generarTurnosDe(iso, barberoId) {
-  const serv = servicioActual();
-  if (!serv || !esDiaLaborable(iso)) return [];
-
-  const ahora = ahoraBogota();
-  const diferenciaDias = diasEntre(ahora.iso, iso);
-  if (diferenciaDias < 0) return [];
-
-  const duracion = serv.duracionMinutos || barberia.intervaloMinutos || 40;
-  const intervalo = barberia.intervaloMinutos || 40;
-  const apertura = convertirHoraAMinutos(barberia.horaApertura || '09:00');
-  const cierre = convertirHoraAMinutos(barberia.horaCierre || '20:00');
-  const anticipacion = barberia.minutosAnticipacion ?? 30;
-  const minimoDelDia = ahora.minutos + anticipacion - diferenciaDias * 1440;
-
-  const ocupados = (barberia.citasOcupadas || [])
-    .filter(c => c.fecha === iso)
-    .filter(c => barberoId == null || c.miembroEquipoId == null || c.miembroEquipoId === barberoId)
-    .filter(c => !(citaReagendarInfo && c.fecha === citaReagendarInfo.fecha && convertirHoraAMinutos(c.hora) === convertirHoraAMinutos(citaReagendarInfo.hora)))
-    .map(c => { const ini = convertirHoraAMinutos(c.hora); return { ini, fin: ini + (c.duracionMinutos || intervalo) }; });
-
-  (barberia.bloqueos || []).filter(b => b.fecha === iso && b.hora && b.hora !== 'TODO_EL_DIA').forEach(b => {
-    if (b.hora.includes('-')) {
-      const [desde, hasta] = b.hora.split('-');
-      ocupados.push({ ini: convertirHoraAMinutos(desde), fin: convertirHoraAMinutos(hasta) });
-    } else {
-      const ini = convertirHoraAMinutos(b.hora);
-      ocupados.push({ ini, fin: ini + intervalo });
-    }
+  return TurnosBF.calcular(barberia, servicioActual(), iso, hayVariosBarberos() ? reservaActual.barberoId : null, {
+    anticipacion: barberia.minutosAnticipacion ?? 30,
+    excluir: citaReagendarInfo
   });
-
-  const turnos = [];
-  let cursor = Math.max(apertura, Math.ceil(minimoDelDia / 10) * 10);
-  let vueltas = 0;
-  while (cursor + duracion <= cierre + 15 && cursor < cierre && vueltas++ < 500) {
-    const choque = ocupados.find(o => cursor < o.fin && cursor + duracion > o.ini);
-    if (!choque) {
-      turnos.push(cursor);
-      cursor += intervalo;
-    } else {
-      // Saltar al final del turno ocupado + 10 min de alistamiento
-      cursor = Math.max(cursor + 10, Math.ceil((choque.fin + 10) / 10) * 10);
-    }
-  }
-  return turnos;
 }
 
 function primerDiaConTurnos() {
   const hoy = ahoraBogota().iso;
-  for (let i = 0; i < DIAS_A_MOSTRAR; i++) {
+  for (let i = 0; i < diasAMostrar(); i++) {
     const dia = sumarDias(hoy, i);
     if (generarTurnos(dia).length) return dia;
   }
@@ -557,7 +508,7 @@ function renderCalendario(reubicar) {
 
   const tira = $('tira-dias');
   let html = '';
-  for (let i = 0; i < DIAS_A_MOSTRAR; i++) {
+  for (let i = 0; i < diasAMostrar(); i++) {
     const iso = sumarDias(hoy, i);
     const laborable = esDiaLaborable(iso);
     const turnos = hayServicio && laborable ? generarTurnos(iso).length : null;
@@ -638,7 +589,7 @@ function renderHorariosDisponibles() {
   }
   const iso = reservaActual.fechaSeleccionada;
   if (!iso) {
-    cont.innerHTML = `<div class="py-6 text-center text-sm text-gray-500 rounded-2xl border border-dashed border-gray-800">No hay turnos disponibles en los próximos ${DIAS_A_MOSTRAR} días. Escríbele a la barbería por WhatsApp.</div>`;
+    cont.innerHTML = `<div class="py-6 text-center text-sm text-gray-500 rounded-2xl border border-dashed border-gray-800">No hay turnos disponibles en los próximos ${diasAMostrar()} días. Escríbele a la barbería por WhatsApp.</div>`;
     return;
   }
 

@@ -67,19 +67,9 @@ async function cargarPerfil() {
     pintarApariencia();
     document.getElementById('conf-mostrar-barberos').checked = barberiaActual.mostrarSelectorBarbero || false;
 
-    // Horarios laborales base
-    document.getElementById('conf-hora-apertura').value = barberiaActual.horaApertura || '09:00';
-    document.getElementById('conf-hora-cierre').value = barberiaActual.horaCierre || '20:00';
-    document.getElementById('conf-intervalo').value = (barberiaActual.intervaloMinutos || 40).toString();
-    const selAnticipacion = document.getElementById('conf-anticipacion');
-    if (selAnticipacion) selAnticipacion.value = String(barberiaActual.minutosAnticipacion ?? 30);
-
-    // Días laborales
-    const dias = (barberiaActual.diasLaborales || "1,2,3,4,5,6").split(',');
-    [0, 1, 2, 3, 4, 5, 6].forEach(d => {
-      const chk = document.getElementById(`dia-${d}`);
-      if (chk) chk.checked = dias.includes(d.toString());
-    });
+    // Horario por día (y por barbero) y reglas de reserva
+    pintarEditorHorario();
+    pintarReglasReserva();
 
     renderListaServicios(barberiaActual.servicios || []);
     renderListaMiembros(barberiaActual.miembros || []);
@@ -873,16 +863,128 @@ async function guardarPerfilBarberia(e) {
   }
 }
 
-async function guardarHorariosBase(e) {
-  e.preventDefault();
+// ================== Horario de atención por día (y por barbero) ==================
+const DIAS_EDITOR = [[1, 'Lunes'], [2, 'Martes'], [3, 'Miércoles'], [4, 'Jueves'], [5, 'Viernes'], [6, 'Sábado'], [0, 'Domingo']];
+let editorHorario = { quien: 'barberia', usaBarberia: false, dias: {} };
 
-  const diasSeleccionados = [];
-  [0, 1, 2, 3, 4, 5, 6].forEach(d => {
-    const chk = document.getElementById(`dia-${d}`);
-    if (chk && chk.checked) diasSeleccionados.push(d);
+function copiarHorario(h) {
+  const r = {};
+  for (let d = 0; d <= 6; d++) {
+    const dia = (h && h[d]) || { cerrado: true, rangos: [] };
+    r[d] = { cerrado: !!dia.cerrado, rangos: (dia.rangos || []).map(x => ({ desde: x.desde, hasta: x.hasta })) };
+  }
+  return r;
+}
+
+function horarioMiembro(m) {
+  if (!m || !m.horarioSemanal) return null;
+  try { return typeof m.horarioSemanal === 'string' ? JSON.parse(m.horarioSemanal) : m.horarioSemanal; } catch (e) { return null; }
+}
+
+function pintarEditorHorario() {
+  const selector = document.getElementById('horario-quien');
+  const miembros = (barberiaActual?.miembros || []).filter(m => m.activo !== false);
+  const conVarios = !!barberiaActual?.mostrarSelectorBarbero && miembros.length > 1;
+  document.getElementById('fila-horario-quien').classList.toggle('hidden', !conVarios);
+  const anterior = editorHorario.quien;
+  selector.innerHTML = '<option value="barberia">Toda la barbería (horario general)</option>' +
+    (conVarios ? miembros.map(m => `<option value="${m.id}">${escapeHtml(m.nombre)}</option>`).join('') : '');
+  selector.value = [...selector.options].some(o => o.value === String(anterior)) ? String(anterior) : 'barberia';
+  selector.onchange = () => cargarHorarioEnEditor(selector.value);
+  cargarHorarioEnEditor(selector.value);
+}
+
+function cargarHorarioEnEditor(quien) {
+  editorHorario.quien = quien;
+  const general = TurnosBF.horarioBarberia(barberiaActual);
+  if (quien === 'barberia') {
+    editorHorario.usaBarberia = false;
+    editorHorario.dias = copiarHorario(general);
+  } else {
+    const propio = horarioMiembro((barberiaActual.miembros || []).find(m => String(m.id) === String(quien)));
+    editorHorario.usaBarberia = !propio;
+    editorHorario.dias = copiarHorario(propio || general);
+  }
+  const filaUsa = document.getElementById('fila-usa-barberia');
+  filaUsa.classList.toggle('hidden', quien === 'barberia');
+  document.getElementById('horario-usa-barberia').checked = editorHorario.usaBarberia;
+  document.getElementById('horario-usa-barberia').onchange = e => {
+    editorHorario.usaBarberia = e.target.checked;
+    if (editorHorario.usaBarberia) editorHorario.dias = copiarHorario(general);
+    renderDiasHorario();
+  };
+  renderDiasHorario();
+}
+
+function renderDiasHorario() {
+  const cont = document.getElementById('editor-dias-horario');
+  const bloqueado = editorHorario.quien !== 'barberia' && editorHorario.usaBarberia;
+  cont.classList.toggle('opacity-50', bloqueado);
+  cont.classList.toggle('pointer-events-none', bloqueado);
+  cont.innerHTML = DIAS_EDITOR.map(([d, nombre]) => {
+    const dia = editorHorario.dias[d];
+    const abierto = !dia.cerrado;
+    const rangos = dia.rangos.map((r, i) => `
+      <div class="flex items-center gap-2">
+        <input type="time" value="${escapeHtml(r.desde)}" data-dia="${d}" data-i="${i}" data-campo="desde" class="campo !py-1.5 !px-2 text-sm flex-1 min-w-0">
+        <span class="text-xs text-gray-500">a</span>
+        <input type="time" value="${escapeHtml(r.hasta)}" data-dia="${d}" data-i="${i}" data-campo="hasta" class="campo !py-1.5 !px-2 text-sm flex-1 min-w-0">
+        <button type="button" data-quitar="${d}" data-i="${i}" class="w-8 h-8 flex-shrink-0 rounded-lg text-gray-500 hover:text-red-300 hover:bg-gray-800" aria-label="Quitar este rango">✕</button>
+      </div>`).join('');
+    return `
+      <div class="p-3 rounded-xl bg-gray-950 border ${abierto ? 'border-gray-800' : 'border-gray-900'}">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm font-bold ${abierto ? 'text-white' : 'text-gray-500'}">${nombre}</p>
+          <label class="relative inline-flex items-center cursor-pointer gap-2">
+            <span class="text-[11px] font-semibold ${abierto ? 'text-emerald-300' : 'text-gray-500'}">${abierto ? 'Abierto' : 'Cerrado'}</span>
+            <input type="checkbox" data-abierto="${d}" ${abierto ? 'checked' : ''} class="sr-only peer">
+            <div class="w-9 h-5 bg-gray-800 rounded-full peer peer-checked:after:translate-x-full after:content-[''] after:absolute after:top-[2px] after:right-[18px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-600"></div>
+          </label>
+        </div>
+        ${abierto ? `
+          <div class="mt-2.5 space-y-2">${rangos}</div>
+          ${dia.rangos.length < 4 ? `<button type="button" data-agregar="${d}" class="mt-2 text-[11px] font-semibold text-blue-300 hover:text-blue-200">+ Agregar otro rango (ej. después del almuerzo)</button>` : ''}`
+        : `<p class="text-[11px] text-gray-600 mt-1">No se reciben citas este día.</p>`}
+      </div>`;
+  }).join('');
+
+  cont.querySelectorAll('[data-abierto]').forEach(chk => chk.onchange = () => {
+    const d = Number(chk.dataset.abierto);
+    const dia = editorHorario.dias[d];
+    dia.cerrado = !chk.checked;
+    if (!dia.cerrado && !dia.rangos.length) dia.rangos = [{ desde: '09:00', hasta: '19:00' }];
+    renderDiasHorario();
   });
+  cont.querySelectorAll('input[type=time]').forEach(inp => inp.onchange = () => {
+    editorHorario.dias[Number(inp.dataset.dia)].rangos[Number(inp.dataset.i)][inp.dataset.campo] = inp.value;
+  });
+  cont.querySelectorAll('[data-quitar]').forEach(b => b.onclick = () => {
+    const dia = editorHorario.dias[Number(b.dataset.quitar)];
+    dia.rangos.splice(Number(b.dataset.i), 1);
+    if (!dia.rangos.length) dia.cerrado = true;
+    renderDiasHorario();
+  });
+  cont.querySelectorAll('[data-agregar]').forEach(b => b.onclick = () => {
+    const dia = editorHorario.dias[Number(b.dataset.agregar)];
+    const ultimo = dia.rangos[dia.rangos.length - 1];
+    const desde = ultimo ? ultimo.hasta : '09:00';
+    const finMin = Math.min(23 * 60 + 30, TurnosBF.aMinutos(desde) + 180);
+    dia.rangos.push({ desde, hasta: `${String(Math.floor(finMin / 60)).padStart(2, '0')}:${String(finMin % 60).padStart(2, '0')}` });
+    renderDiasHorario();
+  });
+}
 
-  const payload = {
+// El horario del lunes se copia a todos los días que estén abiertos
+function copiarLunesATodos() {
+  const lunes = editorHorario.dias[1];
+  if (lunes.cerrado) return avisar('El lunes está cerrado: ábrelo y ponle horas primero.', 'error');
+  for (let d = 0; d <= 6; d++) if (d !== 1 && !editorHorario.dias[d].cerrado) editorHorario.dias[d].rangos = lunes.rangos.map(r => ({ ...r }));
+  renderDiasHorario();
+  avisar('Listo: los días abiertos quedaron con el horario del lunes. Recuerda guardar.', 'info');
+}
+
+function payloadBaseBarberia() {
+  return {
     nombre: barberiaActual.nombre,
     telefonoWhatsApp: barberiaActual.telefonoWhatsApp,
     direccion: barberiaActual.direccion,
@@ -890,26 +992,103 @@ async function guardarHorariosBase(e) {
     descripcion: barberiaActual.descripcion,
     logoUrl: barberiaActual.logoUrl,
     mostrarSelectorBarbero: barberiaActual.mostrarSelectorBarbero,
-    horaApertura: document.getElementById('conf-hora-apertura').value,
-    horaCierre: document.getElementById('conf-hora-cierre').value,
-    intervaloMinutos: parseInt(document.getElementById('conf-intervalo').value),
-    minutosAnticipacion: parseInt(document.getElementById('conf-anticipacion')?.value ?? '30'),
-    diasLaborales: diasSeleccionados.join(',')
+    horaApertura: barberiaActual.horaApertura,
+    horaCierre: barberiaActual.horaCierre,
+    intervaloMinutos: barberiaActual.intervaloMinutos,
+    diasLaborales: barberiaActual.diasLaborales
   };
+}
 
+async function guardarHorario() {
+  const boton = document.getElementById('btn-guardar-horario');
+  boton.disabled = true;
+  try {
+    let res;
+    if (editorHorario.quien === 'barberia') {
+      res = await fetch('/api/admin/perfil', {
+        method: 'PUT', headers: getAuthHeaders(),
+        body: JSON.stringify({ ...payloadBaseBarberia(), horarioSemanal: JSON.stringify(editorHorario.dias) })
+      });
+    } else {
+      res = await fetch(`/api/admin/miembros/${editorHorario.quien}/horario`, {
+        method: 'PUT', headers: getAuthHeaders(),
+        body: JSON.stringify({ horarioSemanal: editorHorario.usaBarberia ? null : JSON.stringify(editorHorario.dias) })
+      });
+    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return avisar(data.message || 'No se pudo guardar el horario.', 'error');
+    avisar('¡Horario guardado! Tus clientes ya ven las horas nuevas.');
+    cargarPerfil();
+  } catch (e) {
+    avisar('Error al conectar con el servidor.', 'error');
+  } finally {
+    boton.disabled = false;
+  }
+}
+
+// ----- Reglas de reserva -----
+function pintarReglasReserva() {
+  document.getElementById('conf-intervalo').value = String(barberiaActual.intervaloMinutos || 40);
+  document.getElementById('conf-anticipacion').value = String(barberiaActual.minutosAnticipacion ?? 30);
+  document.getElementById('conf-dias-maximo').value = String(barberiaActual.diasMaximoReserva || 30);
+  document.getElementById('conf-limite-cancelar').value = String(barberiaActual.horasLimiteCancelar ?? 2);
+}
+
+async function guardarReglasReserva(e) {
+  e.preventDefault();
   try {
     const res = await fetch('/api/admin/perfil', {
-      method: 'PUT',
-      headers: getAuthHeaders(),
-      body: JSON.stringify(payload)
+      method: 'PUT', headers: getAuthHeaders(),
+      body: JSON.stringify({
+        ...payloadBaseBarberia(),
+        intervaloMinutos: parseInt(document.getElementById('conf-intervalo').value),
+        minutosAnticipacion: parseInt(document.getElementById('conf-anticipacion').value),
+        diasMaximoReserva: parseInt(document.getElementById('conf-dias-maximo').value),
+        horasLimiteCancelar: parseInt(document.getElementById('conf-limite-cancelar').value)
+      })
     });
-    if (res.ok) {
-      avisar('¡Horario laboral actualizado con éxito!');
-      cargarPerfil();
-    }
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return avisar(data.message || 'No se pudieron guardar las reglas.', 'error');
+    avisar('¡Reglas de reserva guardadas!');
+    cargarPerfil();
   } catch (err) {
-    avisar('Error al guardar horarios.');
+    avisar('Error al conectar con el servidor.', 'error');
   }
+}
+
+// ----- Bloquear varias horas sueltas -----
+let horasSueltasElegidas = new Set();
+
+function pintarHorasSueltas() {
+  const cont = document.getElementById('bloq-horas-sueltas');
+  const fecha = document.getElementById('bloq-fecha').value;
+  if (!fecha) { cont.innerHTML = '<p class="col-span-full text-[11px] text-gray-500">Elige primero la fecha.</p>'; return; }
+  const intervalo = barberiaActual.intervaloMinutos || 40;
+  const rangos = TurnosBF.rangosDelDia(barberiaActual, fecha);
+  const horas = [];
+  rangos.forEach(r => { for (let t = r.ini; t + intervalo <= r.fin; t += intervalo) horas.push(t); });
+  if (!horas.length) { cont.innerHTML = '<p class="col-span-full text-[11px] text-gray-500">Ese día la barbería no atiende.</p>'; return; }
+  cont.innerHTML = horas.map(t => `<button type="button" data-hora="${t}"
+    class="py-2 rounded-lg border text-xs font-semibold transition ${horasSueltasElegidas.has(t) ? 'bg-red-600/25 border-red-500 text-white' : 'bg-gray-900 border-gray-800 text-gray-300 hover:border-gray-600'}">${TurnosBF.minutosATexto(t)}</button>`).join('');
+  cont.querySelectorAll('button[data-hora]').forEach(b => b.onclick = () => {
+    const t = Number(b.dataset.hora);
+    horasSueltasElegidas.has(t) ? horasSueltasElegidas.delete(t) : horasSueltasElegidas.add(t);
+    pintarHorasSueltas();
+  });
+}
+
+// Horas seguidas se juntan en un solo rango ("9:00, 9:40 y 10:20" -> 9:00–11:00)
+function rangosDeHorasSueltas() {
+  const intervalo = barberiaActual.intervaloMinutos || 40;
+  const hhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+  const orden = [...horasSueltasElegidas].sort((a, b) => a - b);
+  const grupos = [];
+  orden.forEach(t => {
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.fin === t) ultimo.fin = t + intervalo;
+    else grupos.push({ ini: t, fin: t + intervalo });
+  });
+  return grupos.map(g => `${hhmm(g.ini)}-${hhmm(g.fin)}`);
 }
 
 async function agregarServicio(e) {
@@ -1112,7 +1291,8 @@ async function bloquearPausaRapida(tipo) {
 async function cerrarRestoDeHoy() {
   const ahora = TurnosBF.ahoraBogota();
   const desde = Math.floor(ahora.minutos / 10) * 10;
-  const cierre = TurnosBF.aMinutos(barberiaActual?.horaCierre || '20:00');
+  const rangosHoy = TurnosBF.rangosDelDia(barberiaActual, ahora.iso);
+  const cierre = rangosHoy.length ? rangosHoy[rangosHoy.length - 1].fin : TurnosBF.aMinutos(barberiaActual?.horaCierre || '20:00');
   if (desde >= cierre) {
     avisar('Ya pasó la hora de cierre de hoy. Si es para otro día, usa "Bloquear otro día u horario".', 'info');
     return;
@@ -1276,9 +1456,15 @@ function alternarCamposBloqueo() {
   const colRango = document.getElementById('col-bloq-rango');
   const colHora = document.getElementById('col-bloq-hora');
   document.getElementById('col-bloq-hasta').classList.toggle('hidden', tipo !== 'dias');
+  document.getElementById('col-bloq-varias').classList.toggle('hidden', tipo !== 'varias');
+  if (tipo === 'varias') {
+    horasSueltasElegidas = new Set();
+    pintarHorasSueltas();
+    document.getElementById('bloq-fecha').onchange = () => { horasSueltasElegidas = new Set(); pintarHorasSueltas(); };
+  }
   document.getElementById('lbl-bloq-fecha').textContent = tipo === 'dias' ? 'Desde' : 'Fecha';
 
-  if (tipo === 'dia' || tipo === 'dias') {
+  if (tipo === 'dia' || tipo === 'dias' || tipo === 'varias') {
     colRango.classList.add('hidden');
     colHora.classList.add('hidden');
   } else if (tipo === 'rango') {
@@ -1299,7 +1485,27 @@ async function agregarBloqueo(e) {
   let horaString = 'TODO_EL_DIA';
   let fechaHasta = null;
 
-  if (tipo === 'dias') {
+  if (tipo === 'varias') {
+    const rangos = rangosDeHorasSueltas();
+    if (!rangos.length) return avisar('Toca al menos una hora para cerrarla.', 'error');
+    const afectadas = new Map();
+    let aviso = null, fallos = 0;
+    for (const hora of rangos) {
+      try {
+        const res = await fetch('/api/admin/bloqueos', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ fecha, hora, motivo }) });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) { fallos++; continue; }
+        aviso = data.avisoPorWhatsApp;
+        (data.citasAfectadas || []).forEach(c => afectadas.set(c.id, c));
+      } catch (err) { fallos++; }
+    }
+    document.getElementById('bloq-motivo').value = '';
+    horasSueltasElegidas = new Set();
+    avisar(fallos ? `Se cerraron ${rangos.length - fallos} de ${rangos.length} horas. Revisa e inténtalo de nuevo.` : `¡Listo! Cerraste ${rangos.length === 1 ? 'esa hora' : 'esas horas'} el ${fechaCorta(fecha)}.`, fallos ? 'error' : 'ok');
+    await ofrecerAvisarCitasAfectadas({ citasAfectadas: [...afectadas.values()], avisoPorWhatsApp: aviso }, motivo);
+    cargarPerfil();
+    return;
+  } else if (tipo === 'dias') {
     fechaHasta = document.getElementById('bloq-fecha-hasta').value;
     if (!fechaHasta || fechaHasta < fecha) {
       avisar('Elige hasta qué día quieres bloquear (igual o después del primer día).', 'error');

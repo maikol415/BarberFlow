@@ -317,7 +317,9 @@ function tarjetaCita(c) {
   const f = formatearFecha(c.fecha);
   const estado = (!c.proxima && (c.estado === 'Confirmada' || c.estado === 'Pendiente')) ? 'Pasada' : c.estado;
   const TEXTO_ESTADO = { 'Pendiente': 'Por confirmar', 'No Confirmada': 'No confirmada', 'Completada': 'Atendida' };
-  const acciones = c.proxima ? `
+  const acciones = c.proxima && c.motivoNoModificable ? `
+      <p class="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-200 leading-relaxed">${escapeHtml(c.motivoNoModificable)}</p>`
+    : c.proxima ? `
       <div class="grid grid-cols-2 gap-2 mt-4">
         <a href="/index.html?b=${encodeURIComponent(slug)}&reagendar=${encodeURIComponent(c.tokenPublico)}" class="py-2 rounded-xl text-xs font-bold text-center bg-blue-600/15 text-blue-300 border border-blue-500/30 hover:bg-blue-600/25 transition">Reagendar</a>
         <button onclick="cancelarCita(${c.id})" class="py-2 rounded-xl text-xs font-bold bg-gray-800 text-gray-300 border border-gray-700 hover:text-red-300 hover:border-red-500/40 transition">Cancelar cita</button>

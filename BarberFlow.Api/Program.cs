@@ -170,6 +170,10 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""ReaccionesPortada"" text NOT NULL DEFAULT '';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""PortadaPosicion"" text NOT NULL DEFAULT '50 50';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""ReaccionesLogo"" text NOT NULL DEFAULT '';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorarioSemanal"" text NOT NULL DEFAULT '';
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""DiasMaximoReserva"" integer NOT NULL DEFAULT 30;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasLimiteCancelar"" integer NOT NULL DEFAULT 2;
+                ALTER TABLE ""Miembros"" ADD COLUMN IF NOT EXISTS ""HorarioSemanal"" text NOT NULL DEFAULT '';
                 ALTER TABLE ""Barberos"" ADD COLUMN IF NOT EXISTS ""AceptoPrivacidadUtc"" timestamp with time zone NULL;
                 ALTER TABLE ""Clientes"" ADD COLUMN IF NOT EXISTS ""AceptoPrivacidadUtc"" timestamp with time zone NULL;
                 ALTER TABLE ""Barberos"" ADD COLUMN IF NOT EXISTS ""CodigoRecuperacionHash"" text NULL;
@@ -257,6 +261,10 @@ using (var scope = app.Services.CreateScope())
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""MinutosPausaBot"" INTEGER NOT NULL DEFAULT 120",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""ReaccionesPortada"" TEXT NOT NULL DEFAULT ''",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""PortadaPosicion"" TEXT NOT NULL DEFAULT '50 50'",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorarioSemanal"" TEXT NOT NULL DEFAULT ''",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""DiasMaximoReserva"" INTEGER NOT NULL DEFAULT 30",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorasLimiteCancelar"" INTEGER NOT NULL DEFAULT 2",
+                @"ALTER TABLE ""Miembros"" ADD COLUMN ""HorarioSemanal"" TEXT NOT NULL DEFAULT ''",
                 @"ALTER TABLE ""Barberos"" ADD COLUMN ""AceptoPrivacidadUtc"" TEXT NULL",
                 @"ALTER TABLE ""Clientes"" ADD COLUMN ""AceptoPrivacidadUtc"" TEXT NULL",
                 @"ALTER TABLE ""Barberos"" ADD COLUMN ""CodigoRecuperacionHash"" TEXT NULL",

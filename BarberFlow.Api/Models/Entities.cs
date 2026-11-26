@@ -33,6 +33,9 @@ public class Barberia
     public string ColorPrimario { get; set; } = "#2563EB"; // Color de marca de la página pública
     public string PortadaUrl { get; set; } = "";           // Imagen de fondo/portada de la página pública
     public string PortadaPosicion { get; set; } = "50 50"; // Encuadre de la foto: "x y" en % (qué parte se ve)
+    public string HorarioSemanal { get; set; } = "";       // JSON con los rangos de cada día (ver Services/HorarioSemanal.cs)
+    public int DiasMaximoReserva { get; set; } = 30;       // Hasta cuántos días adelante se puede reservar
+    public int HorasLimiteCancelar { get; set; } = 2;      // El cliente cancela/reprograma hasta X horas antes (0 = siempre)
     public string ReaccionesPortada { get; set; } = "";
     public string ReaccionesLogo { get; set; } = "";       // Igual, para la foto de perfil (logo); se reinicia al cambiar el logo    // JSON {"corazon":3,"fuego":1,...}; se reinicia al cambiar la portada
     public string HorarioTexto { get; set; } = "Lunes a Sábado 9:00 AM - 8:00 PM";
@@ -121,6 +124,7 @@ public class MiembroEquipo
     public string Rol { get; set; } = "Master Barber";
     public string FotoUrl { get; set; } = "";
     public bool Activo { get; set; } = true;
+    public string HorarioSemanal { get; set; } = "";       // Horario propio del barbero (vacío = el de la barbería)
 }
 
 public class Cita

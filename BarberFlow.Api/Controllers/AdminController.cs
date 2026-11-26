@@ -63,6 +63,9 @@ public class AdminController : ControllerBase
                 barberia.ColorPrimario,
                 barberia.PortadaUrl,
                 barberia.PortadaPosicion,
+                HorarioSemanal = HorarioSemanal.DeBarberia(barberia),
+                barberia.DiasMaximoReserva,
+                barberia.HorasLimiteCancelar,
                 barberia.HorarioTexto,
                 barberia.HoraApertura,
                 barberia.HoraCierre,
@@ -176,6 +179,19 @@ public class AdminController : ControllerBase
         }
         if (dto.PedirOpinionActivo.HasValue) barberia.PedirOpinionActivo = dto.PedirOpinionActivo.Value;
         if (dto.MinutosPausaBot is 30 or 60 or 120 or 240 or 480 or 1440) barberia.MinutosPausaBot = dto.MinutosPausaBot.Value;
+        if (dto.DiasMaximoReserva is 7 or 14 or 30 or 60 or 90) barberia.DiasMaximoReserva = dto.DiasMaximoReserva.Value;
+        if (dto.HorasLimiteCancelar is 0 or 1 or 2 or 3 or 6 or 12 or 24) barberia.HorasLimiteCancelar = dto.HorasLimiteCancelar.Value;
+        if (!string.IsNullOrWhiteSpace(dto.HorarioSemanal))
+        {
+            var (json, error) = HorarioSemanal.Normalizar(dto.HorarioSemanal);
+            if (error != null) return BadRequest(new { message = error });
+            barberia.HorarioSemanal = json!;
+            // Los campos antiguos quedan como resumen (los usan el bot y otras pantallas)
+            var (apertura, cierre, dias) = HorarioSemanal.Resumen(HorarioSemanal.Leer(json)!);
+            barberia.HoraApertura = apertura;
+            barberia.HoraCierre = cierre;
+            barberia.DiasLaborales = dias;
+        }
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSemana)) barberia.HoraAnuncioSemana = dto.HoraAnuncioSemana.Trim();
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioSabado)) barberia.HoraAnuncioSabado = dto.HoraAnuncioSabado.Trim();
         if (!string.IsNullOrWhiteSpace(dto.HoraAnuncioDomingo)) barberia.HoraAnuncioDomingo = dto.HoraAnuncioDomingo.Trim();
@@ -476,6 +492,27 @@ public class AdminController : ControllerBase
         _context.Miembros.Add(miembro);
         await _context.SaveChangesAsync();
         return Ok(miembro);
+    }
+
+    // Horario propio de un barbero (null o vacío = usa el horario de la barbería)
+    [HttpPut("miembros/{id}/horario")]
+    public async Task<IActionResult> GuardarHorarioMiembro(int id, [FromBody] HorarioMiembroDto dto)
+    {
+        var barberiaId = ObtenerBarberiaId();
+        var miembro = await _context.Miembros.FirstOrDefaultAsync(m => m.Id == id && m.BarberiaId == barberiaId);
+        if (miembro == null) return NotFound(new { message = "Barbero no encontrado." });
+        if (string.IsNullOrWhiteSpace(dto.HorarioSemanal))
+        {
+            miembro.HorarioSemanal = "";
+        }
+        else
+        {
+            var (json, error) = HorarioSemanal.Normalizar(dto.HorarioSemanal);
+            if (error != null) return BadRequest(new { message = error });
+            miembro.HorarioSemanal = json!;
+        }
+        await _context.SaveChangesAsync();
+        return Ok(new { message = string.IsNullOrEmpty(miembro.HorarioSemanal) ? "Ahora usa el horario de la barbería." : "Horario guardado." });
     }
 
     [HttpPut("miembros/{id}")]
