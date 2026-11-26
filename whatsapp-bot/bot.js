@@ -9,7 +9,8 @@ import { crearAlmacenSesion } from './auth-postgres.js';
 const PORT = process.env.BOT_PORT || process.env.PORT || 3001;
 const API_BASE_URL = process.env.BARBERFLOW_API_URL || 'https://barberflow-aos9.onrender.com/api/public';
 const BARBERIA_SLUG = process.env.BARBERIA_SLUG || 'barberia-jr';
-const BASE_WEB_URL = process.env.BARBERFLOW_WEB_URL || 'https://barberflow-aos9.onrender.com';
+const BASE_WEB_URL = (process.env.BARBERFLOW_WEB_URL || 'https://barberflow-aos9.onrender.com').replace(/\/+$/, '');
+const HOST_WEB = (() => { try { return new URL(BASE_WEB_URL).host.toLowerCase(); } catch { return 'barberflow'; } })();
 // Clave compartida con la API (misma variable BOT_API_KEY en ambos servicios de Render)
 const BOT_API_KEY = process.env.BOT_API_KEY || '';
 if (!BOT_API_KEY) {
@@ -627,8 +628,11 @@ export function mensajeMisCitas(citas) {
     `¿Qué quieres hacer?\n\n` +
     `*1* 🔄 Reagendar ${una ? '(cambiar día u hora)' : 'una cita'}\n` +
     `*2* ❌ Cancelar ${una ? 'la cita' : 'una cita'}\n` +
-    `*0* 🏠 Volver al menú`;
+    `*0* 🏠 Volver al menú\n\n` +
+    `📖 _Tu historial de citas está en tu cuenta:_\n👉 ${linkCuenta()}`;
 }
+
+function linkCuenta() { return `${BASE_WEB_URL}/cuenta.html?b=${encodeURIComponent(BARBERIA_SLUG)}`; }
 
 // Con varias citas: ¿cuál quiere reagendar o cancelar?
 export function mensajeElegirCita(citas, accion) {
@@ -637,7 +641,7 @@ export function mensajeElegirCita(citas, accion) {
     `\n\n*0* 🏠 Volver al menú`;
 }
 
-function linkReservas() { return `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`; }
+function linkReservas() { return `${BASE_WEB_URL}/${encodeURIComponent(BARBERIA_SLUG)}`; }
 
 function menuPrincipal(barberia, saludo, nombreCliente) {
   // La bienvenida del barbero se usa como saludo; sus líneas numeradas se quitan porque el bot
@@ -848,7 +852,7 @@ export function mensajeCambioHora({ nombreCliente, servicio, fecha, horaAnterior
   const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ahoraMs));
   const cuando = fecha === hoy ? 'de hoy' : `del ${fechaLegible(fecha)}`;
   const enlace = tokenPublico
-    ? `${BASE_WEB_URL}/index.html?b=${encodeURIComponent(BARBERIA_SLUG)}&reagendar=${encodeURIComponent(tokenPublico)}`
+    ? `${linkReservas()}?reagendar=${encodeURIComponent(tokenPublico)}`
     : linkReservas();
   return `⏰ ¡Hola ${obtenerPrimerNombre(nombreCliente)}! Te escribimos de *${barberiaNombre || 'la barbería'}*.\n\n` +
     `Tuvimos un ajuste en la agenda y tu cita ${cuando}${servicio ? ` (${servicio})` : ''} se corrió un poquito:\n\n` +
@@ -930,7 +934,7 @@ export function mensajeListaEspera({ nombreCliente, servicioId, fecha, hora }, b
   const dia = fecha === hoy ? 'hoy' : `el *${fechaLegible(fecha)}*`;
   const min = hora ? horaAMinutos(hora) : null;
   const cuando = min !== null && min !== undefined ? `${dia} a las *${minutosATextoBot(min)}*` : dia;
-  const enlace = `${BASE_WEB_URL}/index.html?b=${encodeURIComponent(BARBERIA_SLUG)}&fecha=${encodeURIComponent(fecha)}` +
+  const enlace = `${linkReservas()}?fecha=${encodeURIComponent(fecha)}` +
     (servicioId ? `&servicio=${encodeURIComponent(servicioId)}` : '');
   const nombre = obtenerPrimerNombre(nombreCliente);
   return `🔔 ¡Hola${nombre ? ` ${nombre}` : ''}! Se liberó un turno en *${barberiaNombre || 'la barbería'}* ${cuando}.\n\n` +
@@ -957,7 +961,7 @@ export async function manejarNotificarListaEspera(payload) {
 const MAX_ESPERA_MS = 20 * 24 * 60 * 60 * 1000; // setTimeout no admite esperas mayores a ~24 días
 // El enlace usa el token público de la cita (no el Id secuencial, que permitiría ver/calificar citas ajenas).
 export function urlCalificarCita(tokenPublico) {
-  return `${BASE_WEB_URL}/index.html?b=${encodeURIComponent(BARBERIA_SLUG)}&calificar=${encodeURIComponent(tokenPublico)}`;
+  return `${linkReservas()}?calificar=${encodeURIComponent(tokenPublico)}`;
 }
 
 const encuestasProgramadas = new Map(); // citaId -> temporizador
@@ -1320,7 +1324,7 @@ export async function procesarMensajeEntrante(sock, m) {
 
       if (!texto) return;
       // Respuesta de otro bot de BarberFlow (trae nuestros enlaces o menús): no contestar para no armar un bucle
-      if (texto.includes('index.html?b=') || texto.includes('escribe solo el número')) return;
+      if (texto.includes('index.html?b=') || texto.includes(HOST_WEB) || texto.includes('escribe solo el número')) return;
       // Versión sin tildes ni letras alargadas ("Holaaa", "Quiubooo", "Buenaaas") para reconocer cómo escribe la gente
       const textoN = normalizarTexto(texto);
 
@@ -1467,7 +1471,7 @@ export async function procesarMensajeEntrante(sock, m) {
               `✅ ¡Listo ${nombreCliente}! Tu cita para el *${fechaLegible(estado.citaFecha)} a las ${estado.citaHora}* ha sido cancelada correctamente.\n\n` +
               `Lamentamos que no nos puedas acompañar en esta ocasión, ¡esperamos verte muy pronto en la barbería! 💈✂️\n\n` +
               `Cuando desees volver a agendar tu espacio, estaremos encantados de atenderte aquí:\n` +
-              `👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`;
+              `👉 ${linkReservas()}`;
 
             await enviarMensajeHumano(sock, remitente, msjCancelado);
 
@@ -1567,7 +1571,7 @@ export async function procesarMensajeEntrante(sock, m) {
             `⏰ ${cita.motivoNoModificable.replace(/ Escríbele al barbero por WhatsApp\.$/, '')}\n\nEl barbero te responderá por este chat en cuanto pueda. 🙏`);
           return;
         }
-        const url = `${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}&reagendar=${encodeURIComponent(cita.tokenPublico)}`;
+        const url = `${linkReservas()}?reagendar=${encodeURIComponent(cita.tokenPublico)}`;
         await enviarMensajeHumano(sock, remitente,
           `🔄 *Cambiar tu cita*\n\n` +
           `Para elegir un nuevo día y hora de tu cita (*${cita.servicio}*, ${fechaLegible(cita.fecha)} a las ${cita.hora}), entra aquí:\n` +
@@ -1641,7 +1645,7 @@ export async function procesarMensajeEntrante(sock, m) {
             await enviarMensajeHumano(
               sock,
               remitente,
-              `No encontramos citas activas asociadas a este número de WhatsApp. Si necesitas agendar una nueva, puedes hacerlo aquí:\n👉 ${BASE_WEB_URL}/index.html?b=${BARBERIA_SLUG}`
+              `No encontramos citas activas asociadas a este número de WhatsApp. Si necesitas agendar una nueva, puedes hacerlo aquí:\n👉 ${linkReservas()}`
             );
             return;
           }
@@ -1761,6 +1765,7 @@ export async function procesarMensajeEntrante(sock, m) {
           await enviarMensajeHumano(sock, remitente,
             `📭 No tienes citas próximas con este número.\n\n` +
             `📅 Reserva aquí en menos de un minuto:\n👉 ${linkReservas()}\n\n` +
+            `📖 _Tu historial de citas está en tu cuenta:_\n👉 ${linkCuenta()}\n\n` +
             `_Escribe *MENÚ* para ver todas las opciones._`);
           return;
         }

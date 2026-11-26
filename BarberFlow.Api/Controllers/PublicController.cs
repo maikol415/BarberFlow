@@ -139,10 +139,7 @@ public class PublicController : ControllerBase
     {
         if (foto != "portada" && foto != "logo") return NotFound();
         var slugN = slug.ToLowerInvariant();
-        // Detrás del proxy de Render la IP real del visitante es el ÚLTIMO valor de X-Forwarded-For
-        // (los anteriores los puede inventar quien hace la petición)
-        var ip = Request.Headers["X-Forwarded-For"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault()
-                 ?? HttpContext.Connection.RemoteIpAddress?.ToString() ?? "?";
+        var ip = IpVisitante();
         var ahoraUtc = DateTime.UtcNow;
         if (_limiteReacciones.Count > 5000)
             foreach (var viejo in _limiteReacciones.Where(k => ahoraUtc - k.Value.Desde > TimeSpan.FromHours(1)).Select(k => k.Key).ToList())
@@ -1174,9 +1171,7 @@ public class PublicController : ControllerBase
     public record ConfirmarClienteDto(string? BarberiaSlug, string? Telefono, string? Codigo, string? NuevaClave);
     public record CambiarClaveClienteDto(string? ClaveActual, string? NuevaClave);
 
-    private string IpVisitante() =>
-        Request.Headers["X-Forwarded-For"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault()
-        ?? HttpContext.Connection.RemoteIpAddress?.ToString() ?? "?";
+    private string IpVisitante() => Services.IpVisitante.De(HttpContext);
 
     [HttpPost("clientes/recuperar/solicitar")]
     public async Task<IActionResult> SolicitarRecuperacionCliente([FromBody] RecuperarClienteDto dto)

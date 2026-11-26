@@ -3,7 +3,7 @@
   document.querySelectorAll('.anio-actual').forEach(e => { e.textContent = new Date().getFullYear(); });
   const slug = (new URLSearchParams(location.search).get('b') || '').toLowerCase();
   if (!slug) return;
-  document.getElementById('link-volver').href = `/index.html?b=${encodeURIComponent(slug)}`;
+  document.getElementById('link-volver').href = `/${encodeURIComponent(slug)}`;
   try {
     const res = await fetch(`/api/public/barberia/${encodeURIComponent(slug)}`);
     if (!res.ok) return;

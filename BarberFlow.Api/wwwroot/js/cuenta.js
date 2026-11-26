@@ -327,11 +327,11 @@ function tarjetaCita(c) {
       <p class="mt-3 p-2.5 rounded-xl bg-amber-500/10 border border-amber-500/25 text-[11px] text-amber-200 leading-relaxed">${escapeHtml(c.motivoNoModificable)}</p>`
     : c.proxima ? `
       <div class="grid grid-cols-2 gap-2 mt-4">
-        <a href="/index.html?b=${encodeURIComponent(slug)}&reagendar=${encodeURIComponent(c.tokenPublico)}" class="py-2 rounded-xl text-xs font-bold text-center bg-blue-600/15 text-blue-300 border border-blue-500/30 hover:bg-blue-600/25 transition">Reagendar</a>
+        <a href="/${encodeURIComponent(slug)}?reagendar=${encodeURIComponent(c.tokenPublico)}" class="py-2 rounded-xl text-xs font-bold text-center bg-blue-600/15 text-blue-300 border border-blue-500/30 hover:bg-blue-600/25 transition">Reagendar</a>
         <button onclick="cancelarCita(${c.id})" class="py-2 rounded-xl text-xs font-bold bg-gray-800 text-gray-300 border border-gray-700 hover:text-red-300 hover:border-red-500/40 transition">Cancelar cita</button>
       </div>` : `
       <div class="mt-3">
-        <a href="/index.html?b=${encodeURIComponent(slug)}" class="text-xs font-bold text-blue-400 hover:text-blue-300">Reservar de nuevo →</a>
+        <a href="/${encodeURIComponent(slug)}" class="text-xs font-bold text-blue-400 hover:text-blue-300">Reservar de nuevo →</a>
       </div>`;
 
   return `
@@ -362,7 +362,7 @@ function vacio(icono, titulo, texto, conBoton) {
       <i data-lucide="${icono}" class="w-8 h-8 text-gray-600 mx-auto"></i>
       <p class="text-sm font-bold text-gray-300 mt-3">${titulo}</p>
       <p class="text-xs text-gray-500 mt-1">${texto}</p>
-      ${conBoton ? `<a href="/index.html?b=${encodeURIComponent(slug)}" class="inline-block mt-4 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-500">Reservar una cita</a>` : ''}
+      ${conBoton ? `<a href="/${encodeURIComponent(slug)}" class="inline-block mt-4 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white hover:bg-blue-500">Reservar una cita</a>` : ''}
     </div>`;
 }
 
@@ -432,7 +432,7 @@ async function iniciar() {
   llenarPaises('login-pais');
   llenarPaises('reg-pais');
   llenarPaises('rc-pais');
-  const linkReservar = `/index.html?b=${encodeURIComponent(slug)}`;
+  const linkReservar = `/${encodeURIComponent(slug)}`;
   ['pie-link-privacidad', 'link-privacidad-registro'].forEach(id => { const el = $(id); if (el) el.href = `/privacidad.html?b=${encodeURIComponent(slug)}`; });
   document.querySelectorAll('.anio-actual').forEach(e => { e.textContent = new Date().getFullYear(); });
   ['link-volver', 'btn-nueva-cita', 'link-reservar-sin-cuenta'].forEach(id => { $(id).href = linkReservar; });

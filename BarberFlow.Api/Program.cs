@@ -452,6 +452,18 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.UseCors("AllowAll");
+
+// Enlace corto: /barberia-jr muestra la página de reservas (la página lee la barbería de la dirección)
+app.Use(async (context, next) =>
+{
+    if ((HttpMethods.IsGet(context.Request.Method) || HttpMethods.IsHead(context.Request.Method))
+        && EnlaceCorto.EsEnlaceDeBarberia(context.Request.Path))
+    {
+        context.Request.Path = "/index.html";
+    }
+    await next();
+});
+
 app.UseDefaultFiles();
 
 var fileOptions = new StaticFileOptions();

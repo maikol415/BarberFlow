@@ -190,7 +190,7 @@ g = await postJson(`${API}/calificar-cita`, { citaId: citaAnaPasado.id, estrella
 comprobar('Rechaza reseña por id (sin token)', g.status === 400 || g.status === 404 ? 'ok' : String(g.status), ['ok']);
 
 r = await cliente(bob, '1');
-comprobar('Opción 1 envía el enlace de reserva (no repite el menú)', r, ['Reserva tu cita en línea', 'index.html?b=']);
+comprobar('Opción 1 envía el enlace de reserva (no repite el menú)', r, ['Reserva tu cita en línea', `/${SLUG}`]);
 
 const nuevo2 = { remoteJid: `5730088${base}@s.whatsapp.net` };
 r = await cliente(nuevo2, 'cuánto vale el corte?');
@@ -211,7 +211,7 @@ comprobar('Conversación que empieza con "5": primero saluda con el menú', r, [
 r = await cliente(nuevo, '5');
 comprobar('Ya en la conversación, "5" muestra las formas de pago', r, ['Formas de pago']);
 r = await cliente(nuevo, '4');
-comprobar('"4" sin citas: lo dice y ofrece reservar', r, ['No tienes citas próximas', 'index.html?b=']);
+comprobar('"4" sin citas: lo dice y ofrece reservar', r, ['No tienes citas próximas', `/${SLUG}`]);
 r = await cliente(nuevo, 'a las 3 tienen cupo?');
 comprobar('"a las 3..." no abre la opción 3 por error', /Dónde estamos/.test(r) ? 'abrió ubicación' : 'ok', ['ok']);
 r = await cliente(nuevo, 'a qué hora abren?');
@@ -230,7 +230,7 @@ const minCarla = (() => { const [hh, mmm] = citaCarla.hora.split(/[: ]/); let h 
 // El token solo viaja en el aviso API ➔ bot; aquí se consulta con la clave del bot
 const citaCarlaBot = (await getJson(`${API}/bot/${SLUG}/citas-cliente/${dig(telCarla)}`, { headers: { 'X-Bot-Key': process.env.BOT_API_KEY || '' } })).data || {};
 comprobar('La API del bot entrega el token de la cita', /^[0-9a-f]{32}$/.test(citaCarlaBot.tokenPublico || '') ? 'ok' : JSON.stringify(citaCarlaBot), ['ok']);
-comprobar('Link de reseña con slug y token', urlCalificarCita(citaCarlaBot.tokenPublico), [`b=${SLUG}`, `calificar=${citaCarlaBot.tokenPublico}`]);
+comprobar('Link de reseña con slug y token', urlCalificarCita(citaCarlaBot.tokenPublico), [`/${SLUG}?calificar=${citaCarlaBot.tokenPublico}`]);
 const payloadBase = {
   citaId: citaCarla.id, tokenPublico: citaCarlaBot.tokenPublico, codigoReserva: citaCarla.codigoReserva, barberiaSlug: SLUG, barberiaNombre: 'Barbería de prueba',
   barberiaDireccion: 'Calle 1', nombreCliente: 'Carla Prueba', telefonoCliente: telCarla, servicio: 'Corte',
@@ -309,7 +309,7 @@ await manejarNotificarCita({ ...payloadBase, telefonoCliente: telAna, nombreClie
 comprobar('Aviso de cita nueva va al mismo chat @lid del cliente', enviados.map(e => e.jid).join(','), [ana.remoteJid]);
 
 r = await cliente(vieja, 'reagendar');
-comprobar('Reagendar sin cita activa: ofrece reservar una nueva', r, ['No encontramos una cita activa', 'index.html?b=']);
+comprobar('Reagendar sin cita activa: ofrece reservar una nueva', r, ['No encontramos una cita activa', `/${SLUG}`]);
 
 // Cómo escribe la gente en Colombia / Medellín
 comprobar('Normaliza "¡¡Holaaaa!!" y "Quiubooo"', `${normalizarTexto('¡¡Holaaaa!!')}|${normalizarTexto('Quiubooo parce')}`, ['hola|quiubo parce']);
@@ -398,7 +398,7 @@ comprobar('Respuesta sin nombre si no lo conocemos', respuestaAgradecimiento('',
 const telImpre = `+57302${base}`;
 enviados.length = 0;
 const imp = await manejarNotificarImprevisto({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', motivo: 'Calamidad', citas: [{ id: 999, nombreCliente: 'lucia gómez', telefonoCliente: telImpre, servicio: 'Corte', fecha: manana, hora: '03:00pm' }] });
-comprobar('Imprevisto: avisa al cliente con motivo, fecha y enlace', enviados.map(e => e.texto).join(' | '), ['Hola Lucia', 'imprevisto (Calamidad)', legible(manana), '03:00pm', 'quedó cancelada', 'index.html?b=', 'se comunicará contigo']);
+comprobar('Imprevisto: avisa al cliente con motivo, fecha y enlace', enviados.map(e => e.texto).join(' | '), ['Hola Lucia', 'imprevisto (Calamidad)', legible(manana), '03:00pm', 'quedó cancelada', `/${SLUG}`, 'se comunicará contigo']);
 comprobar('Imprevisto: no avisa citas de otra barbería', (await manejarNotificarImprevisto({ barberiaSlug: 'otra', citas: [] })).razon || '', ['otra barbería']);
 // Cita anotada por el barbero en el local: confirmación sin pedir SI y la cita sigue Confirmada
 const telLocal = `+57303${base}`;
@@ -428,7 +428,7 @@ comprobar('Código de otra barbería: no se envía', cod.razon || '', ['otra bar
 const telEspera = `+57306${base}`;
 enviados.length = 0;
 await manejarNotificarListaEspera({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', nombreCliente: 'maria paz', telefonoCliente: telEspera, servicioId: 5, fecha: manana, hora: '03:20pm' });
-comprobar('Lista de espera: avisa el turno libre con enlace al día y servicio', enviados.map(e => e.texto).join(' | '), ['Hola Maria', 'Se liberó un turno', legible(manana), '3:20', 'lista de espera', `&fecha=${manana}&servicio=5`]);
+comprobar('Lista de espera: avisa el turno libre con enlace al día y servicio', enviados.map(e => e.texto).join(' | '), ['Hola Maria', 'Se liberó un turno', legible(manana), '3:20', 'lista de espera', `/${SLUG}?fecha=${manana}&servicio=5`]);
 comprobar('Lista de espera: no avisa por otra barbería', (await manejarNotificarListaEspera({ barberiaSlug: 'otra', telefonoCliente: telEspera })).razon || '', ['otra barbería']);
 // Pregunta pendiente: tras la confirmación ("Responde SI / CANCELAR") solo valen esas opciones
 const telPepe = `+57304${base}`;
@@ -458,7 +458,7 @@ r = await cliente(pepe, '2');
 // Mis citas (opción 4): con dos citas, elegir cuál reagendar o cancelar
 const citaPepe2 = await crearCita(telPepe, 'El Pepe', manana, '06:20 PM');
 r = await cliente(pepe, '4');
-comprobar('Mis citas: muestra sus próximas citas y las opciones', r, ['Tus próximas citas', citaPepe.hora, citaPepe2.hora, '*1* 🔄 Reagendar', '*2* ❌ Cancelar', '*0* 🏠']);
+comprobar('Mis citas: muestra sus próximas citas y las opciones', r, ['Tus próximas citas', citaPepe.hora, citaPepe2.hora, '*1* 🔄 Reagendar', '*2* ❌ Cancelar', '*0* 🏠', 'historial de citas', 'cuenta.html?b=']);
 r = await cliente(pepe, 'hola');
 comprobar('Mis citas: una palabra que no es opción recuerda las opciones', r, ['no es válida', '*1*', '*2*', '*0*']);
 r = await cliente(pepe, '1');

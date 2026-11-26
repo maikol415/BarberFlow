@@ -1,5 +1,7 @@
 // BarberFlow Pro - Página pública de reservas de una barbería
-const slugUrl = (new URLSearchParams(location.search).get('b') || 'barberia-jr').toLowerCase();
+// La barbería viene en el enlace corto (/barberia-jr) o en el antiguo (/index.html?b=barberia-jr)
+const slugUrl = (window.__slugBarberia || new URLSearchParams(location.search).get('b') ||
+  (location.pathname.match(/^\/([a-z0-9][a-z0-9-]*)\/?$/i) || [])[1] || 'barberia-jr').toLowerCase();
 const CLAVE_SESION = `bf_cliente_session_${slugUrl}`;
 const PAISES = [
   ['+57', '🇨🇴'], ['+1', '🇺🇸'], ['+34', '🇪🇸'], ['+52', '🇲🇽'], ['+54', '🇦🇷'],
@@ -855,7 +857,7 @@ async function refrescarDisponibilidad() {
 function cerrarModal() {
   mostrar('success-modal', false);
   // Volver a la página limpia (sin ?reagendar= ni ?calificar=) para no repetir el flujo anterior
-  window.location.href = `/index.html?b=${encodeURIComponent(barberia.slug)}`;
+  window.location.href = `/${encodeURIComponent(barberia.slug)}`;
 }
 
 // ================== Enlaces especiales: reagendar y calificar ==================

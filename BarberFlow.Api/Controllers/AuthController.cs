@@ -58,6 +58,8 @@ public class AuthController : ControllerBase
         }
 
         var slugBase = GenerarSlug(dto.NombreBarberia);
+        // El enlace corto es /{slug}: no puede chocar con rutas de la página (/admin, /api, /js...)
+        if (EnlaceCorto.EsReservado(slugBase)) slugBase = $"{slugBase}-barberia";
         var slug = slugBase;
         int count = 1;
         while (await _context.Barberias.AnyAsync(b => b.Slug == slug))
@@ -128,9 +130,7 @@ public class AuthController : ControllerBase
     public record ConfirmarRecuperacionDto(string? Email, string? Codigo, string? NuevaClave);
     public record CambiarClaveDto(string? ClaveActual, string? NuevaClave);
 
-    private string IpCliente() =>
-        Request.Headers["X-Forwarded-For"].ToString().Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).LastOrDefault()
-        ?? HttpContext.Connection.RemoteIpAddress?.ToString() ?? "?";
+    private string IpCliente() => IpVisitante.De(HttpContext);
 
     // Paso 1: se envía un código al WhatsApp de la barbería. La respuesta es la misma exista o no el correo
     // (así nadie puede averiguar qué correos están registrados).

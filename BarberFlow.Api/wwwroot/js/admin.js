@@ -57,7 +57,7 @@ async function cargarPerfil() {
     barberiaActual = await res.json();
 
     document.getElementById('admin-barberia-nombre').innerText = barberiaActual.nombre;
-    const linkPublico = `/index.html?b=${barberiaActual.slug}`;
+    const linkPublico = `/${encodeURIComponent(barberiaActual.slug)}`; // enlace corto para compartir
     const btnVer = document.getElementById('btn-ver-publica');
     btnVer.href = linkPublico;
 
@@ -1431,7 +1431,7 @@ function linkWhatsAppImprevisto(c, motivo) {
   const conMotivo = motivo && !/^(imprevisto|descanso.*|almuerzo|pausa.*)$/i.test(motivo.replace(/^[^\p{L}\p{N}]+/u, '').trim());
   const texto = `Hola ${String(c.nombreCliente || '').split(' ')[0]}, te escribimos de ${barberiaActual?.nombre || 'la barbería'}. ` +
     `Por un imprevisto${conMotivo ? ` (${motivo})` : ''} no podremos atenderte el ${fechaLarga(c.fecha)} a las ${horaLegible(c.hora).replace(/ /g, ' ')}, ` +
-    `así que tu cita quedó cancelada. Disculpa las molestias 🙏 Puedes elegir otro horario aquí: ${location.origin}/index.html?b=${encodeURIComponent(barberiaActual?.slug || '')}`;
+    `así que tu cita quedó cancelada. Disculpa las molestias 🙏 Puedes elegir otro horario aquí: ${location.origin}/${encodeURIComponent(barberiaActual?.slug || '')}`;
   return `https://wa.me/${tel}?text=${encodeURIComponent(texto)}`;
 }
 
