@@ -7,11 +7,13 @@
   <link rel="manifest" href="/manifest-admin.json">
   <meta name="theme-color" content="#0B0F19">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="Mi Barbería">
+  <meta name="apple-mobile-web-app-title" content="BarberFlow">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <link rel="apple-touch-icon" href="/icons/icon-192.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261124l">
-  <script src="/js/iconos.js?v=20261124l"></script>
+  <link rel="icon" type="image/png" sizes="32x32" href="/icons/bf-32.png">
+  <link rel="icon" type="image/png" sizes="64x64" href="/icons/bf-64.png">
+  <link rel="apple-touch-icon" href="/icons/bf-apple-180.png">
+  <link rel="stylesheet" href="/css/app.css?v=20261125a">
+  <script src="/js/iconos.js?v=20261125a"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; }
@@ -37,8 +39,8 @@
 
   <main class="w-full max-w-sm">
     <div class="text-center mb-6">
-      <div class="w-16 h-16 rounded-2xl bg-blue-600 flex items-center justify-center text-3xl mx-auto shadow-lg shadow-blue-600/30">✂️</div>
-      <h1 class="text-2xl font-extrabold text-white mt-4">Panel del barbero</h1>
+      <img src="/img/barberflow-logo.webp" alt="BarberFlow" width="560" height="541" class="w-48 sm:w-56 h-auto mx-auto -mb-2" style="mix-blend-mode: lighten">
+      <h1 class="text-2xl font-extrabold text-white mt-1">Panel del barbero</h1>
       <p class="text-sm text-gray-400 mt-1">Tu agenda, tus clientes y tu bot en un solo lugar.</p>
     </div>
 
@@ -140,7 +142,7 @@
     <p class="text-center text-xs text-gray-600 mt-6">BarberFlow · Reservas para barberías</p>
   </main>
 
-  <script src="/js/auth.js?v=20261124l"></script>
+  <script src="/js/auth.js?v=20261125a"></script>
   <script>
     lucide.createIcons();
     if ('serviceWorker' in navigator) {

@@ -71,6 +71,11 @@
       raiz.setProperty('--acento-claro', `rgb(${aclarar(rgb, 0.45).join(',')})`);
     }
 
+    const logo = barberia && barberia.logoUrl;
+    if (logo && !String(logo).startsWith('data:image/svg')) {
+      document.querySelectorAll('link[rel="icon"]').forEach(l => { l.href = logo; l.removeAttribute('type'); });
+    }
+
     const portada = document.getElementById('portada-barberia');
     if (portada && barberia) {
       portada.style.background = window.fondoPortada(barberia.portadaUrl, barberia.colorPrimario, barberia.portadaPosicion);
