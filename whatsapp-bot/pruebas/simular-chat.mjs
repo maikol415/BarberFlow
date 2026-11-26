@@ -35,6 +35,7 @@ const {
   mensajeImprevisto,
   manejarNotificarCambioHora,
   manejarEnviarCodigo,
+  manejarNotificarListaEspera,
   __usarSocketDePrueba
 } = await import('../bot.js');
 
@@ -416,5 +417,11 @@ cod = await manejarEnviarCodigo({ barberiaSlug: SLUG, telefono: telCodigo, codig
 comprobar('Código mal formado: no se envía nada', `${cod.enviado}|${enviados.length}`, ['false|0']);
 cod = await manejarEnviarCodigo({ barberiaSlug: 'otra', telefono: telCodigo, codigo: '123456' });
 comprobar('Código de otra barbería: no se envía', cod.razon || '', ['otra barbería']);
+// Lista de espera: se liberó un turno y se le avisa al cliente con el enlace a ese día y servicio
+const telEspera = `+57306${base}`;
+enviados.length = 0;
+await manejarNotificarListaEspera({ barberiaSlug: SLUG, barberiaNombre: 'Barbería X', nombreCliente: 'maria paz', telefonoCliente: telEspera, servicioId: 5, fecha: manana, hora: '03:20pm' });
+comprobar('Lista de espera: avisa el turno libre con enlace al día y servicio', enviados.map(e => e.texto).join(' | '), ['Hola Maria', 'Se liberó un turno', legible(manana), '3:20', 'lista de espera', `&fecha=${manana}&servicio=5`]);
+comprobar('Lista de espera: no avisa por otra barbería', (await manejarNotificarListaEspera({ barberiaSlug: 'otra', telefonoCliente: telEspera })).razon || '', ['otra barbería']);
 console.log(fallos === 0 ? '\nTodo OK ✅' : `\n${fallos} prueba(s) fallaron ❌`);
 process.exit(fallos === 0 ? 0 : 1);

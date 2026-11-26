@@ -206,3 +206,19 @@ public class ConfiguracionSistema
     public string Clave { get; set; } = string.Empty;
     public string Valor { get; set; } = string.Empty;
 }
+
+// Lista de espera: clientes que quieren turno un día que está lleno
+public class ListaEspera
+{
+    public int Id { get; set; }
+    public int BarberiaId { get; set; }
+    public string Fecha { get; set; } = string.Empty;       // yyyy-MM-dd
+    public int ServicioId { get; set; }
+    public int? MiembroEquipoId { get; set; }                // null = con cualquier barbero
+    public string NombreCliente { get; set; } = string.Empty;
+    public string TelefonoCliente { get; set; } = string.Empty;
+    public string Franja { get; set; } = "todo";             // todo, manana, tarde, noche
+    public string Estado { get; set; } = "Esperando";        // Esperando, Avisado, Reservó
+    public DateTime CreadoUtc { get; set; } = DateTime.UtcNow;
+    public DateTime? AvisadoUtc { get; set; }
+}

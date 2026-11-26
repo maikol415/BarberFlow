@@ -532,8 +532,20 @@ public class PublicController : ControllerBase
         }
 
         _context.Citas.Add(cita);
+
+        // Si estaba en la lista de espera de ese día, ya consiguió su turno
+        var digitosCliente = new string(cita.TelefonoCliente.Where(char.IsDigit).ToArray());
+        var enEspera = (await _context.ListaEspera
+                .Where(l => l.BarberiaId == barberia.Id && l.Fecha == cita.Fecha && l.Estado != ListaEsperaAvisos.Reservo)
+                .ToListAsync())
+            .Where(l => digitosCliente.Length >= 7 && new string(l.TelefonoCliente.Where(char.IsDigit).ToArray()).EndsWith(digitosCliente[^7..]))
+            .ToList();
+        foreach (var l in enEspera) l.Estado = ListaEsperaAvisos.Reservo;
+
         await _context.SaveChangesAsync();
         await transaccion.CommitAsync();
+
+        if (citaAnterior != null) ListaEsperaAvisos.TurnoLiberado(barberia.Id, citaAnterior.Fecha, citaAnterior.Hora, citaAnterior.MiembroEquipoId);
 
         // 🚀 NOTIFICACIÓN AUTOMÁTICA AL BOT DE WHATSAPP (segundo plano, solo la barbería del bot)
         NotificarBot("/api/notificar-cita", barberia, new
@@ -608,6 +620,64 @@ public class PublicController : ControllerBase
             BarberiaNombre = barberia.Nombre,
             AvisoPorWhatsApp = BotAtiende(barberia),
             CitasCorridas = citasCorridas.Select(cm => new { cm.Cita.NombreCliente, cm.Cita.TelefonoCliente, cm.Cita.Fecha, cm.HoraAnterior, cm.HoraNueva })
+        });
+    }
+
+    // Lista de espera: el cliente se anota para un día lleno y le avisamos si se libera un turno
+    [HttpPost("lista-espera")]
+    public async Task<IActionResult> AnotarseListaEspera([FromBody] ListaEsperaDto dto)
+    {
+        var barberia = await _context.Barberias
+            .Include(b => b.Servicios)
+            .Include(b => b.Miembros.Where(m => m.Activo))
+            .FirstOrDefaultAsync(b => b.Slug == (dto.BarberiaSlug ?? "").ToLower());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
+
+        var errorDatos = ValidarDatosCliente(dto.NombreCliente, dto.TelefonoCliente);
+        if (errorDatos != null) return BadRequest(new { message = errorDatos });
+
+        var hoy = EstadosCitas.AhoraColombia().Date;
+        if (!DateTime.TryParseExact(dto.Fecha, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.None, out var dia) || dia < hoy || dia > hoy.AddDays(barberia.DiasMaximoReserva))
+            return BadRequest(new { message = "Elige un día dentro de los que la barbería recibe reservas." });
+
+        var servicio = barberia.Servicios.FirstOrDefault(s => s.Id == dto.ServicioId && s.Activo);
+        if (servicio == null) return BadRequest(new { message = "Elige un servicio." });
+        int? miembroId = dto.MiembroEquipoId is int m && barberia.Miembros.Any(x => x.Id == m) ? m : null;
+        var franja = ListaEsperaAvisos.Franjas.Contains(dto.Franja) ? dto.Franja! : "todo";
+
+        var telefono = dto.TelefonoCliente.Trim();
+        var digitos = new string(telefono.Where(char.IsDigit).ToArray());
+        var delDia = await _context.ListaEspera.Where(l => l.BarberiaId == barberia.Id && l.Fecha == dto.Fecha).ToListAsync();
+        var existente = delDia.FirstOrDefault(l => new string(l.TelefonoCliente.Where(char.IsDigit).ToArray()) == digitos);
+        if (existente == null)
+        {
+            if (delDia.Count(l => l.Estado != ListaEsperaAvisos.Reservo) >= 30)
+                return BadRequest(new { message = "La lista de espera de ese día ya está llena. Escríbele a la barbería por WhatsApp." });
+            existente = new ListaEspera { BarberiaId = barberia.Id, Fecha = dto.Fecha };
+            _context.ListaEspera.Add(existente);
+        }
+        existente.NombreCliente = dto.NombreCliente.Trim();
+        existente.TelefonoCliente = telefono;
+        existente.ServicioId = servicio.Id;
+        existente.MiembroEquipoId = miembroId;
+        existente.Franja = franja;
+        existente.Estado = ListaEsperaAvisos.Esperando;
+        existente.CreadoUtc = existente.Id == 0 ? DateTime.UtcNow : existente.CreadoUtc;
+        await _context.SaveChangesAsync();
+
+        NotificacionesPush.Avisar(barberia.Id, NotificacionesPush.Nueva,
+            $"📋 Lista de espera: {existente.NombreCliente}",
+            $"Quiere turno {NotificacionesPush.TextoFecha(dto.Fecha)} {ListaEsperaAvisos.TextoFranja(franja)} · {servicio.Nombre}",
+            $"espera-{existente.Id}");
+
+        var conBot = BotAtiende(barberia);
+        return Ok(new
+        {
+            message = conBot
+                ? "¡Listo! Si se libera un turno ese día te avisamos por WhatsApp."
+                : "¡Listo! Si se libera un turno ese día, el barbero te escribirá por WhatsApp.",
+            avisoPorWhatsApp = conBot
         });
     }
 
@@ -832,6 +902,7 @@ public class PublicController : ControllerBase
         cita.Estado = "Cancelada";
         await _context.SaveChangesAsync();
         AvisarCancelacion(barberia, cita, "por WhatsApp");
+        ListaEsperaAvisos.TurnoLiberado(barberia.Id, cita.Fecha, cita.Hora, cita.MiembroEquipoId);
 
         return Ok(new
         {
@@ -1220,7 +1291,11 @@ public class PublicController : ControllerBase
             hora = cita.Hora
         });
 
-        if (barberia != null) AvisarCancelacion(barberia, cita, "desde su cuenta");
+        if (barberia != null)
+        {
+            AvisarCancelacion(barberia, cita, "desde su cuenta");
+            ListaEsperaAvisos.TurnoLiberado(barberia.Id, cita.Fecha, cita.Hora, cita.MiembroEquipoId);
+        }
 
         return Ok(new { message = "Tu cita fue cancelada." });
     }

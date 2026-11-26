@@ -64,6 +64,7 @@ public record UpdateBarberiaDto(
 );
 
 public record HorarioMiembroDto(string? HorarioSemanal);
+public record ListaEsperaDto(string BarberiaSlug, string Fecha, int ServicioId, int? MiembroEquipoId, string NombreCliente, string TelefonoCliente, string? Franja);
 
 public record CrearBotReglaDto(
     string PalabrasClave,

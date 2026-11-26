@@ -380,6 +380,7 @@ async function subirFotoMiembroEdicion(e) {
 }
 
 async function cargarCitas(filtroParams = '') {
+  cargarListaEspera();
   try {
     let url = '/api/admin/citas';
     if (filtroParams) {
@@ -2246,6 +2247,57 @@ async function desvincularWhatsApp() {
   } catch (e) {
     avisar('No se pudo conectar con el servidor.');
   }
+}
+
+// ================== Lista de espera ==================
+let listaEsperaDatos = [];
+
+async function cargarListaEspera() {
+  try {
+    const res = await fetch('/api/admin/lista-espera', { headers: getAuthHeaders() });
+    if (!res.ok) return;
+    listaEsperaDatos = await res.json();
+    pintarListaEspera();
+  } catch (e) { /* sin conexión: se intenta en la próxima recarga */ }
+}
+
+function pintarListaEspera() {
+  const tarjeta = document.getElementById('tarjeta-espera');
+  if (!tarjeta) return;
+  tarjeta.classList.toggle('hidden', !listaEsperaDatos.length);
+  document.getElementById('espera-total').textContent = listaEsperaDatos.length;
+  document.getElementById('lista-espera').innerHTML = listaEsperaDatos.map(l => {
+    const tel = String(l.telefonoCliente || '').replace(/\D/g, '');
+    const texto = encodeURIComponent(`¡Hola ${String(l.nombreCliente).split(' ')[0]}! Te escribimos de ${barberiaActual?.nombre || 'la barbería'}: se liberó un turno el ${fechaCorta(l.fecha)}. ¿Lo quieres?`);
+    return `<div class="p-3 rounded-xl bg-gray-950/60 border border-gray-800 flex items-center gap-2.5">
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-bold text-white truncate">${escapeHtml(l.nombreCliente)}</p>
+        <p class="text-[11px] text-gray-400">${escapeHtml(fechaCorta(l.fecha))} · ${escapeHtml(l.franjaTexto)} · ${escapeHtml(l.servicio)}${l.barbero ? ' · con ' + escapeHtml(l.barbero) : ''}</p>
+        ${l.estado === 'Avisado' ? '<p class="text-[11px] text-emerald-300 mt-0.5">✓ Ya le avisamos que se liberó un turno</p>' : ''}
+      </div>
+      <a href="https://wa.me/${tel}?text=${texto}" target="_blank" rel="noopener" class="h-9 px-3 rounded-xl text-xs font-bold bg-emerald-600/20 text-emerald-300 border border-emerald-500/30 flex items-center flex-shrink-0">WhatsApp</a>
+      <button type="button" onclick="quitarDeListaEspera(${l.id})" title="Quitar de la lista" class="h-9 w-9 rounded-xl text-gray-500 hover:text-red-300 hover:bg-red-500/10 flex items-center justify-center flex-shrink-0"><i data-lucide="x" class="w-4 h-4"></i></button>
+    </div>`;
+  }).join('');
+  lucide.createIcons();
+}
+
+function alternarListaEspera() {
+  const lista = document.getElementById('lista-espera');
+  lista.classList.toggle('hidden');
+  document.getElementById('btn-ver-espera').textContent = lista.classList.contains('hidden') ? 'Ver' : 'Ocultar';
+}
+
+async function quitarDeListaEspera(id) {
+  if (!(await confirmar('¿Quitar a esta persona de la lista de espera?'))) return;
+  try {
+    const res = await fetch(`/api/admin/lista-espera/${id}`, { method: 'DELETE', headers: getAuthHeaders() });
+    const data = await res.json().catch(() => ({}));
+    avisar(data.message || (res.ok ? 'Quitado.' : 'No se pudo quitar.'), res.ok ? 'ok' : 'error');
+  } catch (e) {
+    avisar('No se pudo conectar con el servidor.', 'error');
+  }
+  cargarListaEspera();
 }
 
 function cerrarModalVincularWhatsApp() {

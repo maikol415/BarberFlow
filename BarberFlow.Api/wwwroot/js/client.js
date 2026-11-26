@@ -516,10 +516,12 @@ function renderCalendario(reubicar) {
     const elegido = reservaActual.fechaSeleccionada === iso;
     const etiqueta = i === 0 ? 'hoy' : i === 1 ? 'mañ' : DIAS_CORTOS[diaSemana(iso)];
     const pie = !laborable ? 'Cerrado' : turnos === 0 ? 'Lleno' : '';
-    html += `<button type="button" data-fecha="${iso}" ${disponible ? '' : 'disabled'}
+    const lleno = laborable && turnos === 0;
+    html += `<button type="button" data-fecha="${iso}" ${disponible || lleno ? '' : 'disabled'}
       class="w-14 flex-shrink-0 py-2 rounded-2xl border text-center transition ${elegido
         ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/25'
-        : disponible ? 'bg-gray-950/60 border-gray-800 text-gray-200 hover:border-gray-600' : 'bg-transparent border-gray-800/50 text-gray-600 cursor-not-allowed'}">
+        : disponible ? 'bg-gray-950/60 border-gray-800 text-gray-200 hover:border-gray-600'
+        : lleno ? 'bg-transparent border-gray-800/70 text-gray-500 hover:border-gray-600' : 'bg-transparent border-gray-800/50 text-gray-600 cursor-not-allowed'}">
       <span class="block text-[10px] font-bold uppercase ${elegido ? 'text-blue-100' : 'text-gray-500'}">${etiqueta}</span>
       <span class="block text-lg font-extrabold leading-tight">${Number(iso.slice(8))}</span>
       <span class="block text-[9px] font-semibold h-3 ${elegido ? 'text-blue-100' : 'text-gray-600'}">${pie}</span>
@@ -600,8 +602,10 @@ function renderHorariosDisponibles() {
     cont.innerHTML = `<div class="py-6 px-4 text-center rounded-2xl border border-dashed border-gray-800">
       <p class="text-sm text-gray-300 font-semibold">${esHoy ? 'Ya no quedan turnos para hoy' : 'No hay turnos este día'}</p>
       ${descansosDelDia(iso).length ? `<p class="text-xs text-gray-500 mt-1">${descansosDelDia(iso).map(d => escapeHtml(d.texto)).join('; ')}</p>` : ''}
+      ${puedeListaEspera(iso) ? `<button type="button" onclick="abrirListaEspera()" class="mt-3 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white"><i data-lucide="bell-ring" class="w-3.5 h-3.5"></i> Avísame si se libera un turno</button><br>` : ''}
       ${siguiente ? `<button type="button" onclick="seleccionarDiaCalendario('${siguiente}')" class="mt-3 text-xs font-bold text-blue-400 hover:text-blue-300">Ver el ${escapeHtml(fechaLegible(siguiente))} →</button>` : ''}
     </div>`;
+    lucide.createIcons();
     return;
   }
 
@@ -632,8 +636,66 @@ function renderHorariosDisponibles() {
       <span>Ese día el barbero no atiende en: ${descansos.map(d => escapeHtml(d.texto)).join('; ')}</span></p>`);
   }
 
+  if (puedeListaEspera(iso)) {
+    cont.insertAdjacentHTML('beforeend', `<button type="button" onclick="abrirListaEspera()" class="mt-3 text-xs font-semibold text-gray-400 hover:text-blue-300 flex items-center gap-1.5">
+      <i data-lucide="bell-ring" class="w-3.5 h-3.5"></i> ¿Ninguna hora te sirve? Avísame si se libera otra</button>`);
+  }
+
   cont.querySelectorAll('button[data-hora]').forEach(b => b.onclick = () => seleccionarHora(b.dataset.hora));
   lucide.createIcons();
+}
+
+// ================== Lista de espera ==================
+// Se ofrece en días de atención con servicio elegido (no al reagendar una cita)
+function puedeListaEspera(iso) {
+  return !!iso && !!servicioActual() && !citaTokenReagendar && esDiaLaborable(iso);
+}
+
+function abrirListaEspera() {
+  const iso = reservaActual.fechaSeleccionada;
+  const serv = servicioActual();
+  if (!iso || !serv) return;
+  const barbero = hayVariosBarberos() ? (barberia.miembros || []).find(m => m.id === reservaActual.barberoId) : null;
+  $('espera-detalle').innerHTML = `Para el <strong class="text-white">${escapeHtml(fechaLegible(iso))}</strong> · ${escapeHtml(serv.nombre)}${barbero ? ` con ${escapeHtml(barbero.nombre)}` : ''}. Si alguien cancela, te escribimos por WhatsApp.`;
+  if (!$('espera-pais').options.length) $('espera-pais').innerHTML = $('cliente-pais').innerHTML;
+  $('espera-pais').value = $('cliente-pais').value;
+  if (!$('espera-nombre').value) $('espera-nombre').value = $('cliente-nombre').value;
+  if (!$('espera-telefono').value) $('espera-telefono').value = $('cliente-telefono').value;
+  mostrar('modal-espera', true);
+  lucide.createIcons();
+}
+
+function cerrarListaEspera() { mostrar('modal-espera', false); }
+
+async function anotarseListaEspera(e) {
+  e.preventDefault();
+  const btn = $('btn-espera');
+  btn.disabled = true;
+  btn.textContent = 'Anotando...';
+  try {
+    const res = await fetch('/api/public/lista-espera', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        barberiaSlug: barberia.slug,
+        fecha: reservaActual.fechaSeleccionada,
+        servicioId: reservaActual.servicioId,
+        miembroEquipoId: hayVariosBarberos() ? reservaActual.barberoId : null,
+        nombreCliente: $('espera-nombre').value.trim(),
+        telefonoCliente: `${$('espera-pais').value}${$('espera-telefono').value.replace(/\D/g, '')}`,
+        franja: $('espera-franja').value
+      })
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) { avisar(data.message || 'No se pudo anotar. Intenta de nuevo.', 'error'); return; }
+    cerrarListaEspera();
+    avisar(data.message, 'ok');
+  } catch (err) {
+    avisar('Sin conexión. Intenta de nuevo.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Anotarme';
+  }
 }
 
 function seleccionarHora(valor) {
@@ -791,6 +853,20 @@ function cerrarModal() {
 // ================== Enlaces especiales: reagendar y calificar ==================
 async function verificarParametrosUrl() {
   const params = new URLSearchParams(location.search);
+
+  const servicioParam = Number(params.get('servicio'));
+  const fechaParam = params.get('fecha') || '';
+  if (servicioParam) {
+    const s = todosLosServicios.find(x => x.id === servicioParam);
+    if (s) seleccionarServicio(s, false);
+  }
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fechaParam) && fechaParam >= ahoraBogota().iso) {
+    reservaActual.fechaSeleccionada = fechaParam;
+    reservaActual.horaSeleccionada = null;
+    renderCalendario();
+    actualizarResumen();
+    setTimeout(() => $('seccion-paso-calendario')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 300);
+  }
 
   const calificarToken = params.get('calificar');
   if (calificarToken) {

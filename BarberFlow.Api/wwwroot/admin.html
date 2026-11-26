@@ -12,8 +12,8 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/bf-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="/icons/bf-64.png">
   <link rel="apple-touch-icon" href="/icons/bf-apple-180.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126c">
-  <script src="/js/iconos.js?v=20261126c"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261126d">
+  <script src="/js/iconos.js?v=20261126d"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; }
@@ -109,6 +109,16 @@
           <p id="resumen-hoy-detalle" class="text-sm text-gray-400">Cargando tu agenda...</p>
           <div id="resumen-hoy-lista" class="mt-3 space-y-1.5"></div>
         </div>
+      </div>
+
+      <!-- Lista de espera (solo aparece si alguien está esperando turno) -->
+      <div id="tarjeta-espera" class="hidden tarjeta p-4 sm:p-5">
+        <div class="flex items-center justify-between gap-2">
+          <p class="font-bold text-white text-sm flex items-center gap-2"><i data-lucide="list-checks" class="w-4 h-4 text-blue-300"></i> Lista de espera <span id="espera-total" class="text-xs font-bold text-blue-200 bg-blue-500/15 rounded-full px-2 py-0.5"></span></p>
+          <button type="button" id="btn-ver-espera" onclick="alternarListaEspera()" class="text-xs font-semibold text-blue-300 hover:text-blue-200">Ver</button>
+        </div>
+        <p class="text-[11px] text-gray-500 mt-1">Clientes que quieren turno en días llenos. Si alguien cancela, el bot les avisa solo.</p>
+        <div id="lista-espera" class="hidden mt-3 space-y-2"></div>
       </div>
 
       <!-- Indicadores -->
@@ -1080,11 +1090,11 @@
     </div>
   </div>
 
-  <script src="/js/tema.js?v=20261126c"></script>
-  <script src="/js/avisos.js?v=20261126c"></script>
-  <script src="/js/turnos.js?v=20261126c"></script>
-  <script src="/js/admin.js?v=20261126c"></script>
-  <script src="/js/notificaciones.js?v=20261126c"></script>
+  <script src="/js/tema.js?v=20261126d"></script>
+  <script src="/js/avisos.js?v=20261126d"></script>
+  <script src="/js/turnos.js?v=20261126d"></script>
+  <script src="/js/admin.js?v=20261126d"></script>
+  <script src="/js/notificaciones.js?v=20261126d"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));

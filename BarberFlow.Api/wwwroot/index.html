@@ -10,9 +10,9 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/bf-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="/icons/bf-64.png">
   <link rel="apple-touch-icon" href="/icons/bf-apple-180.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126c">
-  <link rel="stylesheet" href="/css/tema.css?v=20261126c">
-  <script src="/js/iconos.js?v=20261126c"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261126d">
+  <link rel="stylesheet" href="/css/tema.css?v=20261126d">
+  <script src="/js/iconos.js?v=20261126d"></script>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <script src="/js/confetti.browser.min.js"></script>
   <style>
@@ -254,6 +254,40 @@
   </div>
 
   <!-- MODAL ÉXITO -->
+  <!-- Lista de espera: avísame si se libera un turno ese día -->
+  <div id="modal-espera" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 oculto" role="dialog" aria-modal="true" aria-labelledby="espera-titulo">
+    <div class="bg-gray-900 border border-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl relative aparecer">
+      <button type="button" onclick="cerrarListaEspera()" class="absolute top-4 right-4 text-gray-500 hover:text-white" aria-label="Cerrar"><i data-lucide="x" class="w-5 h-5"></i></button>
+      <div class="w-11 h-11 rounded-2xl bg-blue-600/15 border border-blue-500/30 flex items-center justify-center"><i data-lucide="bell-ring" class="w-5 h-5 text-blue-300"></i></div>
+      <h3 id="espera-titulo" class="text-lg font-extrabold text-white mt-3 pr-6">Avísame si se libera un turno</h3>
+      <p id="espera-detalle" class="text-sm text-gray-400 mt-1"></p>
+      <form onsubmit="anotarseListaEspera(event)" class="space-y-3 mt-4">
+        <div>
+          <label class="etiqueta" for="espera-nombre">Tu nombre</label>
+          <input type="text" id="espera-nombre" autocomplete="name" required maxlength="60" placeholder="Ej: Juan Pérez" class="campo">
+        </div>
+        <div>
+          <label class="etiqueta" for="espera-telefono">Tu WhatsApp</label>
+          <div class="flex gap-2">
+            <select id="espera-pais" class="campo flex-shrink-0 cursor-pointer" style="width:auto" aria-label="Indicativo del país"></select>
+            <input type="tel" id="espera-telefono" inputmode="tel" autocomplete="tel-national" required placeholder="300 123 4567" class="campo">
+          </div>
+        </div>
+        <div>
+          <label class="etiqueta" for="espera-franja">¿A qué hora te serviría?</label>
+          <select id="espera-franja" class="campo cursor-pointer">
+            <option value="todo">A cualquier hora</option>
+            <option value="manana">En la mañana</option>
+            <option value="tarde">En la tarde</option>
+            <option value="noche">En la noche</option>
+          </select>
+        </div>
+        <button type="submit" id="btn-espera" class="w-full py-3 rounded-xl font-bold bg-blue-600 hover:bg-blue-500 text-white">Anotarme</button>
+        <p class="text-[11px] text-gray-500 text-center">Si alguien cancela, les avisamos a los primeros de la lista. El primero que reserva se queda con el turno.</p>
+      </form>
+    </div>
+  </div>
+
   <div id="success-modal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-end sm:items-center justify-center p-4 oculto" role="dialog" aria-modal="true">
     <div class="bg-gray-900 border border-gray-800 w-full max-w-sm rounded-3xl p-6 shadow-2xl text-center aparecer">
       <div class="w-14 h-14 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 flex items-center justify-center mx-auto mb-3">
@@ -296,9 +330,9 @@
     </div>
   </footer>
 
-  <script src="/js/tema.js?v=20261126c"></script>
-  <script src="/js/avisos.js?v=20261126c"></script>
-  <script src="/js/turnos.js?v=20261126c"></script>
-  <script src="/js/client.js?v=20261126c"></script>
+  <script src="/js/tema.js?v=20261126d"></script>
+  <script src="/js/avisos.js?v=20261126d"></script>
+  <script src="/js/turnos.js?v=20261126d"></script>
+  <script src="/js/client.js?v=20261126d"></script>
 </body>
 </html>

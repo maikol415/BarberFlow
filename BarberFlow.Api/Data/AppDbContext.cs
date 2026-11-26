@@ -20,6 +20,7 @@ public class AppDbContext : DbContext
     public DbSet<ClienteUsuario> Clientes => Set<ClienteUsuario>();
     public DbSet<SuscripcionPush> SuscripcionesPush => Set<SuscripcionPush>();
     public DbSet<ConfiguracionSistema> Configuracion => Set<ConfiguracionSistema>();
+    public DbSet<ListaEspera> ListaEspera => Set<ListaEspera>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -85,5 +86,14 @@ public class AppDbContext : DbContext
 
         modelBuilder.Entity<ConfiguracionSistema>()
             .HasKey(c => c.Clave);
+
+        modelBuilder.Entity<ListaEspera>()
+            .HasOne<Barberia>()
+            .WithMany()
+            .HasForeignKey(l => l.BarberiaId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<ListaEspera>()
+            .HasIndex(l => new { l.BarberiaId, l.Fecha });
     }
 }

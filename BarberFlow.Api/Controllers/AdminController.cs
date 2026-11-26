@@ -372,8 +372,11 @@ public class AdminController : ControllerBase
 
         if (cita == null) return NotFound(new { message = "Cita no encontrada." });
 
+        var estabaActiva = cita.Estado == EstadosCitas.Pendiente || cita.Estado == EstadosCitas.Confirmada;
         cita.Estado = dto.Estado;
         await _context.SaveChangesAsync();
+        if (estabaActiva && dto.Estado == EstadosCitas.Cancelada)
+            ListaEsperaAvisos.TurnoLiberado(barberiaId, cita.Fecha, cita.Hora, cita.MiembroEquipoId);
 
         var barberia = await _context.Barberias.FindAsync(barberiaId);
 
@@ -403,6 +406,8 @@ public class AdminController : ControllerBase
         var barberiaId = ObtenerBarberiaId();
         var cita = await _context.Citas.FirstOrDefaultAsync(c => c.Id == id && c.BarberiaId == barberiaId);
         if (cita == null) return NotFound();
+        if (cita.Estado == EstadosCitas.Pendiente || cita.Estado == EstadosCitas.Confirmada)
+            ListaEsperaAvisos.TurnoLiberado(barberiaId, cita.Fecha, cita.Hora, cita.MiembroEquipoId);
 
         if (marcarNoConfirmada)
         {
@@ -752,6 +757,9 @@ public class AdminController : ControllerBase
 
         _context.Bloqueos.Remove(bloqueo);
         await _context.SaveChangesAsync();
+        // Se abrieron horas: avisar a la lista de espera de ese día
+        var horaLibre = string.IsNullOrEmpty(bloqueo.Hora) || bloqueo.Hora == "TODO_EL_DIA" ? null : bloqueo.Hora.Split('-')[0];
+        ListaEsperaAvisos.TurnoLiberado(barberiaId, bloqueo.Fecha, horaLibre, null);
         return Ok(new { message = "Bloqueo eliminado y horario habilitado." });
     }
 

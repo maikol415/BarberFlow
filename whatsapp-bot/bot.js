@@ -374,6 +374,7 @@ const servidorHttp = http.createServer(async (req, res) => {
     '/api/notificar-imprevisto': manejarNotificarImprevisto,
     '/api/notificar-cambio-hora': manejarNotificarCambioHora,
     '/api/enviar-codigo': manejarEnviarCodigo,
+    '/api/notificar-lista-espera': manejarNotificarListaEspera,
     '/api/probar': probarConversacion
   };
   const ruta = req.url.split('?')[0];
@@ -769,6 +770,33 @@ export async function manejarNotificarCancelacion(payload) {
       `✅ Ese horario quedó libre automáticamente en tu calendario.`
   });
   return { enviado: true, jid: jidBarbero };
+}
+
+// Lista de espera: se liberó un turno el día que el cliente quería; el primero que reserva se lo queda
+export function mensajeListaEspera({ nombreCliente, servicioId, fecha, hora }, barberiaNombre, ahoraMs = Date.now()) {
+  const hoy = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Bogota' }).format(new Date(ahoraMs));
+  const dia = fecha === hoy ? 'hoy' : `el *${fechaLegible(fecha)}*`;
+  const min = hora ? horaAMinutos(hora) : null;
+  const cuando = min !== null && min !== undefined ? `${dia} a las *${minutosATextoBot(min)}*` : dia;
+  const enlace = `${BASE_WEB_URL}/index.html?b=${encodeURIComponent(BARBERIA_SLUG)}&fecha=${encodeURIComponent(fecha)}` +
+    (servicioId ? `&servicio=${encodeURIComponent(servicioId)}` : '');
+  const nombre = obtenerPrimerNombre(nombreCliente);
+  return `🔔 ¡Hola${nombre ? ` ${nombre}` : ''}! Se liberó un turno en *${barberiaNombre || 'la barbería'}* ${cuando}.\n\n` +
+    `Como estás en la lista de espera, te avisamos primero. Si lo quieres, resérvalo aquí antes de que alguien más lo tome:\n` +
+    `👉 ${enlace}`;
+}
+
+export async function manejarNotificarListaEspera(payload) {
+  const { barberiaSlug, barberiaNombre, telefonoCliente } = payload || {};
+  if (barberiaSlug && barberiaSlug.toLowerCase() !== BARBERIA_SLUG.toLowerCase()) {
+    return { enviado: false, razon: 'Aviso de otra barbería' };
+  }
+  if (!telefonoCliente || !socketActivo || (!estaConectado && !MODO_PRUEBA)) return { enviado: false, razon: 'Bot no conectado o sin teléfono' };
+  const jid = await resolverJidDestinatario(socketActivo, telefonoCliente);
+  const texto = mensajeListaEspera(payload, barberiaNombre);
+  const enviado = !!(await enviarMensajeHumano(socketActivo, jid, texto));
+  console.log(`[Lista de espera] ${enviado ? 'Avisado' : 'No se pudo avisar a'} ${obtenerPrimerNombre(payload.nombreCliente)}.`);
+  return { enviado, texto: MODO_PRUEBA ? texto : undefined };
 }
 
 // Solicitud de reseña: 1 hora después de que TERMINE la cita (no después de reservar).
