@@ -23,6 +23,14 @@ function escapeHtml(valor) {
   return String(valor ?? "").replace(/[&<>"'`]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "\"": "&quot;", "'": "&#39;", "`": "&#96;" }[ch]));
 }
 
+// " · Juan" en la tarjeta de la cita. Con un solo barbero no se muestra nada;
+// con varios, si la cita no tiene barbero, se avisa que falta asignarlo.
+function etiquetaBarbero(barbero) {
+  if (barbero) return `<span class="text-gray-500"> · ${escapeHtml(barbero)}</span>`;
+  const activos = (barberiaActual?.miembros || []).filter(m => m.activo !== false).length;
+  return activos > 1 ? '<span class="text-gray-500"> · Sin barbero asignado</span>' : '';
+}
+
 async function initAdmin() {
   const hoyStr = hoyBogotaIso(); // fecha de Colombia (toISOString daba el día siguiente después de las 7 p. m.)
   const inputFechaBloq = document.getElementById('bloq-fecha');
@@ -647,7 +655,7 @@ function tarjetaCitaAdmin(c) {
             <i data-lucide="${iconoEstado}" class="w-3 h-3"></i> ${escapeHtml(textoEstado)}
           </span>
         </div>
-        <p class="text-xs text-gray-300 mt-0.5 truncate">${escapeHtml(c.servicio)}<span class="text-gray-500"> · ${escapeHtml(c.barbero)}</span></p>
+        <p class="text-xs text-gray-300 mt-0.5 truncate">${escapeHtml(c.servicio)}${etiquetaBarbero(c.barbero)}</p>
         <div class="flex items-center gap-3 mt-1 text-[11px]">
           <a href="https://wa.me/${phoneClean}" target="_blank" rel="noopener" class="text-gray-400 hover:text-emerald-300 inline-flex items-center gap-1">
             <i data-lucide="message-circle" class="w-3 h-3 text-emerald-400"></i> ${escapeHtml(c.telefonoCliente)}

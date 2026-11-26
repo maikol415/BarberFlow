@@ -368,7 +368,7 @@ public class AdminController : ControllerBase
                 c.Total,
                 c.Estado,
                 Servicio = c.Servicio != null ? c.Servicio.Nombre : "Servicio",
-                Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "Cualquiera"
+                Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "" // sin barbero asignado
             })
             .ToListAsync();
 
