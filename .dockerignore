@@ -1,0 +1,11 @@
+.git
+.claude
+.vscode
+.idea
+**/bin
+**/obj
+**/node_modules
+**/auth_info_baileys
+*.db
+*.db-shm
+*.db-wal

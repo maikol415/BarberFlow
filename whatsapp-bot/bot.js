@@ -5,7 +5,8 @@ import fetch from 'node-fetch';
 import crypto from 'crypto';
 import { crearAlmacenSesion } from './auth-postgres.js';
 
-const PORT = process.env.PORT || 3001;
+// BOT_PORT: cuando el bot corre dentro del mismo servicio que la API (PORT es el de la API)
+const PORT = process.env.BOT_PORT || process.env.PORT || 3001;
 const API_BASE_URL = process.env.BARBERFLOW_API_URL || 'https://barberflow-aos9.onrender.com/api/public';
 const BARBERIA_SLUG = process.env.BARBERIA_SLUG || 'barberia-jr';
 const BASE_WEB_URL = process.env.BARBERFLOW_WEB_URL || 'https://barberflow-aos9.onrender.com';
