@@ -38,6 +38,10 @@ function responderNoAutorizado(res) {
 
 // Modo prueba: no conecta WhatsApp ni abre el servidor; permite simular chats (ver pruebas/simular-chat.mjs)
 const MODO_PRUEBA = process.env.BOT_MODO_PRUEBA === '1';
+// Con varias barberías, gestor.js arranca una copia de este bot por barbería (BOT_HIJO=1).
+// Si este archivo se ejecuta directo (node bot.js), le cede el control al gestor.
+// BOT_UNICO=1 conserva el modo antiguo: un solo bot para BARBERIA_SLUG.
+const MODO_GESTOR = !MODO_PRUEBA && process.env.BOT_HIJO !== '1' && process.env.BOT_UNICO !== '1';
 
 // WhatsApp puede identificar al remitente con un ID anónimo (…@lid) en lugar de su número.
 // En ese caso el número real llega en msg.key.senderPn. Guardamos la relación LID ➔ teléfono.
@@ -395,7 +399,7 @@ const servidorHttp = http.createServer(async (req, res) => {
   res.end(`BarberFlow bot activo. WhatsApp ${estaConectado ? 'conectado' : 'sin conectar'}.`);
 });
 
-if (!MODO_PRUEBA) {
+if (!MODO_PRUEBA && !MODO_GESTOR) {
   servidorHttp.listen(PORT, () => {
     console.log(`Servidor del Bot y Webhooks activo en el puerto ${PORT}`);
   });
@@ -924,7 +928,9 @@ export function __usarSocketDePrueba(sock) {
 // sin DATABASE_URL (local) en la carpeta ./auth_info_baileys. Ver auth-postgres.js.
 let almacenSesion = null;
 function obtenerAlmacenSesion() {
-  almacenSesion ||= crearAlmacenSesion({ databaseUrl: process.env.DATABASE_URL, sesion: BARBERIA_SLUG })
+  // Sin base de datos (local), cada barbería guarda su sesión en su propia carpeta
+  const carpeta = process.env.BOT_HIJO === '1' ? `./auth_info_baileys/${BARBERIA_SLUG}` : undefined;
+  almacenSesion ||= crearAlmacenSesion({ databaseUrl: process.env.DATABASE_URL, sesion: BARBERIA_SLUG, carpeta })
     .then(almacen => {
       console.log(`Sesión de WhatsApp guardada en: ${almacen.descripcion}`);
       return almacen;
@@ -1589,9 +1595,10 @@ const cronRecordatorios = setInterval(() => {
   revisarRecordatorios().catch(err => console.error('Error en recordatorios:', err.message));
 }, 5 * 60 * 1000);
 
-if (MODO_PRUEBA) {
+if (MODO_PRUEBA || MODO_GESTOR) {
   clearInterval(cronAnuncioMatutino);
   clearInterval(cronRecordatorios);
+  if (MODO_GESTOR) import('./gestor.js');
 } else {
   iniciarBot();
 }

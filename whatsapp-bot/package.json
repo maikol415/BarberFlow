@@ -5,7 +5,7 @@
   "main": "bot.js",
   "type": "module",
   "scripts": {
-    "start": "node bot.js",
+    "start": "node gestor.js",
     "probar": "node pruebas/simular-chat.mjs"
   },
   "dependencies": {

@@ -2197,7 +2197,7 @@ async function abrirModalVincularWhatsApp() {
         let msg = 'Conectando con el servicio de WhatsApp...';
         try { msg = (await res.json()).message || msg; } catch (e) {}
         if (txtErr) txtErr.innerText = msg;
-        if (res.status === 403 || res.status === 503) {
+        if (res.status === 403 || res.status === 409 || res.status === 503) {
           if (loaderErr) loaderErr.classList.add('hidden');
           clearInterval(intervalPollBot);
         }

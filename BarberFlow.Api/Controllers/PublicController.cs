@@ -611,6 +611,19 @@ public class PublicController : ControllerBase
         });
     }
 
+    // El gestor del bot pregunta al arrancar qué barberías tienen su WhatsApp vinculado
+    [RequiereBotKey]
+    [HttpGet("bot/barberias")]
+    public async Task<IActionResult> BarberiasConBot()
+    {
+        var antiguo = SlugBotAntiguo?.ToLower() ?? "";
+        var slugs = await _context.Barberias
+            .Where(b => b.BotWhatsApp || b.Slug == antiguo)
+            .Select(b => b.Slug)
+            .ToListAsync();
+        return Ok(new { slugs });
+    }
+
     [Authorize(Policy = PoliticasAuth.Cliente)]
     [HttpPost("valoraciones")]
     public async Task<IActionResult> EnviarValoracion([FromBody] ValoracionDto dto)
@@ -1219,26 +1232,30 @@ public class PublicController : ControllerBase
             $"{cita.Servicio?.Nombre ?? "Servicio"} · {NotificacionesPush.TextoFecha(cita.Fecha)}, {NotificacionesPush.TextoHora(cita.Hora)} — canceló {desde}. El turno quedó libre.",
             $"cita-{cita.Id}");
 
-    // Envía un aviso al bot de WhatsApp en segundo plano, solo para la barbería que atiende el bot
-    // El bot atiende una sola barbería (BOT_BARBERIA_SLUG)
+    // Cada barbería puede tener su propio WhatsApp vinculado al bot (BotWhatsApp).
+    // BOT_BARBERIA_SLUG: la barbería que ya tenía el bot antes de que hubiera uno por barbería.
+    internal static string? SlugBotAntiguo => Environment.GetEnvironmentVariable("BOT_BARBERIA_SLUG") ?? "barberia-jr";
     internal static bool BotAtiende(Barberia barberia) =>
-        string.Equals(Environment.GetEnvironmentVariable("BOT_BARBERIA_SLUG") ?? "barberia-jr", barberia.Slug, StringComparison.OrdinalIgnoreCase);
+        barberia.BotWhatsApp || string.Equals(SlugBotAntiguo, barberia.Slug, StringComparison.OrdinalIgnoreCase);
 
+    internal static string UrlBot(string ruta, string slug) =>
+        $"{(Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com").TrimEnd('/')}{ruta}?slug={Uri.EscapeDataString(slug)}";
+
+    // Envía un aviso al bot de WhatsApp de esa barbería, en segundo plano
     internal static void NotificarBot(string ruta, Barberia barberia, object payload)
     {
-        var slugBot = Environment.GetEnvironmentVariable("BOT_BARBERIA_SLUG") ?? "barberia-jr";
-        if (!string.Equals(slugBot, barberia.Slug, StringComparison.OrdinalIgnoreCase)) return;
+        if (!BotAtiende(barberia)) return;
+        var slug = barberia.Slug;
 
         _ = Task.Run(async () =>
         {
             try
             {
-                var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
                 using var http = new HttpClient { Timeout = TimeSpan.FromSeconds(8) };
                 var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
                 if (!string.IsNullOrWhiteSpace(botKey)) http.DefaultRequestHeaders.Add(RequiereBotKeyAttribute.Header, botKey);
                 var json = new StringContent(System.Text.Json.JsonSerializer.Serialize(payload), System.Text.Encoding.UTF8, "application/json");
-                await http.PostAsync($"{botUrl.TrimEnd('/')}{ruta}", json);
+                await http.PostAsync(UrlBot(ruta, slug), json);
             }
             catch (Exception ex)
             {

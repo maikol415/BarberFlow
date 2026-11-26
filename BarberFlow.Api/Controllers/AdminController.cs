@@ -724,12 +724,11 @@ public class AdminController : ControllerBase
     private static async Task<bool> BotConectadoAsync(Barberia barberia)
     {
         if (!PublicController.BotAtiende(barberia)) return false;
-        var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
         var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
         if (string.IsNullOrWhiteSpace(botKey)) return false;
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, $"{botUrl.TrimEnd('/')}/api/status");
+            using var req = new HttpRequestMessage(HttpMethod.Get, PublicController.UrlBot("/api/status", barberia.Slug));
             req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
             using var resp = await _botHttp.SendAsync(req);
             if (!resp.IsSuccessStatusCode) return false;
@@ -809,27 +808,27 @@ public class AdminController : ControllerBase
     [HttpPost("bot/reiniciar")]
     public async Task<IActionResult> ReiniciarBot()
     {
-        var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
         var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
         if (string.IsNullOrWhiteSpace(botKey)) return StatusCode(503, new { message = "BOT_API_KEY no está configurada en el servidor." });
+        var barberia = await _context.Barberias.FindAsync(ObtenerBarberiaId());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
         try
         {
-            // Solo el dueño de la barbería que atiende el bot puede desvincularlo
-            using var reqEstado = new HttpRequestMessage(HttpMethod.Get, $"{botUrl.TrimEnd('/')}/api/status");
-            reqEstado.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
-            using var respEstado = await _botHttp.SendAsync(reqEstado);
-            using var doc = System.Text.Json.JsonDocument.Parse(await respEstado.Content.ReadAsStringAsync());
-            var slugBot = doc.RootElement.TryGetProperty("barberiaSlug", out var sl) ? sl.GetString() : null;
-            if (!string.Equals(slugBot, User.FindFirst("BarberiaSlug")?.Value, StringComparison.OrdinalIgnoreCase))
-                return StatusCode(403, new { message = "El bot de WhatsApp no está asignado a tu barbería." });
-
-            using var req = new HttpRequestMessage(HttpMethod.Post, $"{botUrl.TrimEnd('/')}/api/reset");
+            // Cada barbería solo puede desvincular SU propio WhatsApp (el gestor del bot separa por slug)
+            using var req = new HttpRequestMessage(HttpMethod.Post, PublicController.UrlBot("/api/reset", barberia.Slug));
             req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
             using var resp = await _botHttp.SendAsync(req);
+            if (resp.IsSuccessStatusCode && barberia.BotWhatsApp)
+            {
+                barberia.BotWhatsApp = false; // vuelve a quedar marcada cuando escaneen el QR nuevo
+                await _context.SaveChangesAsync();
+            }
             return resp.IsSuccessStatusCode
                 ? Ok(new { message = "WhatsApp desvinculado. En unos segundos aparece un QR nuevo." })
-                : StatusCode(502, new { message = "El servicio de WhatsApp no pudo reiniciarse." });
+                : StatusCode((int)resp.StatusCode == 409 ? 409 : 502, new { message = (int)resp.StatusCode == 409
+                    ? "El servicio de WhatsApp ya atiende el máximo de barberías. Escríbenos para habilitar la tuya."
+                    : "El servicio de WhatsApp no pudo reiniciarse." });
         }
         catch (Exception ex)
         {
@@ -844,22 +843,24 @@ public class AdminController : ControllerBase
     [HttpPost("bot/probar")]
     public async Task<IActionResult> ProbarBot([FromBody] ProbarBotDto dto)
     {
-        var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
         var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
         if (string.IsNullOrWhiteSpace(botKey)) return StatusCode(503, new { message = "BOT_API_KEY no está configurada en el servidor." });
+        var slugAdmin = User.FindFirst("BarberiaSlug")?.Value ?? "";
         var texto = (dto.Texto ?? "").Trim();
         if (texto.Length > 500) texto = texto[..500];
 
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Post, $"{botUrl.TrimEnd('/')}/api/probar")
+            using var req = new HttpRequestMessage(HttpMethod.Post, PublicController.UrlBot("/api/probar", slugAdmin))
             {
-                Content = JsonContent.Create(new { slug = User.FindFirst("BarberiaSlug")?.Value, texto, reiniciar = dto.Reiniciar })
+                Content = JsonContent.Create(new { slug = slugAdmin, texto, reiniciar = dto.Reiniciar })
             };
             req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
             using var resp = await _botHttp.SendAsync(req);
             if (resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 return StatusCode(403, new { message = "El bot de WhatsApp no está asignado a tu barbería." });
+            if (resp.StatusCode == System.Net.HttpStatusCode.Conflict)
+                return StatusCode(409, new { message = "El servicio de WhatsApp ya atiende el máximo de barberías. Escríbenos para habilitar la tuya." });
             if (!resp.IsSuccessStatusCode)
                 return StatusCode(502, new { message = "El bot no pudo responder la prueba." });
             return Content(await resp.Content.ReadAsStringAsync(), "application/json");
@@ -874,33 +875,54 @@ public class AdminController : ControllerBase
     [HttpGet("bot/estado")]
     public async Task<IActionResult> ObtenerEstadoBot()
     {
-        var botUrl = Environment.GetEnvironmentVariable("BARBERFLOW_BOT_URL") ?? "https://barberflow-bot.onrender.com";
         var botKey = Environment.GetEnvironmentVariable("BOT_API_KEY");
         if (string.IsNullOrWhiteSpace(botKey))
         {
             return StatusCode(503, new { message = "BOT_API_KEY no está configurada en el servidor." });
         }
+        var barberia = await _context.Barberias.FindAsync(ObtenerBarberiaId());
+        if (barberia == null) return NotFound(new { message = "Barbería no encontrada." });
 
         try
         {
-            using var req = new HttpRequestMessage(HttpMethod.Get, $"{botUrl.TrimEnd('/')}/api/status");
-            req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
-            using var resp = await _botHttp.SendAsync(req);
-            if (!resp.IsSuccessStatusCode)
+            async Task<(System.Net.HttpStatusCode Codigo, string Json)> Pedir(HttpMethod metodo, string ruta)
+            {
+                using var req = new HttpRequestMessage(metodo, PublicController.UrlBot(ruta, barberia.Slug));
+                req.Headers.Add(RequiereBotKeyAttribute.Header, botKey);
+                using var resp = await _botHttp.SendAsync(req);
+                return (resp.StatusCode, await resp.Content.ReadAsStringAsync());
+            }
+
+            var (codigo, json) = await Pedir(HttpMethod.Get, "/api/status");
+            if ((int)codigo >= 300)
             {
                 return StatusCode(502, new { message = "El servicio de WhatsApp no respondió correctamente." });
             }
-
-            var json = await resp.Content.ReadAsStringAsync();
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             var root = doc.RootElement;
 
-            // El bot actual atiende una sola barbería: solo su dueño puede ver el QR.
+            // Esta barbería todavía no tiene su bot encendido: se enciende para mostrarle su QR
+            if (root.TryGetProperty("sinSesion", out var sinSesion) && sinSesion.ValueKind == System.Text.Json.JsonValueKind.True)
+            {
+                var (codVincular, jsonVincular) = await Pedir(HttpMethod.Post, "/api/vincular");
+                if (codVincular == System.Net.HttpStatusCode.Conflict)
+                    return StatusCode(409, new { message = "El servicio de WhatsApp ya atiende el máximo de barberías. Escríbenos para habilitar la tuya." });
+                return Ok(new { barberiaSlug = barberia.Slug, conectado = false, estado = "Preparando tu código QR...", qr = "" });
+            }
+
+            // El servicio responde por otra barbería (bot antiguo de una sola barbería)
             var slugBot = root.TryGetProperty("barberiaSlug", out var s) ? s.GetString() : null;
-            var slugAdmin = User.FindFirst("BarberiaSlug")?.Value;
-            if (string.IsNullOrEmpty(slugBot) || !string.Equals(slugBot, slugAdmin, StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(slugBot, barberia.Slug, StringComparison.OrdinalIgnoreCase))
             {
                 return StatusCode(403, new { message = "El bot de WhatsApp no está asignado a tu barbería." });
+            }
+
+            // Quedó vinculado: desde ahora los avisos de esta barbería salen por su WhatsApp
+            var conectado = root.TryGetProperty("conectado", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.True;
+            if (conectado && !barberia.BotWhatsApp)
+            {
+                barberia.BotWhatsApp = true;
+                await _context.SaveChangesAsync();
             }
 
             return Content(json, "application/json");

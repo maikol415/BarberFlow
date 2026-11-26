@@ -72,6 +72,7 @@ public class Barberia
 
     // Configuración y plantillas del Bot (ya presentes en la base de datos)
     public bool BotActivo { get; set; } = true;
+    public bool BotWhatsApp { get; set; } // Tiene su propio WhatsApp vinculado al bot (cada barbería el suyo)
     public string MensajeBienvenidaBot { get; set; } = "¡Hola! 💈 Bienvenido a {barberia}. ¿En qué podemos ayudarte hoy?\n\n1️⃣ Agendar una cita\n2️⃣ Ver precios y servicios\n3️⃣ Horarios y ubicación";
     public string MensajeDerivacionHumana { get; set; } = "He recibido tu mensaje. En este momento el barbero está en servicio con un cliente ✂️💈. Tan pronto termine su turno, te responderá personalmente por este chat. ¡Muchas gracias por tu paciencia!";
     public string PlantillaConfirmacion { get; set; } = "";

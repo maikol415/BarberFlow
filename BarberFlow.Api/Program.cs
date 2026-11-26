@@ -175,6 +175,7 @@ using (var scope = app.Services.CreateScope())
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorarioSemanal"" text NOT NULL DEFAULT '';
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""DiasMaximoReserva"" integer NOT NULL DEFAULT 30;
                 ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""HorasLimiteCancelar"" integer NOT NULL DEFAULT 2;
+                ALTER TABLE ""Barberias"" ADD COLUMN IF NOT EXISTS ""BotWhatsApp"" boolean NOT NULL DEFAULT false;
                 ALTER TABLE ""Miembros"" ADD COLUMN IF NOT EXISTS ""HorarioSemanal"" text NOT NULL DEFAULT '';
                 ALTER TABLE ""Barberos"" ADD COLUMN IF NOT EXISTS ""AceptoPrivacidadUtc"" timestamp with time zone NULL;
                 ALTER TABLE ""Clientes"" ADD COLUMN IF NOT EXISTS ""AceptoPrivacidadUtc"" timestamp with time zone NULL;
@@ -300,6 +301,7 @@ using (var scope = app.Services.CreateScope())
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorarioSemanal"" TEXT NOT NULL DEFAULT ''",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""DiasMaximoReserva"" INTEGER NOT NULL DEFAULT 30",
                 @"ALTER TABLE ""Barberias"" ADD COLUMN ""HorasLimiteCancelar"" INTEGER NOT NULL DEFAULT 2",
+                @"ALTER TABLE ""Barberias"" ADD COLUMN ""BotWhatsApp"" INTEGER NOT NULL DEFAULT 0",
                 @"ALTER TABLE ""Miembros"" ADD COLUMN ""HorarioSemanal"" TEXT NOT NULL DEFAULT ''",
                 @"ALTER TABLE ""Barberos"" ADD COLUMN ""AceptoPrivacidadUtc"" TEXT NULL",
                 @"ALTER TABLE ""Clientes"" ADD COLUMN ""AceptoPrivacidadUtc"" TEXT NULL",
