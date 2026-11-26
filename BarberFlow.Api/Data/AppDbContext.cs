@@ -18,6 +18,8 @@ public class AppDbContext : DbContext
     public DbSet<Valoracion> Valoraciones => Set<Valoracion>();
     public DbSet<BotReglaRespuesta> BotReglas => Set<BotReglaRespuesta>();
     public DbSet<ClienteUsuario> Clientes => Set<ClienteUsuario>();
+    public DbSet<SuscripcionPush> SuscripcionesPush => Set<SuscripcionPush>();
+    public DbSet<ConfiguracionSistema> Configuracion => Set<ConfiguracionSistema>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -70,5 +72,18 @@ public class AppDbContext : DbContext
             .WithMany(b => b.Valoraciones)
             .HasForeignKey(v => v.BarberiaId)
             .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SuscripcionPush>()
+            .HasOne<Barberia>()
+            .WithMany()
+            .HasForeignKey(s => s.BarberiaId)
+            .OnDelete(DeleteBehavior.Cascade);
+
+        modelBuilder.Entity<SuscripcionPush>()
+            .HasIndex(s => s.Endpoint)
+            .IsUnique();
+
+        modelBuilder.Entity<ConfiguracionSistema>()
+            .HasKey(c => c.Clave);
     }
 }

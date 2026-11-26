@@ -557,6 +557,23 @@ public class PublicController : ControllerBase
             creadaPorBarbero = esBarberoDeEstaBarberia   // anotada en el local: no se le pide confirmar con SI
         });
 
+        // 🔔 Notificación al celular del barbero (si la cita no la anotó él mismo desde el panel)
+        if (!esBarberoDeEstaBarberia)
+        {
+            var conQuien = string.IsNullOrWhiteSpace(nombreBarbero) || miembrosActivos.Count <= 1 ? "" : $" · con {nombreBarbero}";
+            var cuando = $"{NotificacionesPush.TextoFecha(cita.Fecha)}, {NotificacionesPush.TextoHora(cita.Hora)}";
+            if (citaAnterior != null)
+                NotificacionesPush.Avisar(barberia.Id, NotificacionesPush.Nueva,
+                    $"🔁 {cita.NombreCliente} cambió su cita",
+                    $"Ahora: {cuando}{conQuien} (antes: {NotificacionesPush.TextoFecha(citaAnterior.Fecha)}, {NotificacionesPush.TextoHora(citaAnterior.Hora)})",
+                    $"cita-{cita.Id}");
+            else
+                NotificacionesPush.Avisar(barberia.Id, NotificacionesPush.Nueva,
+                    $"📅 Nueva cita: {cita.NombreCliente}",
+                    $"{servicio.Nombre} · {cuando}{conQuien}",
+                    $"cita-{cita.Id}");
+        }
+
         // Citas que se corrieron para hacerle espacio: a cada cliente se le avisa su nueva hora
         if (citasCorridas.Count > 0)
         {
@@ -801,6 +818,7 @@ public class PublicController : ControllerBase
 
         cita.Estado = "Cancelada";
         await _context.SaveChangesAsync();
+        AvisarCancelacion(barberia, cita, "por WhatsApp");
 
         return Ok(new
         {
@@ -1189,8 +1207,17 @@ public class PublicController : ControllerBase
             hora = cita.Hora
         });
 
+        if (barberia != null) AvisarCancelacion(barberia, cita, "desde su cuenta");
+
         return Ok(new { message = "Tu cita fue cancelada." });
     }
+
+    // 🔔 Notificación al celular del barbero: un cliente canceló y el turno quedó libre
+    private static void AvisarCancelacion(Barberia barberia, Cita cita, string desde) =>
+        NotificacionesPush.Avisar(barberia.Id, NotificacionesPush.Cancelacion,
+            $"❌ {cita.NombreCliente} canceló su cita",
+            $"{cita.Servicio?.Nombre ?? "Servicio"} · {NotificacionesPush.TextoFecha(cita.Fecha)}, {NotificacionesPush.TextoHora(cita.Hora)} — canceló {desde}. El turno quedó libre.",
+            $"cita-{cita.Id}");
 
     // Envía un aviso al bot de WhatsApp en segundo plano, solo para la barbería que atiende el bot
     // El bot atiende una sola barbería (BOT_BARBERIA_SLUG)

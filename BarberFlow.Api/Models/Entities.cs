@@ -181,3 +181,27 @@ public class ClienteUsuario
     public int CodigoRecuperacionIntentos { get; set; }
     public DateTime? CodigoRecuperacionEnviado { get; set; }
 }
+
+// Celular (o navegador) del barbero que recibe notificaciones push del panel
+public class SuscripcionPush
+{
+    public int Id { get; set; }
+    public int BarberiaId { get; set; }
+    public string Endpoint { get; set; } = string.Empty;
+    public string P256dh { get; set; } = string.Empty;
+    public string Auth { get; set; } = string.Empty;
+    public string Dispositivo { get; set; } = string.Empty;
+    public bool AvisarNuevas { get; set; } = true;
+    public bool AvisarCancelaciones { get; set; } = true;
+    public bool ResumenMatutino { get; set; } = true;
+    public string HoraResumen { get; set; } = "07:00";
+    public string UltimoResumen { get; set; } = string.Empty; // fecha (yyyy-MM-dd) del último resumen enviado
+    public DateTime CreadoUtc { get; set; } = DateTime.UtcNow;
+}
+
+// Valores internos del sistema (ej. las llaves VAPID de las notificaciones push)
+public class ConfiguracionSistema
+{
+    public string Clave { get; set; } = string.Empty;
+    public string Valor { get; set; } = string.Empty;
+}
