@@ -234,6 +234,22 @@ export function estadoPausa(jids, barberia, ahoraMs = Date.now()) {
   if (!ultima || pasado >= minutos * 60 * 1000) return null;
   return pasado < MINUTOS_PAUSA_TOTAL * 60 * 1000 ? 'total' : 'parcial';
 }
+// ----- El cliente usa el menú mientras el barbero conversa en el chat -----
+// Si el bot le escribió hace poco (menú, Mis citas...) y el cliente responde con una orden para el bot
+// (un número, MENÚ, CANCELAR, REAGENDAR, volver), el bot le contesta aunque el barbero esté escribiendo.
+// La charla normal ("jajaja", "ya voy") sigue siendo del barbero: ahí el bot no se mete.
+const ultimaRespuestaBot = new Map(); // chat -> cuándo le respondió el bot por última vez
+const ordenesAlBot = new Set();       // chats cuyo mensaje actual es una orden directa al bot
+export const MINUTOS_MENU_ACTIVO = 10;
+export function esOrdenParaBot(textoN, soloNumeros) {
+  return !!soloNumeros || pideMenuExplicito(textoN) || /\bcancel/.test(textoN) || /\breagend/.test(textoN) ||
+    /^(volver|inicio|opciones)$/.test(textoN);
+}
+function botLeEscribioHacePoco(jid, ahoraMs = Date.now()) {
+  if (ultimaRespuestaBot.size > 3000) for (const [k, t] of ultimaRespuestaBot) if (ahoraMs - t > 60 * 60 * 1000) ultimaRespuestaBot.delete(k);
+  return ahoraMs - (ultimaRespuestaBot.get(jid) || 0) < MINUTOS_MENU_ACTIVO * 60 * 1000;
+}
+
 // El cliente pide el MENÚ: "Menú", "MENU", "menù", "Menuuu", "el menú", "pásame el menú", "menú porfa", "meni"...
 // (el texto ya viene normalizado: minúsculas, sin tildes, sin signos ni emojis). Funciona aunque el barbero esté
 // hablando en el chat. No cuenta si el menú es parte de una frase ("ese menú no sirve", "el menú de hoy").
@@ -357,9 +373,10 @@ async function resolverJidDestinatario(sock, telefono) {
 // Clientes que acaban de iniciar conversación: a su primera respuesta se le antepone un saludo
 const saludoPendiente = new Set();
 
-// Máximo 6 mensajes del bot a un mismo chat cada 10 minutos (si otro bot le responde, no se arma un bucle)
+// Máximo 15 mensajes del bot a un mismo chat cada 10 minutos (si otro bot le responde, no se arma un bucle).
+// Una persona usando el menú no llega a eso; un bucle entre bots sí, en menos de un minuto.
 const enviosPorChat = new Map(); // jid -> [instantes]
-const MAX_ENVIOS_POR_CHAT = 6;
+export const MAX_ENVIOS_POR_CHAT = 15;
 function cupoDeEnvio(jid) {
   const ahora = Date.now();
   const recientes = (enviosPorChat.get(jid) || []).filter(t => ahora - t < 10 * 60 * 1000);
@@ -396,13 +413,15 @@ const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
     const inicio = Date.now();
     await sock.sendPresenceUpdate('composing', remitente);
     await new Promise(r => setTimeout(r, tiempoTotal));
-    // Mientras el bot "escribía", ¿el barbero respondió a mano en ese chat? Entonces el bot no se mete
-    if (barberoEscribioDesde(remitente, inicio)) {
+    // Mientras el bot "escribía", ¿el barbero respondió a mano en ese chat? Entonces el bot no se mete,
+    // salvo que el cliente le haya dado una orden directa al bot (un número del menú, MENÚ, CANCELAR...)
+    if (!ordenesAlBot.has(remitente) && barberoEscribioDesde(remitente, inicio)) {
       await sock.sendPresenceUpdate('paused', remitente).catch(() => {});
       console.log(`[Atención humana] El barbero respondió en ${remitente} mientras el bot escribía: el bot no envía su mensaje.`);
       return false;
     }
     await sock.sendMessage(remitente, { text: textoRespuesta });
+    ultimaRespuestaBot.set(remitente, Date.now());
     await sock.sendPresenceUpdate('paused', remitente);
     return true;
   } catch (err) {
@@ -692,7 +711,8 @@ export function mensajeMisCitas(citas) {
   let texto = `🗓️ *${una ? 'Tu próxima cita' : 'Tus próximas citas'}, ${nombre}*\n\n`;
   citas.forEach((c, i) => {
     texto += `${una ? '' : `*${i + 1}.* `}${iconoCategoria(c.servicio)} *${c.servicio}*\n` +
-      `📅 ${fechaLegible(c.fecha)} · ⏰ ${c.hora}\n` +
+      `📅 ${fechaLegible(c.fecha)}\n` +
+      `⏰ ${c.hora}\n` +
       (c.barbero ? `💈 Con ${c.barbero}\n` : '') +
       `🔖 ${c.codigoReserva} · ${c.estado === 'Pendiente' ? '⏳ Por confirmar' : '✅ Confirmada'}\n\n`;
   });
@@ -1315,6 +1335,17 @@ async function iniciarBot() {
   });
 
   sock.ev.on('messages.upsert', (m) => procesarMensajeEntrante(sock, m));
+
+  // Diagnóstico: cuando un celular (el del barbero o el de un cliente) no pudo leer un mensaje del bot,
+  // pide que se lo reenvíen. Se deja en los registros para saber si el reenvío está funcionando.
+  sock.ws.on('CB:receipt', (node) => {
+    try {
+      if (node?.attrs?.type !== 'retry') return;
+      const { id, from, recipient } = node.attrs;
+      const copia = mensajesEnviados.has(id) ? 'el bot tiene la copia y lo reenvía' : 'el bot ya no tiene la copia';
+      console.log(`[Reintento] ${from} no pudo leer el mensaje ${id}${recipient ? ` (chat ${recipient})` : ''}: ${copia}.`);
+    } catch (e) {}
+  });
 }
 
 // ----- Mensaje que WhatsApp entregó pero no se pudo descifrar -----
@@ -1432,11 +1463,14 @@ export async function procesarMensajeEntrante(sock, m) {
       // El barbero está hablando personalmente con este cliente: no interrumpir
       const jidsDelChat = [remitente, telSoloDigitos && `${telSoloDigitos}@s.whatsapp.net`, telSoloDigitos && lidPorTelefono.get(telSoloDigitos)];
       const pausa = sock.esPrueba ? null : estadoPausa(jidsDelChat, barberia);
-      if (pausa && pideMenuExplicito(textoN)) {
-        // "MENÚ" sola es una orden clara para el bot (a veces el mismo barbero le dice al cliente que la escriba):
-        // funciona siempre y el bot retoma el chat, así el cliente puede seguir con el número de la opción
-        liberarPausa(jidsDelChat);
-        console.log(`[Atención humana] ${remitente} pidió el MENÚ: el bot retoma la conversación.`);
+      // ¿Es una orden directa para el bot? (MENÚ, o un número/CANCELAR/REAGENDAR justo después de que el bot le escribió)
+      const ordenAlBot = pideMenuExplicito(textoN) ||
+        (esOrdenParaBot(textoN, soloNumeros) && jidsDelChat.some(j => j && botLeEscribioHacePoco(j, ahora)));
+      if (ordenAlBot) ordenesAlBot.add(remitente);
+      if (pausa && ordenAlBot) {
+        // El barbero está conversando, pero el cliente está usando el menú: el bot le responde la opción.
+        // La pausa sigue: si el cliente vuelve a charlar, eso queda para el barbero.
+        console.log(`[Atención humana] ${remitente} usó el menú ("${texto}") mientras el barbero conversa: el bot responde esa opción.`);
       } else if (pausa === 'total' || (pausa === 'parcial' && !retomaConversacionBot(texto, textoN))) {
         saludoPendiente.delete(remitente);
         console.log(`[Atención humana] ${remitente} escribió, pero el barbero está atendiendo ese chat: el bot no responde.`);
@@ -2002,7 +2036,11 @@ export async function procesarMensajeEntrante(sock, m) {
     } finally {
       // Si no hubo respuesta (silencio), que el saludo pendiente no se cuele en un aviso posterior
       const jid = m?.messages?.[0]?.key?.remoteJid;
-      if (jid) saludoPendiente.delete(jid);
+      if (jid) {
+        saludoPendiente.delete(jid);
+        // Solo al terminar el mensaje del cliente (no cuando llega uno del barbero en medio)
+        if (!m?.messages?.[0]?.key?.fromMe) ordenesAlBot.delete(jid);
+      }
     }
 }
 

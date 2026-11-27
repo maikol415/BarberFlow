@@ -483,6 +483,7 @@ r = await cliente(pepe, '1');
 comprobar('Mis citas: y la cancela', r, ['cancelada correctamente']);
 r = await cliente(pepe, '4');
 comprobar('Mis citas: con una sola cita, opciones directas', r, ['Tu próxima cita', citaPepe.hora, '(cambiar día u hora)']);
+comprobar('Mis citas: la fecha y la hora van en líneas separadas', r, [`📅 ${legible(pasado)}\n⏰ ${citaPepe.hora}\n`]);
 r = await cliente(pepe, '0');
 comprobar('Mis citas: 0 vuelve al menú', r, ['Escribe solo el número']);
 
@@ -544,6 +545,23 @@ r = await cliente(chatMenuPausa, 'Menu');
 comprobar('Con el barbero hablando, MENÚ sí muestra las opciones', r, ['Mis citas', 'Formas de pago']);
 r = await cliente(chatMenuPausa, '3');
 comprobar('Y luego el número de la opción también funciona', r, ['Dónde estamos']);
+await escribeBarbero(chatMenuPausa.remoteJid, 'jaja eso, mira el 2');
+r = await cliente(chatMenuPausa, '0');
+comprobar('Aunque el barbero siga escribiendo, el cliente sigue usando el menú (0)', r, ['Mis citas', 'Formas de pago']);
+r = await cliente(chatMenuPausa, '2');
+comprobar('... y la opción 2', r, ['Servicios y precios']);
+r = await cliente(chatMenuPausa, 'jajaja se dañó');
+comprobar('Pero la charla con el barbero sigue siendo del barbero', r || 'silencio', ['silencio']);
+// Si el barbero contesta mientras el bot "escribe" la opción pedida, el bot igual la envía
+const enviadosOrden = [];
+const sockOrden = {
+  ...sockFalso,
+  sendMessage: async (jid, contenido) => { enviadosOrden.push(contenido.text || ''); },
+  sendPresenceUpdate: async (estado, jid) => { if (estado === 'composing') await escribeBarbero(jid, 'ya vas a ver'); }
+};
+await procesarMensajeEntrante(sockOrden, { type: 'notify', messages: [{
+  key: { remoteJid: chatMenuPausa.remoteJid, fromMe: false, id: `SIM${++contador}` }, message: { conversation: 'menú' } }] });
+comprobar('Una orden al bot (MENÚ) se responde aunque el barbero escriba al mismo tiempo', enviadosOrden.join(' '), ['Mis citas']);
 const chatManu = { remoteJid: `5731166${base}@s.whatsapp.net` };
 await escribeBarbero(chatManu.remoteJid, 'Ya te atiendo');
 r = await cliente(chatManu, 'Manù');
