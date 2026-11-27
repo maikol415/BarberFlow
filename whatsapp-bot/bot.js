@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, generateMessageIDV2, DEFAULT_CONNECTION_CONFIG, proto } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, generateMessageIDV2, DEFAULT_CONNECTION_CONFIG, proto, isJidGroup, isJidBroadcast, isJidNewsletter } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import http from 'http';
 import fetch from 'node-fetch';
@@ -1307,6 +1307,9 @@ async function iniciarBot() {
     shouldSyncHistoryMessage: ({ syncType }) => HISTORIAL_PERMITIDO.has(syncType),
     // Si un celular no pudo leer un mensaje del bot y pide que se lo reenvíen, se le manda la copia guardada
     getMessage: async (key) => mensajeEnviadoParaReenviar(key),
+    // Grupos, estados y canales: el bot nunca los responde, así que ni siquiera los descifra
+    // (menos trabajo y sin los errores de cifrado de grupos en los registros)
+    shouldIgnoreJid: (jid) => !!(isJidGroup(jid) || isJidBroadcast(jid) || isJidNewsletter(jid)),
     logger: loggerBaileys
   }));
   socketActivo = sock;
