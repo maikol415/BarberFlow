@@ -1,4 +1,4 @@
-import makeWASocket, { DisconnectReason, generateMessageIDV2, DEFAULT_CONNECTION_CONFIG } from '@whiskeysockets/baileys';
+import makeWASocket, { DisconnectReason, generateMessageIDV2, DEFAULT_CONNECTION_CONFIG, proto } from '@whiskeysockets/baileys';
 import QRCode from 'qrcode';
 import http from 'http';
 import fetch from 'node-fetch';
@@ -46,88 +46,111 @@ const MODO_PRUEBA = process.env.BOT_MODO_PRUEBA === '1';
 // BOT_UNICO=1 conserva el modo antiguo: un solo bot para BARBERIA_SLUG.
 const MODO_GESTOR = !MODO_PRUEBA && process.env.BOT_HIJO !== '1' && process.env.BOT_UNICO !== '1';
 
-// WhatsApp puede identificar al remitente con un ID anónimo (…@lid) en lugar de su número.
-// En ese caso el número real llega en msg.key.senderPn. Guardamos la relación LID ➔ teléfono.
-const telefonoPorLid = new Map();
-// Y al revés (teléfono ➔ chat @lid): los avisos que inicia el bot (cita nueva, recordatorio, reseña) deben ir
-// al MISMO chat @lid donde el cliente escribe. Si se envían a su número, WhatsApp los muestra como
-// "Esperando el mensaje" porque el cifrado de ese chat es otro.
-const lidPorTelefono = new Map();
-let almacenClavesSesion = null; // claves de la sesión de WhatsApp (PostgreSQL o archivos): ahí se guarda la relación
+// WhatsApp puede identificar al cliente con un ID anónimo (…@lid) en lugar de su número.
+// Desde Baileys 7 la relación @lid ↔ número la guarda la propia librería en la sesión (claves "lid-mapping",
+// en PostgreSQL junto con el resto de la sesión): la aprende de cada mensaje que llega y de las consultas a
+// WhatsApp. Se consulta con sock.signalRepository.lidMapping. Aquí solo queda una copia en memoria para las
+// consultas rápidas (la pausa del bot cubre el chat @lid y el del número del mismo cliente).
+// Los avisos que inicia el bot (cita nueva, recordatorio, reseña) van al chat @lid del cliente: es donde él
+// escribe, y si se envían a su número WhatsApp los muestra como "Esperando el mensaje".
+const telefonoPorLid = new Map(); // "116…@lid" -> "57300…"
+const lidPorTelefono = new Map(); // "57300…" -> "116…@lid"
+let almacenClavesSesion = null; // claves de la sesión de WhatsApp (PostgreSQL o archivos): ahí guarda el bot sus marcas "bf-…"
 
 function digitosDeJid(jid) {
   return (jid || '').split('@')[0].split(':')[0].replace(/[^0-9]/g, '');
 }
 
-function recordarLid(lid, tel) {
-  if (!lid || !tel) return;
-  recordarTelefonoDeLid(lid, tel);
-  if (lidPorTelefono.get(tel) === lid) return;
-  lidPorTelefono.set(tel, lid);
-  almacenClavesSesion?.set({ 'bf-lid': { [tel]: lid } }).catch(e => console.error('No se pudo guardar el chat @lid:', e.message));
-}
-
-// Solo "este @lid es este número" (para reconocer al cliente cuando escribe), sin cambiar a dónde se le envía
-function recordarTelefonoDeLid(lid, tel) {
-  if (!lid || !tel || telefonoPorLid.get(lid) === tel) return;
-  telefonoPorLid.set(lid, tel);
-  almacenClavesSesion?.set({ 'bf-tel': { [lid]: tel } }).catch(e => console.error('No se pudo guardar el número del chat @lid:', e.message));
-}
-
-async function telefonoDeLidGuardado(lid) {
-  if (!lid) return '';
-  if (telefonoPorLid.has(lid)) return telefonoPorLid.get(lid);
-  try {
-    const guardado = (await almacenClavesSesion?.get('bf-tel', [lid]))?.[lid];
-    if (typeof guardado === 'string' && guardado) {
-      telefonoPorLid.set(lid, guardado);
-      return guardado;
-    }
-  } catch (e) {}
-  return '';
-}
-
-// "116…@lid" o "116…" -> "116…@lid"
+// "116…@lid", "116…:3@lid" o "116…" -> "116…@lid"
 function normalizarLid(lid) {
-  const usuario = String(lid || '').split('@')[0].split(':')[0];
+  const texto = String(lid || '');
+  if (texto.includes('@') && !texto.endsWith('@lid')) return null;
+  const usuario = texto.split('@')[0].split(':')[0];
   return /^\d+$/.test(usuario) ? `${usuario}@lid` : null;
 }
 
-async function lidDeTelefono(tel) {
-  if (!tel) return null;
-  if (lidPorTelefono.has(tel)) return lidPorTelefono.get(tel);
-  try {
-    const guardado = (await almacenClavesSesion?.get('bf-lid', [tel]))?.[tel];
-    if (typeof guardado === 'string' && guardado.endsWith('@lid')) {
-      lidPorTelefono.set(tel, guardado);
-      telefonoPorLid.set(guardado, tel);
-      return guardado;
-    }
-  } catch (e) {}
-  return null;
+function recordarLid(lid, tel) {
+  lid = normalizarLid(lid);
+  if (!lid || !tel) return;
+  if (telefonoPorLid.size > 20000) { telefonoPorLid.clear(); lidPorTelefono.clear(); }
+  telefonoPorLid.set(lid, tel);
+  lidPorTelefono.set(tel, lid);
 }
 
+// El almacén de Baileys con la relación @lid ↔ número (no existe en los sockets falsos de las pruebas del panel)
+function mapeoLid(sock) {
+  return sock?.signalRepository?.lidMapping || null;
+}
+
+// Número del cliente que escribió, sin consultar nada: el que trae el mensaje o el que ya se sabe
 function telefonoDelRemitente(key) {
   const remoteJid = key?.remoteJid || '';
   if (remoteJid.endsWith('@s.whatsapp.net')) return digitosDeJid(remoteJid);
-
-  const senderPn = key?.senderPn || '';
-  if (senderPn.endsWith('@s.whatsapp.net')) {
-    const tel = digitosDeJid(senderPn);
-    if (remoteJid.endsWith('@lid') && tel) recordarLid(remoteJid, tel);
+  // En un chat @lid, Baileys 7 trae el número del cliente en remoteJidAlt (en la 6.x era senderPn).
+  // En los mensajes del propio barbero (fromMe) ese campo no es el número del cliente: no se usa.
+  const alterno = key?.fromMe ? '' : String(key?.remoteJidAlt || '');
+  if (remoteJid.endsWith('@lid') && alterno.endsWith('@s.whatsapp.net')) {
+    const tel = digitosDeJid(alterno);
+    if (tel) recordarLid(remoteJid, tel);
     return tel;
   }
-
-  return telefonoPorLid.get(remoteJid) || '';
+  return telefonoPorLid.get(normalizarLid(remoteJid)) || '';
 }
 
-// Igual que telefonoDelRemitente, pero si WhatsApp no manda el número (chat @lid sin senderPn)
-// lo busca en lo aprendido al enviarle la confirmación de su cita (ver resolverJidDestinatario)
-async function telefonoDelRemitenteAsync(key) {
+// Igual que telefonoDelRemitente, pero si el mensaje no trae el número (chat @lid sin remoteJidAlt)
+// lo busca en lo que Baileys ya aprendió (p. ej. al enviarle la confirmación de su cita)
+async function telefonoDelRemitenteAsync(sock, key) {
   const tel = telefonoDelRemitente(key);
   if (tel) return tel;
-  const remoteJid = key?.remoteJid || '';
-  return remoteJid.endsWith('@lid') ? telefonoDeLidGuardado(remoteJid) : '';
+  const remoteJid = String(key?.remoteJid || '');
+  const mapeo = mapeoLid(sock);
+  if (!remoteJid.endsWith('@lid') || !mapeo) return '';
+  try {
+    const encontrado = digitosDeJid(await mapeo.getPNForLID(normalizarLid(remoteJid)));
+    if (encontrado) {
+      recordarLid(remoteJid, encontrado);
+      return encontrado;
+    }
+  } catch (e) {
+    console.warn(`No se pudo buscar el número del chat ${remoteJid}:`, e.message);
+  }
+  return '';
+}
+
+// Chat @lid de un número: lo que ya se sabe o, si no, Baileys le pregunta a WhatsApp (y lo deja guardado)
+async function lidDeTelefono(sock, tel) {
+  if (!tel) return null;
+  if (lidPorTelefono.has(tel)) return lidPorTelefono.get(tel);
+  const mapeo = mapeoLid(sock);
+  if (!mapeo) return null;
+  try {
+    const lid = normalizarLid(await mapeo.getLIDForPN(`${tel}@s.whatsapp.net`));
+    if (lid) {
+      recordarLid(lid, tel);
+      return lid;
+    }
+  } catch (e) {
+    console.warn(`No se pudo buscar el chat @lid de ${tel}:`, e.message);
+  }
+  return null;
+}
+
+// La versión anterior del bot (Baileys 6) guardaba esa relación por su cuenta en las claves "bf-lid" / "bf-tel".
+// Al arrancar se le pasa a Baileys una vez, para que no se olviden los clientes que ya escribieron desde @lid.
+// Las claves viejas no se borran: si hubiera que volver a la versión anterior, siguen ahí.
+let mapeoAntiguoImportado = false;
+async function importarMapeoLidAntiguo(sock, almacen) {
+  if (mapeoAntiguoImportado || !almacen?.leerMapeoLidAntiguo || !mapeoLid(sock)) return;
+  mapeoAntiguoImportado = true;
+  try {
+    const pares = await almacen.leerMapeoLidAntiguo();
+    if (!pares.length) return;
+    await mapeoLid(sock).storeLIDPNMappings(pares);
+    console.log(`Relación @lid ↔ número de la versión anterior: ${pares.length} cliente(s) revisados en Baileys.`);
+  } catch (e) {
+    mapeoAntiguoImportado = false;
+    console.error('No se pudo pasar la relación @lid ↔ número anterior a Baileys:', e.message);
+  }
 }
 
 const ultimaInteraccionCliente = new Map(); // Para saber cuándo habló por última vez
@@ -343,26 +366,18 @@ async function resolverJidDestinatario(sock, telefono) {
   const jidDirecto = formatearJidWhatsApp(telefono);
   if (!sock || !jidDirecto) return jidDirecto;
 
-  // Si el cliente ya nos escribió desde un chat @lid, responderle en ese mismo chat
-  const lid = await lidDeTelefono(digitosDeJid(jidDirecto));
+  const limpio = digitosDeJid(jidDirecto);
+  // Siempre al chat @lid del cliente (el que ya conocemos o el que Baileys le pregunta a WhatsApp): el cliente
+  // responde desde ese ID. Si el aviso se envía a su número, el cifrado queda guardado bajo el número y su
+  // respuesta ("SI", "No"…) llega imposible de leer ("No matching sessions found for message").
+  // Así también reconocemos al cliente cuando responde desde el chat @lid sin su número (p. ej. "SI" o "CANCELAR").
+  const lid = await lidDeTelefono(sock, limpio);
   if (lid) return lid;
 
   try {
-    const limpio = digitosDeJid(jidDirecto);
+    // Sin chat @lid: se confirma que el número tiene WhatsApp (en Baileys 7 onWhatsApp ya no trae el @lid)
     const res = await sock.onWhatsApp(limpio);
-    if (res && res.length > 0 && res[0].exists && res[0].jid) {
-      // WhatsApp también devuelve el ID anónimo (@lid) del número: así reconocemos al cliente
-      // cuando responde desde un chat @lid que no trae su número (p. ej. "SI" o "CANCELAR")
-      const lidCliente = normalizarLid(res[0].lid);
-      if (lidCliente) {
-        // Siempre al chat @lid: el cliente responde desde ese ID. Si el aviso se envía a su número, el cifrado
-        // queda guardado bajo el número y su respuesta ("SI", "No"…) llega imposible de leer
-        // ("No matching sessions found for message") y el bot no contesta.
-        recordarLid(lidCliente, limpio);
-        return lidCliente;
-      }
-      return res[0].jid;
-    }
+    if (res && res.length > 0 && res[0].exists && res[0].jid) return res[0].jid;
   } catch (e) {
     console.log('Nota: fallback a JID directo:', e.message);
   }
@@ -1238,6 +1253,11 @@ function obtenerAlmacenSesion() {
 // Cada socket recibe un número; un reset lo incrementa para que el socket viejo
 // (y sus reconexiones pendientes) dejen de actuar.
 let generacionBot = 0;
+const HISTORIAL_PERMITIDO = new Set([
+  proto.HistorySync.HistorySyncType.INITIAL_BOOTSTRAP,
+  proto.HistorySync.HistorySyncType.PUSH_NAME,
+  proto.HistorySync.HistorySyncType.NON_BLOCKING_DATA
+]);
 let reconexionesSeguidas = 0;
 const loggerBaileys = DEFAULT_CONNECTION_CONFIG.logger.child({});
 loggerBaileys.level = process.env.BOT_LOG_NIVEL || 'warn';
@@ -1281,14 +1301,22 @@ async function iniciarBot() {
   almacenClavesSesion = state.keys;
   const sock = marcarEnviosDelBot(makeWASocket({
     auth: state,
-    printQRInTerminal: false,
     markOnlineOnConnect: false,          // si el bot aparece "en línea", al barbero dejan de sonarle las notificaciones
-    shouldSyncHistoryMessage: () => false, // no descargar el historial de chats (menos memoria)
+    // Del historial solo lo liviano que llega al vincular con el QR: ahí WhatsApp manda la relación @lid ↔ número
+    // de los contactos. El historial reciente y el completo (chats y mensajes viejos) no se descargan: menos memoria.
+    shouldSyncHistoryMessage: ({ syncType }) => HISTORIAL_PERMITIDO.has(syncType),
     // Si un celular no pudo leer un mensaje del bot y pide que se lo reenvíen, se le manda la copia guardada
     getMessage: async (key) => mensajeEnviadoParaReenviar(key),
     logger: loggerBaileys
   }));
   socketActivo = sock;
+  obtenerAlmacenSesion().then(almacen => importarMapeoLidAntiguo(sock, almacen)).catch(() => {});
+  // Cuando Baileys aprende qué número tiene un chat @lid, se copia a la memoria rápida del bot
+  sock.ev.on('lid-mapping.update', (par) => {
+    for (const { lid, pn } of [].concat(par || [])) {
+      if (String(pn || '').endsWith('@s.whatsapp.net')) recordarLid(lid, digitosDeJid(pn));
+    }
+  });
 
   sock.ev.on('creds.update', () => Promise.resolve(saveCreds()).catch(e => console.error('No se pudo guardar la sesión de WhatsApp:', e.message)));
 
@@ -1377,7 +1405,7 @@ async function avisarMensajeIlegible(sock, msg) {
     if ((ultimaInteraccionCliente.get(jid) || 0) >= desde) return;
     const barberia = await obtenerDatosBarberia();
     if (barberia.botActivo === false) return;
-    const tel = await telefonoDelRemitenteAsync(msg.key);
+    const tel = await telefonoDelRemitenteAsync(sock, msg.key);
     if (botEnPausa([jid, tel && `${tel}@s.whatsapp.net`], barberia)) return;
     await enviarMensajeHumano(sock, jid,
       `😅 Perdona, no alcanzamos a leer tu último mensaje. ¿Nos lo puedes enviar de nuevo, por favor?`);
@@ -1451,13 +1479,13 @@ export async function procesarMensajeEntrante(sock, m) {
       if (barberia.botActivo === false) return;
 
       // Extraer número de teléfono del remitente (ej: 17747126594@s.whatsapp.net o 573024084425@s.whatsapp.net)
-      const telSoloDigitos = await telefonoDelRemitenteAsync(msg.key);
+      const telSoloDigitos = await telefonoDelRemitenteAsync(sock, msg.key);
       const ultimos10 = telSoloDigitos.length >= 10 ? telSoloDigitos.slice(-10) : telSoloDigitos;
       const telBusqueda = telSoloDigitos;
 
       console.log(`[Mensaje Recibido] De: ${remitente} | Tel: ${telSoloDigitos || '(desconocido)'} | Texto: ${texto}`);
       if (!telSoloDigitos) {
-        console.warn(`[Aviso] No se pudo obtener el número real de ${remitente} (sin senderPn).`);
+        console.warn(`[Aviso] No se pudo obtener el número real de ${remitente} (el mensaje no trae su número).`);
       }
 
       // El barbero está hablando personalmente con este cliente: no interrumpir

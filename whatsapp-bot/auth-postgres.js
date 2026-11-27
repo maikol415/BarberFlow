@@ -150,6 +150,22 @@ export async function usePostgresAuthState(pool, sesion, cola = crearCola()) {
   };
 }
 
+// Relación @lid ↔ número que guardaba la versión anterior del bot (Baileys 6) en las claves "bf-lid-<número>"
+// (chat @lid al que se le escribe) y "bf-tel-<lid>" (número de un chat @lid). Devuelve pares { lid, pn }
+// listos para lidMapping.storeLIDPNMappings de Baileys 7. Si un número aparece en las dos, gana "bf-lid".
+export function paresLidAntiguos(filas) {
+  const porNumero = new Map();
+  const agregar = (lid, tel) => {
+    const usuarioLid = String(lid || '').split('@')[0].split(':')[0];
+    const numero = String(tel || '').replace(/[^0-9]/g, '');
+    if (!/^[0-9]+$/.test(usuarioLid) || !String(lid).endsWith('@lid') || !numero) return;
+    porNumero.set(numero, { lid: `${usuarioLid}@lid`, pn: `${numero}@s.whatsapp.net` });
+  };
+  for (const { clave, valor } of filas) if (clave.startsWith('bf-tel-')) agregar(clave.slice(7), valor);
+  for (const { clave, valor } of filas) if (clave.startsWith('bf-lid-')) agregar(valor, clave.slice(7));
+  return [...porNumero.values()];
+}
+
 function crearCola() {
   let ultima = Promise.resolve();
   return (tarea) => {
@@ -168,7 +184,18 @@ export async function crearAlmacenSesion({ databaseUrl, sesion, carpeta = './aut
     return {
       descripcion: `archivos (${carpeta})`,
       cargarEstado: () => useMultiFileAuthState(carpeta),
-      borrarSesion: async () => { fs.rmSync(carpeta, { recursive: true, force: true }); }
+      borrarSesion: async () => { fs.rmSync(carpeta, { recursive: true, force: true }); },
+      leerMapeoLidAntiguo: async () => {
+        if (!fs.existsSync(carpeta)) return [];
+        const filas = [];
+        for (const archivo of fs.readdirSync(carpeta)) {
+          if (!/^bf-(lid|tel)-.*[.]json$/.test(archivo)) continue;
+          try {
+            filas.push({ clave: archivo.slice(0, -5), valor: JSON.parse(fs.readFileSync(`${carpeta}/${archivo}`, 'utf8'), BufferJSON.reviver) });
+          } catch (e) { /* archivo dañado: se ignora */ }
+        }
+        return paresLidAntiguos(filas);
+      }
     };
   }
 
@@ -197,9 +224,17 @@ export async function crearAlmacenSesion({ databaseUrl, sesion, carpeta = './aut
       estadoActual = null;
       await asegurarTabla();
       // En la misma cola: se ejecuta después de cualquier escritura pendiente del socket viejo.
-      // Las claves "bf-…" (qué número tiene cada chat @lid de los clientes) no son de la sesión:
-      // se conservan para que, tras volver a vincular WhatsApp, el bot siga reconociendo a los clientes.
-      await cola(() => pool.query(`DELETE FROM ${TABLA} WHERE sesion = $1 AND clave NOT LIKE 'bf-%'`, [sesion]));
+      // Las claves "bf-…" (marcas del bot) y "lid-mapping-…" (qué número tiene cada chat @lid de los clientes,
+      // la guarda Baileys 7) no dependen de la vinculación: se conservan para que, tras volver a vincular
+      // WhatsApp, el bot siga reconociendo a los clientes.
+      await cola(() => pool.query(
+        `DELETE FROM ${TABLA} WHERE sesion = $1 AND clave NOT LIKE 'bf-%' AND clave NOT LIKE 'lid-mapping-%'`, [sesion]));
+    },
+    leerMapeoLidAntiguo: async () => {
+      await asegurarTabla();
+      const { rows } = await pool.query(
+        `SELECT clave, valor FROM ${TABLA} WHERE sesion = $1 AND (clave LIKE 'bf-lid-%' OR clave LIKE 'bf-tel-%')`, [sesion]);
+      return paresLidAntiguos(rows.map(f => ({ clave: f.clave, valor: JSON.parse(f.valor, BufferJSON.reviver) })));
     },
     pool
   };

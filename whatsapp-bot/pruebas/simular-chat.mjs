@@ -42,20 +42,37 @@ const {
   pideMenuExplicito,
   __usarSocketDePrueba
 } = await import('../bot.js');
+const { paresLidAntiguos } = await import('../auth-postgres.js');
 
 // ---------- WhatsApp falso ----------
 const enviados = [];
-const lidsFalsos = {};
+const lidsFalsos = {};   // número -> su chat @lid, como lo sabe WhatsApp
+const mapeoFalso = new Map(); // usuario @lid -> número, lo que Baileys ya aprendió (y guarda en la sesión)
+const usuario = jid => String(jid || '').split('@')[0].split(':')[0];
 const sockFalso = {
   sendMessage: async (jid, contenido) => { enviados.push({ jid, texto: contenido.text || '' }); },
   sendPresenceUpdate: async () => {},
-  // Como WhatsApp real: devuelve también el ID anónimo (@lid) del número si lo conocemos
-  onWhatsApp: async (num) => [{ exists: true, jid: `${num}@s.whatsapp.net`, lid: lidsFalsos[num] }]
+  // Como Baileys 7: onWhatsApp ya no trae el @lid
+  onWhatsApp: async (num) => [{ exists: true, jid: `${num}@s.whatsapp.net` }],
+  // Como el lidMapping de Baileys 7 (mismos formatos): getLIDForPN le pregunta a WhatsApp si no lo sabe;
+  // getPNForLID solo responde lo ya aprendido y devuelve el número con dispositivo ("57…:0@s.whatsapp.net")
+  signalRepository: { lidMapping: {
+    getLIDForPN: async (pn) => {
+      const lid = lidsFalsos[usuario(pn)];
+      if (!lid) return null;
+      mapeoFalso.set(usuario(lid), usuario(pn));
+      return lid;
+    },
+    getPNForLID: async (lid) => (mapeoFalso.has(usuario(lid)) ? `${mapeoFalso.get(usuario(lid))}:0@s.whatsapp.net` : null),
+    storeLIDPNMappings: async (pares) => { for (const { lid, pn } of pares) mapeoFalso.set(usuario(lid), usuario(pn)); }
+  } }
 };
 
 let contador = 0;
 async function cliente(key, texto, tipo = 'notify') {
   enviados.length = 0;
+  // Baileys guarda la relación @lid ↔ número que trae el mensaje antes de entregárselo al bot
+  if (key.remoteJid?.endsWith('@lid') && key.remoteJidAlt) mapeoFalso.set(usuario(key.remoteJid), usuario(key.remoteJidAlt));
   await procesarMensajeEntrante(sockFalso, {
     type: tipo,
     messages: [{ key: { fromMe: false, id: `SIM${++contador}`, ...key }, message: { conversation: texto } }]
@@ -131,7 +148,7 @@ try { await crearCita(telVieja, 'Vieja Prueba', fechaColombia(-3), '09:00 AM'); 
 
 const dig = t => t.replace(/\D/g, '');
 const legible = iso => new Date(iso + 'T12:00:00Z').toLocaleDateString('es-CO', { timeZone: 'UTC', weekday: 'long', day: 'numeric', month: 'long' });
-const ana = { remoteJid: '88001122334455@lid', senderPn: `${dig(telAna)}@s.whatsapp.net` };
+const ana = { remoteJid: '88001122334455@lid', remoteJidAlt: `${dig(telAna)}@s.whatsapp.net` };
 const bob = { remoteJid: `${dig(telBob)}@s.whatsapp.net` };
 const vieja = { remoteJid: `${dig(telVieja)}@s.whatsapp.net` };
 const anonimo = { remoteJid: '99887766554433@lid' };
@@ -139,7 +156,7 @@ const anonimo = { remoteJid: '99887766554433@lid' };
 let r;
 
 r = await cliente(ana, 'Hola, quiero cancelar mi cita');
-comprobar('Chat @lid: encuentra la cita usando senderPn', r, ['encontramos tu cita', legible(manana), citaAnaManana.hora]);
+comprobar('Chat @lid: encuentra la cita con el número que trae el mensaje (remoteJidAlt)', r, ['encontramos tu cita', legible(manana), citaAnaManana.hora]);
 
 r = await cliente(ana, 'a qué hora abren?');
 comprobar('Respuesta ambigua: vuelve a preguntar 1 o 2', r, ['responde *1*', '*2*']);
@@ -151,7 +168,7 @@ r = await cliente(ana, 'sí');
 comprobar('Un "sí" después NO cancela: confirma la asistencia', r, ['confirmada']);
 
 r = await cliente({ remoteJid: ana.remoteJid }, 'cancelar');
-comprobar('Mismo @lid sin senderPn: recuerda el número', r, ['encontramos tu cita', legible(manana)]);
+comprobar('Mismo @lid sin remoteJidAlt: recuerda el número', r, ['encontramos tu cita', legible(manana)]);
 
 r = await cliente(ana, '1️⃣');
 comprobar('Responder 1️⃣ cancela la cita', r, ['cancelada correctamente', legible(manana)]);
@@ -163,6 +180,26 @@ await cliente(ana, '2');
 r = await cliente(bob, 'cancelar');
 comprobar('+1 con mismo final que +57: ve solo su cita', r, ['encontramos tu cita', citaBob.hora]);
 await cliente(bob, 'no');
+
+// Chat @lid que Baileys ya conocía (lo aprendió antes de un reinicio y lo tiene en la sesión): el mensaje no
+// trae el número, pero el bot lo encuentra con lidMapping.getPNForLID
+const bobLid = { remoteJid: '55443322110099@lid' };
+mapeoFalso.set(usuario(bobLid.remoteJid), dig(telBob));
+r = await cliente(bobLid, 'cancelar');
+comprobar('Chat @lid sin número que Baileys ya conocía: encuentra la cita', r, ['encontramos tu cita', citaBob.hora]);
+await cliente(bobLid, 'no');
+
+// La relación que guardaba la versión anterior del bot (claves bf-lid / bf-tel) se le pasa a Baileys
+const pares = paresLidAntiguos([
+  { clave: 'bf-tel-111@lid', valor: '573001112233' },
+  { clave: 'bf-tel-222:3@lid', valor: '573004445566' },
+  { clave: 'bf-lid-573004445566', valor: '333@lid' },
+  { clave: 'bf-tel-basura', valor: '57300' },
+  { clave: 'bf-pregunta-x@lid', valor: { a: 1 } }
+]);
+comprobar('Claves bf-lid/bf-tel viejas -> pares para Baileys (gana bf-lid)', JSON.stringify(pares),
+  ['{"lid":"111@lid","pn":"573001112233@s.whatsapp.net"}', '{"lid":"333@lid","pn":"573004445566@s.whatsapp.net"}']);
+comprobar('... y solo esos dos', String(pares.length), ['2']);
 
 r = await cliente(vieja, 'cancelar');
 comprobar('La API rechaza citas en fechas pasadas', rechazoPasada, ['ya pasó']);
@@ -354,7 +391,7 @@ prueba = await probarConversacion({ slug: SLUG, texto: '2' });
 comprobar('Chat de prueba: sigue la conversación (opción 2)', prueba.respuestas.join(' | '), ['Servicios y precios']);
 prueba = await probarConversacion({ slug: SLUG, texto: 'hola', reiniciar: true });
 comprobar('Chat de prueba: empezar de nuevo vuelve a saludar', prueba.respuestas.join(' | '), ['Bienvenid']);
-// Chat @lid SIN número (WhatsApp no manda senderPn): el bot aprende el número al enviarle la confirmación
+// Chat @lid SIN número (el mensaje no trae remoteJidAlt): el bot aprende el número al enviarle la confirmación
 const telMayer = `+57301${base}`;
 const lidMayer = { remoteJid: `77${base}11@lid` };
 lidsFalsos[dig(telMayer)] = lidMayer.remoteJid;
