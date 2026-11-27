@@ -206,8 +206,12 @@ function renderEncabezado() {
   $('estado-apertura').innerHTML = `<span class="w-2 h-2 rounded-full ${estado.abierto ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'}"></span>
     <span class="${estado.abierto ? 'text-emerald-300' : 'text-gray-400'}">${escapeHtml(estado.texto)}</span>`;
 
-  $('barber-stars').textContent = barberia.totalValoraciones ? Number(barberia.calificacion || 5).toFixed(1) : '5.0';
-  $('barber-reviews').textContent = `(${barberia.totalValoraciones || 0} opiniones)`;
+  // Sin opiniones no se muestra un "5.0" inventado: se dice que es nueva
+  const totalOpiniones = Number(barberia.totalValoraciones || 0);
+  $('barber-stars').textContent = totalOpiniones ? Number(barberia.calificacion || 0).toFixed(1) : 'Nueva';
+  $('barber-reviews').textContent = totalOpiniones
+    ? `(${totalOpiniones} ${totalOpiniones === 1 ? 'opinión' : 'opiniones'})`
+    : '· sin opiniones aún';
 
   if (barberia.direccion) {
     $('barber-address').querySelector('span').textContent = barberia.direccion;
@@ -521,8 +525,12 @@ function renderCalendario(reubicar) {
     const disponible = laborable && (turnos === null || turnos > 0);
     const elegido = reservaActual.fechaSeleccionada === iso;
     const etiqueta = i === 0 ? 'hoy' : i === 1 ? 'mañ' : DIAS_CORTOS[diaSemana(iso)];
-    const pie = !laborable ? 'Cerrado' : turnos === 0 ? 'Lleno' : '';
-    const lleno = laborable && turnos === 0;
+    // Hoy sin turnos porque ya pasó la hora (no porque esté reservado): "Ya cerró", no "Lleno"
+    const yaCerro = i === 0 && turnos === 0 &&
+      TurnosBF.calcular({ ...barberia, citasOcupadas: [] }, servicioActual(), iso, hayVariosBarberos() ? reservaActual.barberoId : null,
+        { anticipacion: barberia.minutosAnticipacion ?? 30, excluir: citaReagendarInfo }).length === 0;
+    const pie = !laborable ? 'Cerrado' : yaCerro ? 'Ya cerró' : turnos === 0 ? 'Lleno' : '';
+    const lleno = laborable && turnos === 0 && !yaCerro; // lleno: se puede tocar para pedir aviso si se libera
     html += `<button type="button" data-fecha="${iso}" ${disponible || lleno ? '' : 'disabled'}
       class="w-14 flex-shrink-0 py-2 rounded-2xl border text-center transition ${elegido
         ? 'bg-blue-600 border-blue-500 text-white shadow-lg shadow-blue-600/25'

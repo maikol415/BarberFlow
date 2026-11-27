@@ -3,6 +3,7 @@ import QRCode from 'qrcode';
 import http from 'http';
 import fetch from 'node-fetch';
 import crypto from 'crypto';
+import { AsyncLocalStorage } from 'node:async_hooks';
 import { crearAlmacenSesion } from './auth-postgres.js';
 
 // BOT_PORT: cuando el bot corre dentro del mismo servicio que la API (PORT es el de la API)
@@ -143,10 +144,13 @@ async function importarMapeoLidAntiguo(sock, almacen) {
   if (mapeoAntiguoImportado || !almacen?.leerMapeoLidAntiguo || !mapeoLid(sock)) return;
   mapeoAntiguoImportado = true;
   try {
+    // Una sola vez en la vida de la sesión (marca guardada): si se repitiera en cada arranque, podría
+    // pisar lo que Baileys aprendió después (p. ej. un cliente que cambió de número)
+    if (await marcaGuardada('bf-migracion', 'lid-v7')) return;
     const pares = await almacen.leerMapeoLidAntiguo();
-    if (!pares.length) return;
-    await mapeoLid(sock).storeLIDPNMappings(pares);
-    console.log(`Relación @lid ↔ número de la versión anterior: ${pares.length} cliente(s) revisados en Baileys.`);
+    if (pares.length) await mapeoLid(sock).storeLIDPNMappings(pares);
+    guardarMarca('bf-migracion', 'lid-v7');
+    console.log(`Relación @lid ↔ número de la versión anterior: ${pares.length} cliente(s) pasados a Baileys (una sola vez).`);
   } catch (e) {
     mapeoAntiguoImportado = false;
     console.error('No se pudo pasar la relación @lid ↔ número anterior a Baileys:', e.message);
@@ -262,7 +266,10 @@ export function estadoPausa(jids, barberia, ahoraMs = Date.now()) {
 // (un número, MENÚ, CANCELAR, REAGENDAR, volver), el bot le contesta aunque el barbero esté escribiendo.
 // La charla normal ("jajaja", "ya voy") sigue siendo del barbero: ahí el bot no se mete.
 const ultimaRespuestaBot = new Map(); // chat -> cuándo le respondió el bot por última vez
-const ordenesAlBot = new Set();       // chats cuyo mensaje actual es una orden directa al bot
+// Datos del mensaje que se está atendiendo (cada mensaje tiene los suyos, aunque lleguen varios a la vez):
+// { ordenAlBot } = el cliente le dio una orden directa al bot o respondió una pregunta del bot.
+// Los avisos que manda la API (confirmación de reserva, recordatorios...) no tienen contexto: siempre se envían.
+const contextoMensaje = new AsyncLocalStorage();
 export const MINUTOS_MENU_ACTIVO = 10;
 export function esOrdenParaBot(textoN, soloNumeros) {
   return !!soloNumeros || pideMenuExplicito(textoN) || /\bcancel/.test(textoN) || /\breagend/.test(textoN) ||
@@ -429,8 +436,10 @@ const enviarMensajeHumano = async (sock, remitente, textoRespuesta) => {
     await sock.sendPresenceUpdate('composing', remitente);
     await new Promise(r => setTimeout(r, tiempoTotal));
     // Mientras el bot "escribía", ¿el barbero respondió a mano en ese chat? Entonces el bot no se mete,
-    // salvo que el cliente le haya dado una orden directa al bot (un número del menú, MENÚ, CANCELAR...)
-    if (!ordenesAlBot.has(remitente) && barberoEscribioDesde(remitente, inicio)) {
+    // salvo que el cliente le haya dado una orden directa al bot (un número del menú, MENÚ, CANCELAR, "sí" a una
+    // pregunta del bot...) o que sea un aviso que manda la API (sin contexto de mensaje)
+    const contexto = contextoMensaje.getStore();
+    if (contexto && !contexto.ordenAlBot && barberoEscribioDesde(remitente, inicio)) {
       await sock.sendPresenceUpdate('paused', remitente).catch(() => {});
       console.log(`[Atención humana] El barbero respondió en ${remitente} mientras el bot escribía: el bot no envía su mensaje.`);
       return false;
@@ -647,6 +656,44 @@ const minutosATextoBot = min => {
   const h = Math.floor(min / 60), m = min % 60;
   return `${h % 12 || 12}:${String(m).padStart(2, '0')} ${h < 12 ? 'a. m.' : 'p. m.'}`;
 };
+
+// Horario real de la barbería (el mismo de la pestaña Horarios y de la página de reservas), en texto:
+//   "Todos los días: 11:00 a. m. – 9:00 p. m."  o  "Lunes a viernes: 9:00 a. m. – 7:00 p. m.\nSábado: … \nDomingo: cerrado"
+// Si no hay horario por días se usa hora de apertura/cierre y días laborales; como último recurso, el texto escrito a mano.
+const NOMBRES_DIA = ['domingo', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado'];
+export function textoHorario(barberia) {
+  let semanal = barberia?.horarioSemanal;
+  if (typeof semanal === 'string') { try { semanal = JSON.parse(semanal); } catch { semanal = null; } }
+  const textoDia = (d) => {
+    const dia = semanal?.[String(d)];
+    if (dia) {
+      const rangos = (dia.cerrado ? [] : (dia.rangos || []))
+        .map(r => [horaAMinutos(r.desde), horaAMinutos(r.hasta)])
+        .filter(([a, b]) => a !== null && b !== null && b > a)
+        .sort((x, y) => x[0] - y[0]);
+      return rangos.length ? rangos.map(([a, b]) => `${minutosATextoBot(a)} – ${minutosATextoBot(b)}`).join(' y ') : 'cerrado';
+    }
+    const laborales = String(barberia?.diasLaborales ?? '').split(',').map(s => s.trim()).filter(Boolean);
+    const abre = horaAMinutos(barberia?.horaApertura), cierra = horaAMinutos(barberia?.horaCierre);
+    if (!laborales.length || abre === null || cierra === null) return null;
+    return laborales.includes(String(d)) ? `${minutosATextoBot(abre)} – ${minutosATextoBot(cierra)}` : 'cerrado';
+  };
+  const orden = [1, 2, 3, 4, 5, 6, 0]; // de lunes a domingo
+  const textos = orden.map(textoDia);
+  if (textos.some(t => t === null)) return barberia?.horarioTexto || '';
+  if (textos.every(t => t === textos[0])) return textos[0] === 'cerrado' ? '' : `Todos los días: ${textos[0]}`;
+  const grupos = [];
+  orden.forEach((d, i) => {
+    const ultimo = grupos[grupos.length - 1];
+    if (ultimo && ultimo.texto === textos[i]) ultimo.dias.push(d);
+    else grupos.push({ texto: textos[i], dias: [d] });
+  });
+  return grupos.map(({ texto, dias }) => {
+    const primero = NOMBRES_DIA[dias[0]], ultimo = NOMBRES_DIA[dias[dias.length - 1]];
+    const nombre = dias.length === 1 ? primero : dias.length === 2 ? `${primero} y ${ultimo}` : `${primero} a ${ultimo}`;
+    return `${nombre.charAt(0).toUpperCase() + nombre.slice(1)}: ${texto}`;
+  }).join('\n');
+}
 
 // Aviso de hoy según los bloqueos del barbero: "Hoy no atendemos: Festivo" o "Hoy tenemos descanso: Almuerzo 12:30 – 2:00 p. m."
 export function avisoDeHoy(barberia, ahoraMs = Date.now()) {
@@ -1429,7 +1476,13 @@ export function mensajeYaAtendido(jid, id, ahoraMs = Date.now()) {
 }
 
 // ----------------- LÓGICA DE CONVERSACIÓN -----------------
-export async function procesarMensajeEntrante(sock, m) {
+// Cada mensaje se atiende con su propio contexto (ver contextoMensaje), aunque lleguen varios a la vez
+export function procesarMensajeEntrante(sock, m) {
+  return contextoMensaje.run({ ordenAlBot: false }, () => atenderMensaje(sock, m));
+}
+
+async function atenderMensaje(sock, m) {
+    const contexto = contextoMensaje.getStore();
     try {
       if (!m.messages || m.messages.length === 0) return;
       // Al reconectar pueden llegar varios mensajes juntos: se atiende cada uno
@@ -1511,10 +1564,19 @@ export async function procesarMensajeEntrante(sock, m) {
       // El barbero está hablando personalmente con este cliente: no interrumpir
       const jidsDelChat = [remitente, telSoloDigitos && `${telSoloDigitos}@s.whatsapp.net`, telSoloDigitos && lidPorTelefono.get(telSoloDigitos)];
       const pausa = sock.esPrueba ? null : estadoPausa(jidsDelChat, barberia);
-      // ¿Es una orden directa para el bot? (MENÚ, o un número/CANCELAR/REAGENDAR justo después de que el bot le escribió)
-      const ordenAlBot = pideMenuExplicito(textoN) ||
-        (esOrdenParaBot(textoN, soloNumeros) && jidsDelChat.some(j => j && botLeEscribioHacePoco(j, ahora)));
-      if (ordenAlBot) ordenesAlBot.add(remitente);
+      // ¿Es una orden directa para el bot?
+      //  - MENÚ, siempre
+      //  - un número / CANCELAR / REAGENDAR justo después de que el bot le escribió
+      //  - la respuesta a una pregunta que el bot le está haciendo ("sí", "no", 1, 2 al confirmar una cancelación,
+      //    o "SI" a la confirmación de su cita)
+      const botEscribioHacePoco = jidsDelChat.some(j => j && botLeEscribioHacePoco(j, ahora));
+      const nivelPrevio = estadoCliente.get(remitente)?.nivel;
+      const respondePreguntaDelBot = botEscribioHacePoco &&
+        ['CONFIRMAR_CANCELACION', 'CITA_MANTENIDA', 'MIS_CITAS', 'MIS_CITAS_CUAL'].includes(nivelPrevio) &&
+        (!!soloNumeros || INTENCION.confirmar.test(textoN) || INTENCION.negacion.test(textoN) || /^(no|si|sí)\b/.test(textoN));
+      let ordenAlBot = pideMenuExplicito(textoN) || (esOrdenParaBot(textoN, soloNumeros) && botEscribioHacePoco) || respondePreguntaDelBot;
+      if (!ordenAlBot && pausa && INTENCION.confirmar.test(textoN) && await preguntaCitaDe(jidsDelChat)) ordenAlBot = true;
+      contexto.ordenAlBot = ordenAlBot;
       if (pausa && ordenAlBot) {
         // El barbero está conversando, pero el cliente está usando el menú: el bot le responde la opción.
         // La pausa sigue: si el cliente vuelve a charlar, eso queda para el barbero.
@@ -1524,7 +1586,7 @@ export async function procesarMensajeEntrante(sock, m) {
         console.log(`[Atención humana] ${remitente} escribió, pero el barbero está atendiendo ese chat: el bot no responde.`);
         return;
       }
-      if (pausa === 'parcial') {
+      if (pausa === 'parcial' && !ordenAlBot) {
         // El barbero lleva más de 10 minutos sin escribir y el cliente saludó o pidió algo claro: el bot retoma el chat
         liberarPausa(jidsDelChat);
         console.log(`[Atención humana] ${remitente} escribió "${texto}" y el barbero no escribe hace más de ${MINUTOS_PAUSA_TOTAL} min: el bot retoma la conversación.`);
@@ -1998,9 +2060,11 @@ export async function procesarMensajeEntrante(sock, m) {
         const mapa = barberia.direccion
           ? `\n🗺️ https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(`${barberia.nombre} ${barberia.direccion}`)}`
           : '';
+        // El horario sale de la pestaña Horarios (el mismo que usa la página para ofrecer turnos)
+        const horario = textoHorario(barberia);
         const ubi = `📍 *Dónde estamos*\n\n` +
           `${barberia.direccion || 'Escríbenos y te compartimos la ubicación.'}${mapa}\n\n` +
-          (barberia.horarioTexto ? `🕘 *Horario:* ${barberia.horarioTexto}\n\n` : '') +
+          (horario ? `🕘 *Horario:*${horario.includes('\n') ? '\n' : ' '}${horario}\n\n` : '') +
           (avisoDeHoy(barberia) ? `${avisoDeHoy(barberia)}\n\n` : '') +
           `📅 Reserva y evita la fila: ${linkReservas()}\n\n` +
           `_Responde *0* para volver al menú._`;
@@ -2084,11 +2148,7 @@ export async function procesarMensajeEntrante(sock, m) {
     } finally {
       // Si no hubo respuesta (silencio), que el saludo pendiente no se cuele en un aviso posterior
       const jid = m?.messages?.[0]?.key?.remoteJid;
-      if (jid) {
-        saludoPendiente.delete(jid);
-        // Solo al terminar el mensaje del cliente (no cuando llega uno del barbero en medio)
-        if (!m?.messages?.[0]?.key?.fromMe) ordenesAlBot.delete(jid);
-      }
+      if (jid) saludoPendiente.delete(jid);
     }
 }
 

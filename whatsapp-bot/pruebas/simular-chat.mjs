@@ -612,6 +612,49 @@ comprobar('MENÚ se reconoce escrito de muchas formas', formasMenu.filter(t => !
 const noMenu = ['Manù', 'menudo', 'el menú de hoy está rico', 'ese menu no sirve', 'ojalá tuvieras un meno'];
 comprobar('Frases que solo mencionan el menú no cuentan', noMenu.filter(t => pideMenuExplicito(normalizarTexto(t))).join(', ') || 'ninguna', ['ninguna']);
 
+// ---------- Dos mensajes a la vez: la orden de uno no se pierde por el otro ----------
+const chatDosALaVez = { remoteJid: `5731133${base}@s.whatsapp.net` };
+await escribeBarbero(chatDosALaVez.remoteJid, 'quiubo, ya te atiendo');
+const enviadosALaVez = [];
+const sockLento = {
+  ...sockFalso,
+  sendMessage: async (jid, c) => { enviadosALaVez.push(c.text || ''); },
+  // El menú tarda en "escribirse": mientras tanto llega el otro mensaje del cliente y el barbero escribe
+  sendPresenceUpdate: async (estado, jid) => {
+    if (estado !== 'composing') return;
+    await procesarMensajeEntrante(sockFalso, { type: 'notify', messages: [{ key: { remoteJid: jid, fromMe: false, id: `SIM${++contador}` }, message: { conversation: '??' } }] });
+    await escribeBarbero(jid, 'mira el menú');
+  }
+};
+await procesarMensajeEntrante(sockLento, { type: 'notify', messages: [{ key: { remoteJid: chatDosALaVez.remoteJid, fromMe: false, id: `SIM${++contador}` }, message: { conversation: 'menú' } }] });
+comprobar('MENÚ se envía aunque llegue otro mensaje y el barbero escriba al mismo tiempo', enviadosALaVez.join(' '), ['Mis citas']);
+
+// ---------- "SI" a la confirmación de la cita, con el barbero hablando en el chat ----------
+const telSiPausa = `+57313${base}`;
+const chatSiPausa = { remoteJid: `${dig(telSiPausa)}@s.whatsapp.net` };
+const citaSiPausa = await crearCita(telSiPausa, 'Sara Pausa', pasado, '02:20 PM');
+await manejarNotificarCita({ ...payloadBase, citaId: citaSiPausa.id, codigoReserva: citaSiPausa.codigoReserva, nombreCliente: 'Sara Pausa', telefonoCliente: telSiPausa, fecha: pasado, hora: citaSiPausa.hora });
+await escribeBarbero(chatSiPausa.remoteJid, 'Hola Sara, te espero');
+r = await cliente(chatSiPausa, 'Si');
+comprobar('Con el barbero hablando, "SI" a la confirmación igual confirma la cita', r, ['quedó *confirmada*']);
+r = await cliente(chatSiPausa, 'si señor jaja');
+comprobar('... pero la charla sigue siendo del barbero', r || 'silencio', ['silencio']);
+
+// ---------- Confirmación de la cancelación con el barbero escribiendo al mismo tiempo ----------
+const telCancelaPausa = `+57314${base}`;
+const chatCancelaPausa = { remoteJid: `${dig(telCancelaPausa)}@s.whatsapp.net` };
+await crearCita(telCancelaPausa, 'Luis Cancela', pasado, '03:40 PM');
+await cliente(chatCancelaPausa, 'Hola');
+await cliente(chatCancelaPausa, 'cancelar');
+const enviadosCancela = [];
+const sockCancela = {
+  ...sockFalso,
+  sendMessage: async (jid, c) => { enviadosCancela.push(c.text || ''); },
+  sendPresenceUpdate: async (estado, jid) => { if (estado === 'composing') await escribeBarbero(jid, 'listo parce'); }
+};
+await procesarMensajeEntrante(sockCancela, { type: 'notify', messages: [{ key: { remoteJid: chatCancelaPausa.remoteJid, fromMe: false, id: `SIM${++contador}` }, message: { conversation: 'si' } }] });
+comprobar('"Sí, cancelar": el cliente recibe la confirmación aunque el barbero escriba al mismo tiempo', enviadosCancela.join(' '), ['cancelada correctamente']);
+
 // ---------- El mismo mensaje llega dos veces: se responde una sola ----------
 const chatDoble = { remoteJid: `5731144${base}@s.whatsapp.net` };
 await cliente(chatDoble, 'Hola');

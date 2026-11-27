@@ -16,13 +16,13 @@
     window.__slugBarberia = (new URLSearchParams(location.search).get('b') || (location.pathname.match(/^\/([a-z0-9][a-z0-9-]*)\/?$/i) || [])[1] || 'barberia-jr').toLowerCase();
     window.__cargaBarberia = fetch('/api/public/barberia/' + encodeURIComponent(window.__slugBarberia));
   </script>
-  <link rel="stylesheet" href="/css/app.css?v=20261126j">
-  <link rel="stylesheet" href="/css/tema.css?v=20261126j">
-  <script src="/js/iconos.js?v=20261126j"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261126k">
+  <link rel="stylesheet" href="/css/tema.css?v=20261126k">
+  <script src="/js/iconos.js?v=20261126k"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="/js/confetti.browser.min.js?v=20261126j" defer></script>
+  <script src="/js/confetti.browser.min.js?v=20261126k" defer></script>
   <style>
     body { background-color: #0B0F19; color: #F3F4F6; font-family: 'Plus Jakarta Sans', sans-serif; margin: 0; }
     .campo { width: 100%; background: #030712; border: 1px solid #374151; border-radius: 0.75rem; padding: 0.7rem 0.9rem; font-size: 0.9rem; color: #fff; outline: none; transition: border-color .15s; }
@@ -90,7 +90,7 @@
 
         <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-3 text-xs sm:text-sm">
           <span id="estado-apertura" class="inline-flex items-center gap-1.5 font-semibold text-gray-400"></span>
-          <span class="inline-flex items-center gap-1 text-gray-300"><span class="text-amber-400">★</span> <strong id="barber-stars" class="text-white">5.0</strong> <span id="barber-reviews" class="text-gray-500">(0)</span></span>
+          <span class="inline-flex items-center gap-1 text-gray-300"><span class="text-amber-400">★</span> <strong id="barber-stars" class="text-white"></strong> <span id="barber-reviews" class="text-gray-500"></span></span>
         </div>
         <p id="barber-address" class="oculto text-xs text-gray-500 mt-2 flex items-center gap-1.5"><i data-lucide="map-pin" class="w-3.5 h-3.5"></i> <span></span></p>
       </div>
@@ -338,9 +338,9 @@
     </div>
   </footer>
 
-  <script src="/js/tema.js?v=20261126j"></script>
-  <script src="/js/avisos.js?v=20261126j"></script>
-  <script src="/js/turnos.js?v=20261126j"></script>
-  <script src="/js/client.js?v=20261126j"></script>
+  <script src="/js/tema.js?v=20261126k"></script>
+  <script src="/js/avisos.js?v=20261126k"></script>
+  <script src="/js/turnos.js?v=20261126k"></script>
+  <script src="/js/client.js?v=20261126k"></script>
 </body>
 </html>

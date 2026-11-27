@@ -12,8 +12,8 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/bf-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="/icons/bf-64.png">
   <link rel="apple-touch-icon" href="/icons/bf-apple-180.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126j">
-  <script src="/js/iconos.js?v=20261126j"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261126k">
+  <script src="/js/iconos.js?v=20261126k"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -298,7 +298,8 @@
             <label class="block text-xs font-semibold text-gray-400 mb-1">Dirección Física</label>
             <input type="text" id="conf-dir" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2 text-sm text-white">
           </div>
-          <div>
+          <!-- Ya no se usa: el bot muestra el horario real de la pestaña Horarios (se deja oculto para no perder el dato) -->
+          <div class="hidden">
             <label class="block text-xs font-semibold text-gray-400 mb-1">Texto de Horario General</label>
             <input type="text" id="conf-horario" placeholder="Lunes a Sábado 9:00 AM - 8:00 PM" class="w-full bg-gray-950 border border-gray-700 rounded-xl px-3.5 py-2 text-sm text-white">
           </div>
@@ -1092,11 +1093,11 @@
     </div>
   </div>
 
-  <script src="/js/tema.js?v=20261126j"></script>
-  <script src="/js/avisos.js?v=20261126j"></script>
-  <script src="/js/turnos.js?v=20261126j"></script>
-  <script src="/js/admin.js?v=20261126j"></script>
-  <script src="/js/notificaciones.js?v=20261126j"></script>
+  <script src="/js/tema.js?v=20261126k"></script>
+  <script src="/js/avisos.js?v=20261126k"></script>
+  <script src="/js/turnos.js?v=20261126k"></script>
+  <script src="/js/admin.js?v=20261126k"></script>
+  <script src="/js/notificaciones.js?v=20261126k"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));
