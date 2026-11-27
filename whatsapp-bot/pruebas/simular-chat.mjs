@@ -612,6 +612,15 @@ comprobar('MENÚ se reconoce escrito de muchas formas', formasMenu.filter(t => !
 const noMenu = ['Manù', 'menudo', 'el menú de hoy está rico', 'ese menu no sirve', 'ojalá tuvieras un meno'];
 comprobar('Frases que solo mencionan el menú no cuentan', noMenu.filter(t => pideMenuExplicito(normalizarTexto(t))).join(', ') || 'ninguna', ['ninguna']);
 
+// ---------- El mismo mensaje llega dos veces: se responde una sola ----------
+const chatDoble = { remoteJid: `5731144${base}@s.whatsapp.net` };
+await cliente(chatDoble, 'Hola');
+const mensajeDoble = { type: 'notify', messages: [{ key: { remoteJid: chatDoble.remoteJid, fromMe: false, id: `DOBLE${base}` }, message: { conversation: '3' } }] };
+enviados.length = 0;
+await procesarMensajeEntrante(sockFalso, mensajeDoble);
+await procesarMensajeEntrante(sockFalso, mensajeDoble);
+comprobar('Un mensaje repetido (mismo id) se responde una sola vez', String(enviados.filter(e => e.jid === chatDoble.remoteJid).length), ['1']);
+
 // ---------- Copia de lo enviado, para reenviarlo si un celular no lo pudo leer ----------
 guardarMensajeEnviado({ key: { id: 'BOT-COPIA-1', remoteJid: '573000000000@s.whatsapp.net' }, message: { conversation: '☀️ Buenos días' } });
 comprobar('Si un celular pide reenviar un mensaje, el bot tiene la copia',

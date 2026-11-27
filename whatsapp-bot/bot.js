@@ -1224,7 +1224,7 @@ export async function probarConversacion({ slug, texto, reiniciar } = {}) {
   };
   await procesarMensajeEntrante(sockPrueba, {
     type: 'notify',
-    messages: [{ key: { remoteJid: JID_CHAT_PRUEBA, fromMe: false, id: `PRUEBA${Date.now()}` }, message: { conversation: mensaje } }]
+    messages: [{ key: { remoteJid: JID_CHAT_PRUEBA, fromMe: false, id: `PRUEBA${Date.now()}${Math.random().toString(36).slice(2, 8)}` }, message: { conversation: mensaje } }]
   });
   return { respuestas, botActivo: cacheBarberia?.botActivo !== false };
 }
@@ -1414,6 +1414,17 @@ async function avisarMensajeIlegible(sock, msg) {
   }
 }
 
+// Mensajes de clientes ya atendidos (chat|id), para no responder dos veces el mismo mensaje
+const mensajesAtendidos = new Map();
+export function mensajeYaAtendido(jid, id, ahoraMs = Date.now()) {
+  if (!id) return false;
+  const clave = `${jid}|${id}`;
+  if (mensajesAtendidos.has(clave)) return true;
+  mensajesAtendidos.set(clave, ahoraMs);
+  if (mensajesAtendidos.size > 5000) for (const [k, t] of mensajesAtendidos) if (ahoraMs - t > 30 * 60 * 1000) mensajesAtendidos.delete(k);
+  return false;
+}
+
 // ----------------- LÓGICA DE CONVERSACIÓN -----------------
 export async function procesarMensajeEntrante(sock, m) {
     try {
@@ -1447,6 +1458,12 @@ export async function procesarMensajeEntrante(sock, m) {
 
       // ⚠️ Ignorar mensajes propios
       if (msg.key.fromMe) return;
+      // El mismo mensaje puede llegar dos veces (p. ej. cuando WhatsApp lo reenvía tras no poderlo leer):
+      // se atiende una sola vez, para no responder doble
+      if (mensajeYaAtendido(remitente, msg.key.id)) {
+        console.log(`[Duplicado] El mensaje ${msg.key.id} de ${remitente} llegó otra vez: no se responde de nuevo.`);
+        return;
+      }
 
       const texto = (
         msg.message.conversation ||
