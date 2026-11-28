@@ -34,7 +34,15 @@ function etiquetaBarbero(barbero) {
 async function initAdmin() {
   const hoyStr = hoyBogotaIso(); // fecha de Colombia (toISOString daba el día siguiente después de las 7 p. m.)
   const inputFechaBloq = document.getElementById('bloq-fecha');
-  if (inputFechaBloq) inputFechaBloq.value = hoyStr;
+  if (inputFechaBloq) {
+    inputFechaBloq.value = hoyStr;
+    // Con Repetir activo y un solo día marcado, ese día sigue a la fecha elegida
+    inputFechaBloq.addEventListener('change', () => {
+      if (!document.getElementById('bloq-repetir')?.checked) return;
+      if (diasRepetirForm.size <= 1 && inputFechaBloq.value) alternarRepetirBloqueo();
+      else resumenRepetirBloqueo();
+    });
+  }
 
   await cargarPerfil();
   await cargarCitas();
@@ -82,6 +90,7 @@ async function cargarPerfil() {
     renderListaServicios(barberiaActual.servicios || []);
     renderListaMiembros(barberiaActual.miembros || []);
     renderListaBloqueos(barberiaActual.bloqueos || []);
+    pintarBotonesPausa();
 
     // Cargar datos de Bot de WhatsApp
     const chkBot = document.getElementById('conf-bot-activo');
@@ -813,33 +822,85 @@ function renderListaBloqueos(bloqueos) {
     return;
   }
 
-  // Días completos seguidos con el mismo motivo se muestran juntos ("jue 26 nov – sáb 28 nov · 3 días")
+  // Días completos seguidos con el mismo motivo se muestran juntos ("jue 26 nov – sáb 28 nov · 3 días").
+  // Descansos con la misma hora y motivo en varios días (almuerzo repetido) también: "Se repite lunes a sábado".
   const grupos = [];
+  const repetidos = new Map();
   proximos.forEach(b => {
     const diaCompleto = !b.hora || b.hora === 'TODO_EL_DIA';
+    if (!diaCompleto) {
+      const clave = `${b.hora}|${b.motivo || ''}`;
+      if (repetidos.has(clave)) { repetidos.get(clave).items.push(b); return; }
+      const g = { repetido: true, motivo: b.motivo, hora: b.hora, items: [b] };
+      repetidos.set(clave, g);
+      grupos.push(g);
+      return;
+    }
     const ultimo = grupos[grupos.length - 1];
-    if (diaCompleto && ultimo?.diaCompleto && ultimo.motivo === b.motivo && sumarDiasIso(ultimo.hasta, 1) === b.fecha) {
+    if (ultimo?.diaCompleto && ultimo.motivo === b.motivo && sumarDiasIso(ultimo.hasta, 1) === b.fecha) {
       ultimo.hasta = b.fecha;
       ultimo.ids.push(b.id);
     } else {
-      grupos.push({ diaCompleto, motivo: b.motivo, desde: b.fecha, hasta: b.fecha, hora: b.hora, ids: [b.id] });
+      grupos.push({ diaCompleto: true, motivo: b.motivo, desde: b.fecha, hasta: b.fecha, hora: b.hora, ids: [b.id] });
     }
   });
 
+  const icono = completo => `
+    <span class="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center ${completo ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}">
+      <i data-lucide="${completo ? 'calendar-x' : 'clock'}" class="w-5 h-5"></i>
+    </span>`;
+  const botonCambiar = id => `<button onclick="editarBloqueo(${id})" class="text-xs px-3 py-2 rounded-xl text-blue-200 bg-blue-500/10 border border-blue-500/25 hover:bg-blue-500/20 font-semibold flex-shrink-0" aria-label="Cambiar la hora">✏️</button>`;
+  const botonQuitar = (ids, texto = 'Quitar') => `<button onclick="eliminarBloqueos([${ids.join(',')}])" class="text-xs px-3 py-2 rounded-xl text-gray-300 bg-gray-800 hover:bg-gray-700 font-semibold flex-shrink-0">${texto}</button>`;
+
   container.innerHTML = grupos.map(g => {
+    if (g.repetido && g.items.length === 1) {
+      const b = g.items[0];
+      return `
+        <div class="p-3 rounded-2xl bg-gray-950/60 border border-gray-800 flex items-center gap-2.5">
+          ${icono(false)}
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-bold text-white">${escapeHtml(tituloDia(b.fecha))}</p>
+            <p class="text-xs text-gray-400 truncate">${escapeHtml(textoHorasBloqueo(b.hora))}${b.motivo ? ` · ${escapeHtml(b.motivo)}` : ''}</p>
+          </div>
+          ${botonCambiar(b.id)}${botonQuitar([b.id])}
+        </div>`;
+    }
+    if (g.repetido) {
+      const dias = new Set(g.items.map(b => TurnosBF.diaSemana(b.fecha)));
+      const ultimo = g.items[g.items.length - 1].fecha;
+      return `
+        <details class="rounded-2xl bg-gray-950/60 border border-gray-800 group">
+          <summary class="p-3 flex items-center gap-2.5 cursor-pointer list-none">
+            ${icono(false)}
+            <div class="min-w-0 flex-1">
+              <p class="text-sm font-bold text-white truncate">${escapeHtml(g.motivo || 'Descanso')}</p>
+              <p class="text-xs text-gray-200">${escapeHtml(textoHorasBloqueo(g.hora))}</p>
+              <p class="text-[11px] text-gray-400">🔁 ${escapeHtml(textoDiasSemana(dias))} · hasta el ${escapeHtml(fechaCorta(ultimo))} · ${g.items.length} días</p>
+            </div>
+            <span class="text-[11px] font-semibold text-blue-300 flex-shrink-0 group-open:hidden">Ver días</span>
+            <span class="text-[11px] font-semibold text-blue-300 flex-shrink-0 hidden group-open:inline">Ocultar</span>
+          </summary>
+          <div class="px-3 pb-3 space-y-1.5">
+            ${g.items.map(b => `
+              <div class="flex items-center gap-2 pl-2 py-1 border-t border-gray-800/70">
+                <p class="text-xs text-gray-300 flex-1 min-w-0 truncate">${escapeHtml(tituloDia(b.fecha))}</p>
+                ${botonCambiar(b.id)}${botonQuitar([b.id])}
+              </div>`).join('')}
+            <div class="pt-2">${botonQuitar(g.items.map(b => b.id), `Quitar los ${g.items.length} días`)}</div>
+          </div>
+        </details>`;
+    }
     const varios = g.ids.length > 1;
     const titulo = varios ? `${fechaCorta(g.desde)} – ${fechaCorta(g.hasta)}` : tituloDia(g.desde);
     const detalle = varios ? `${g.ids.length} días` : textoHorasBloqueo(g.hora);
     return `
       <div class="p-3 rounded-2xl bg-gray-950/60 border border-gray-800 flex items-center gap-3">
-        <span class="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center ${g.diaCompleto ? 'bg-red-500/15 text-red-300' : 'bg-amber-500/15 text-amber-300'}">
-          <i data-lucide="${g.diaCompleto ? 'calendar-x' : 'clock'}" class="w-5 h-5"></i>
-        </span>
+        ${icono(true)}
         <div class="min-w-0 flex-1">
           <p class="text-sm font-bold text-white">${escapeHtml(titulo)}</p>
           <p class="text-xs text-gray-400 truncate">${escapeHtml(detalle)}${g.motivo ? ` · ${escapeHtml(g.motivo)}` : ''}</p>
         </div>
-        <button onclick="eliminarBloqueos([${g.ids.join(',')}])" class="text-xs px-3 py-2 rounded-xl text-gray-300 bg-gray-800 hover:bg-gray-700 font-semibold flex-shrink-0">Quitar</button>
+        ${botonQuitar(g.ids)}
       </div>`;
   }).join('');
   lucide.createIcons();
@@ -962,7 +1023,10 @@ function renderDiasHorario() {
         </div>
         ${abierto ? `
           <div class="mt-2.5 space-y-2">${rangos}</div>
-          ${dia.rangos.length < 4 ? `<button type="button" data-agregar="${d}" class="mt-2 text-[11px] font-semibold text-blue-300 hover:text-blue-200">+ Agregar otro rango (ej. después del almuerzo)</button>` : ''}`
+          <div class="mt-2 flex flex-wrap gap-x-4 gap-y-1">
+            ${dia.rangos.length < 4 ? `<button type="button" data-agregar="${d}" class="text-[11px] font-semibold text-blue-300 hover:text-blue-200">+ Agregar otro rango (ej. después del almuerzo)</button>` : ''}
+            <button type="button" data-copiar="${d}" class="text-[11px] font-semibold text-emerald-300 hover:text-emerald-200">🔁 Copiar a otros días</button>
+          </div>`
         : `<p class="text-[11px] text-gray-600 mt-1">No se reciben citas este día.</p>`}
       </div>`;
   }).join('');
@@ -983,6 +1047,7 @@ function renderDiasHorario() {
     if (!dia.rangos.length) dia.cerrado = true;
     renderDiasHorario();
   });
+  cont.querySelectorAll('[data-copiar]').forEach(b => b.onclick = () => copiarDiaA(Number(b.dataset.copiar)));
   cont.querySelectorAll('[data-agregar]').forEach(b => b.onclick = () => {
     const dia = editorHorario.dias[Number(b.dataset.agregar)];
     const ultimo = dia.rangos[dia.rangos.length - 1];
@@ -993,13 +1058,41 @@ function renderDiasHorario() {
   });
 }
 
-// El horario del lunes se copia a todos los días que estén abiertos
-function copiarLunesATodos() {
-  const lunes = editorHorario.dias[1];
-  if (lunes.cerrado) return avisar('El lunes está cerrado: ábrelo y ponle horas primero.', 'error');
-  for (let d = 0; d <= 6; d++) if (d !== 1 && !editorHorario.dias[d].cerrado) editorHorario.dias[d].rangos = lunes.rangos.map(r => ({ ...r }));
-  renderDiasHorario();
-  avisar('Listo: los días abiertos quedaron con el horario del lunes. Recuerda guardar.', 'info');
+// El horario de un día se copia a los días que el barbero marque (D L M M J V S)
+function copiarDiaA(origen) {
+  const fuente = editorHorario.dias[origen];
+  // Lo que hay escrito en pantalla, aunque aún no se haya salido del campo
+  document.querySelectorAll(`#editor-dias-horario input[type=time][data-dia="${origen}"]`).forEach(inp => {
+    fuente.rangos[Number(inp.dataset.i)][inp.dataset.campo] = inp.value;
+  });
+  const nombre = DIAS_REPETIR[origen][2].toLowerCase();
+  const textoRangos = fuente.rangos.map(r => `${horaLegible(r.desde)} – ${horaLegible(r.hasta)}`).join(' y ').replace(/ /g, ' ');
+  const elegidos = new Set();
+  const fondo = abrirVentanaPanel(`
+    <p class="text-base font-bold text-white">Copiar el horario del ${nombre}</p>
+    <p class="text-sm font-semibold text-gray-200 mt-1">${escapeHtml(textoRangos)}</p>
+    <p class="text-xs text-gray-400 mt-1 leading-relaxed">Marca a qué días se lo quieres poner:</p>
+    <div id="copiar-dias" class="mt-4"></div>
+    <p class="text-[11px] text-gray-500 mt-3">Los días que marques quedan abiertos con ese horario. Los demás no cambian.</p>
+    <div class="grid grid-cols-2 gap-2 mt-5">
+      <button type="button" data-no class="py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700">Cancelar</button>
+      <button type="button" data-si class="py-2.5 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-500">Copiar</button>
+    </div>`);
+  const boton = fondo.querySelector('[data-si]');
+  const actualizar = () => { boton.disabled = !elegidos.size; boton.classList.toggle('opacity-50', !elegidos.size); };
+  montarSelectorDias(fondo.querySelector('#copiar-dias'), elegidos, { cerrados: new Set([origen]), alCambiar: actualizar, motivoCerrado: 'es el día que copias' });
+  actualizar();
+  const cerrar = () => fondo.remove();
+  fondo.querySelector('[data-no]').onclick = cerrar;
+  fondo.onclick = e => { if (e.target === fondo) cerrar(); };
+  boton.onclick = () => {
+    if (!elegidos.size) return;
+    elegidos.forEach(d => { editorHorario.dias[d] = { cerrado: false, rangos: fuente.rangos.map(r => ({ ...r })) }; });
+    cerrar();
+    renderDiasHorario();
+    avisar(`Listo: ${textoDiasSemana(elegidos)} quedaron con el horario del ${nombre}. Toca "Guardar horario" para que tus clientes lo vean.`, 'info');
+    document.getElementById('btn-guardar-horario')?.classList.add('ring-4', 'ring-blue-400/40');
+  };
 }
 
 function payloadBaseBarberia() {
@@ -1037,6 +1130,7 @@ async function guardarHorario() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return avisar(data.message || 'No se pudo guardar el horario.', 'error');
     avisar('¡Horario guardado! Tus clientes ya ven las horas nuevas.');
+    boton.classList.remove('ring-4', 'ring-blue-400/40');
     cargarPerfil();
   } catch (e) {
     avisar('Error al conectar con el servidor.', 'error');
@@ -1284,34 +1378,297 @@ async function guardarEdicionMiembro(e) {
   }
 }
 
-async function bloquearPausaRapida(tipo) {
-  const hoyIso = hoyBogotaIso();
+// ================== Repetir (como la alarma del celular: D L M M J V S) ==================
+const DIAS_REPETIR = [[0, 'D', 'Domingo'], [1, 'L', 'Lunes'], [2, 'M', 'Martes'], [3, 'M', 'Miércoles'], [4, 'J', 'Jueves'], [5, 'V', 'Viernes'], [6, 'S', 'Sábado']];
+const NOMBRE_DIA_CORTO = ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'];
 
-  let horas = [];
-  let motivo = '';
+// "13:00" -> minutos; minutos -> "13:00" (valor de un <input type=time>)
+const minutosAHhmm = m => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
 
-  if (tipo === 'almuerzo') {
-    horas = ['12:30-14:00'];
-    motivo = '🍱 Almuerzo';
-  } else if (tipo === 'tarde') {
-    horas = ['16:30-17:30'];
-    motivo = '☕ Pausa de la Tarde';
+// Días de la semana en que la barbería no abre (no se pueden marcar para repetir)
+function diasCerradosBarberia() {
+  const h = TurnosBF.horarioBarberia(barberiaActual || {});
+  const cerrados = new Set();
+  for (let d = 0; d <= 6; d++) {
+    const dia = h[d] || h[String(d)];
+    if (!dia || dia.cerrado || !(dia.rangos || []).length) cerrados.add(d);
   }
+  // Con varios barberos, el día está abierto si al menos uno trabaja
+  if (TurnosBF.variosBarberos(barberiaActual || {})) {
+    for (const d of [...cerrados]) {
+      const algunoTrabaja = (barberiaActual.miembros || []).some(m => {
+        const propio = horarioMiembro(m);
+        const dia = propio && (propio[d] || propio[String(d)]);
+        return dia && !dia.cerrado && (dia.rangos || []).length;
+      });
+      if (algunoTrabaja) cerrados.delete(d);
+    }
+  }
+  return cerrados;
+}
 
-  for (const h of horas) {
+// Pinta los botones D L M M J V S dentro de `cont`. `seleccion` es un Set que se modifica al tocar.
+function montarSelectorDias(cont, seleccion, { cerrados = new Set(), alCambiar = () => {}, atajos = true, motivoCerrado = 'la barbería no abre' } = {}) {
+  const pintar = () => {
+    cont.innerHTML = `
+      <div class="flex justify-between gap-1">${DIAS_REPETIR.map(([d, letra, nombre]) => {
+        const cerrado = cerrados.has(d), activo = seleccion.has(d) && !cerrado;
+        return `<button type="button" data-dia-rep="${d}" ${cerrado ? 'disabled' : ''} aria-pressed="${activo}"
+          aria-label="${nombre}${cerrado ? ` (${motivoCerrado})` : ''}" title="${nombre}${cerrado ? `: ${motivoCerrado}` : ''}"
+          class="w-9 h-9 sm:w-10 sm:h-10 rounded-full text-sm font-bold transition flex-shrink-0 ${
+            cerrado ? 'bg-gray-900 text-gray-700 line-through cursor-not-allowed'
+              : activo ? 'bg-blue-600 text-white ring-2 ring-blue-400/40' : 'bg-gray-800 text-gray-300 hover:bg-gray-700'}">${letra}</button>`;
+      }).join('')}</div>
+      ${atajos ? `<div class="flex flex-wrap gap-x-3 gap-y-1 mt-2 text-[11px] font-semibold">
+        <button type="button" data-atajo="1,2,3,4,5" class="text-blue-300 hover:text-blue-200">Lunes a viernes</button>
+        <button type="button" data-atajo="1,2,3,4,5,6" class="text-blue-300 hover:text-blue-200">Lunes a sábado</button>
+        <button type="button" data-atajo="0,1,2,3,4,5,6" class="text-blue-300 hover:text-blue-200">Todos los días</button>
+      </div>` : ''}`;
+    cont.querySelectorAll('[data-dia-rep]').forEach(b => b.onclick = () => {
+      const d = Number(b.dataset.diaRep);
+      seleccion.has(d) ? seleccion.delete(d) : seleccion.add(d);
+      pintar(); alCambiar();
+    });
+    cont.querySelectorAll('[data-atajo]').forEach(b => b.onclick = () => {
+      seleccion.clear();
+      b.dataset.atajo.split(',').map(Number).filter(d => !cerrados.has(d)).forEach(d => seleccion.add(d));
+      pintar(); alCambiar();
+    });
+  };
+  pintar();
+}
+
+const OPCIONES_SEMANAS = `
+  <option value="1">Solo esta semana</option>
+  <option value="2">Por 2 semanas</option>
+  <option value="4">Por 4 semanas (1 mes)</option>
+  <option value="8">Por 8 semanas (2 meses)</option>`;
+
+// Fechas que quedan desde `desdeIso`, durante `semanas`, en los días marcados
+function planRepetir(desdeIso, dias, semanas, cerrados = new Set()) {
+  const fechaHasta = sumarDiasIso(desdeIso, 7 * semanas - 1);
+  const fechas = [];
+  for (let iso = desdeIso; iso <= fechaHasta; iso = sumarDiasIso(iso, 1)) {
+    const d = TurnosBF.diaSemana(iso);
+    if (dias.has(d) && !cerrados.has(d)) fechas.push(iso);
+  }
+  return { fechaHasta, fechas };
+}
+
+function textoPlan(fechas) {
+  if (!fechas.length) return 'Marca al menos un día.';
+  if (fechas.length === 1) return `Solo el ${fechaCorta(fechas[0])}.`;
+  return `${fechas.length} días: del ${fechaCorta(fechas[0])} al ${fechaCorta(fechas[fechas.length - 1])}.`;
+}
+
+// "lunes a sábado", "todos los días" o "lun, mié, vie"
+function textoDiasSemana(dias) {
+  const orden = [1, 2, 3, 4, 5, 6, 0].filter(d => dias.has(d));
+  const clave = orden.join(',');
+  if (clave === '1,2,3,4,5,6,0') return 'todos los días';
+  if (clave === '1,2,3,4,5,6') return 'lunes a sábado';
+  if (clave === '1,2,3,4,5') return 'lunes a viernes';
+  return orden.map(d => NOMBRE_DIA_CORTO[d]).join(', ');
+}
+
+// ================== Almuerzo y pausa de la tarde: el barbero elige la hora y los días ==================
+const PAUSAS_RAPIDAS = {
+  almuerzo: { titulo: '🍱 Almuerzo', motivo: '🍱 Almuerzo', desde: '12:30', hasta: '14:00' },
+  tarde: { titulo: '☕ Pausa de la tarde', motivo: '☕ Pausa de la Tarde', desde: '16:30', hasta: '17:30' }
+};
+
+function clavePausa(tipo) { return `bf_pausa_${barberiaActual?.slug || ''}_${tipo}`; }
+
+// Lo último que eligió el barbero en este celular (si no, la hora de siempre)
+function preferenciaPausa(tipo) {
+  const base = PAUSAS_RAPIDAS[tipo];
+  try {
+    const p = JSON.parse(localStorage.getItem(clavePausa(tipo)) || 'null');
+    if (p && /^\d{2}:\d{2}$/.test(p.desde) && /^\d{2}:\d{2}$/.test(p.hasta)) return { ...base, ...p };
+  } catch (e) {}
+  return { ...base };
+}
+
+function pintarBotonesPausa() {
+  for (const tipo of Object.keys(PAUSAS_RAPIDAS)) {
+    const el = document.getElementById(`pausa-hora-${tipo}`);
+    if (!el) continue;
+    const p = preferenciaPausa(tipo);
+    el.textContent = `${horaLegible(p.desde)} – ${horaLegible(p.hasta)}`.replace(/ /g, ' ');
+  }
+}
+
+function bloquearPausaRapida(tipo) {
+  const p = preferenciaPausa(tipo);
+  const cerrados = diasCerradosBarberia();
+  const hoy = hoyBogotaIso();
+  const dias = new Set((p.dias || [TurnosBF.diaSemana(hoy)]).filter(d => !cerrados.has(d)));
+  if (!dias.size && !cerrados.has(TurnosBF.diaSemana(hoy))) dias.add(TurnosBF.diaSemana(hoy));
+
+  const fondo = abrirVentanaPanel(`
+    <p class="text-base font-bold text-white">${p.titulo}</p>
+    <p class="text-xs text-gray-400 mt-1 leading-relaxed">Elige la hora y los días. En esas horas tus clientes no podrán reservar.</p>
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <div><label class="block text-xs text-gray-400 mb-1 font-semibold" for="pausa-desde">Desde</label>
+        <input type="time" id="pausa-desde" value="${p.desde}" class="campo"></div>
+      <div><label class="block text-xs text-gray-400 mb-1 font-semibold" for="pausa-hasta">Hasta</label>
+        <input type="time" id="pausa-hasta" value="${p.hasta}" class="campo"></div>
+    </div>
+    <p class="text-xs text-gray-400 font-semibold mt-4 mb-2">🔁 Repetir</p>
+    <div id="pausa-dias"></div>
+    <select id="pausa-semanas" class="campo cursor-pointer mt-3">${OPCIONES_SEMANAS}</select>
+    <p id="pausa-resumen" class="text-[11px] text-gray-400 mt-2"></p>
+    <p id="pausa-error" class="hidden text-xs text-red-300 mt-2"></p>
+    <p class="text-[11px] text-gray-500 mt-2">Si un día almuerzas a otra hora, cámbialo después en "Próximos bloqueos" con ✏️.</p>
+    <div class="grid grid-cols-2 gap-2 mt-5">
+      <button type="button" data-no class="py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700">Cancelar</button>
+      <button type="button" data-si class="py-2.5 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-500">Guardar</button>
+    </div>`);
+  const $f = sel => fondo.querySelector(sel);
+  $f('#pausa-semanas').value = String([1, 2, 4, 8].includes(Number(p.semanas)) ? p.semanas : 1);
+
+  // Si hoy la pausa ya pasó, empieza mañana
+  const inicio = () => {
+    const ahora = TurnosBF.ahoraBogota();
+    return TurnosBF.aMinutos($f('#pausa-hasta').value) <= ahora.minutos ? sumarDiasIso(hoy, 1) : hoy;
+  };
+  const calcular = () => planRepetir(inicio(), dias, Number($f('#pausa-semanas').value), cerrados);
+  const errorHoras = () => {
+    const d = $f('#pausa-desde').value, h = $f('#pausa-hasta').value;
+    if (!d || !h) return 'Elige la hora de inicio y de fin.';
+    if (TurnosBF.aMinutos(h) <= TurnosBF.aMinutos(d)) return 'La hora "Hasta" debe ser después de "Desde". Revisa si quedó a. m. en vez de p. m.';
+    return '';
+  };
+  const actualizar = () => {
+    const err = errorHoras();
+    $f('#pausa-error').textContent = err;
+    $f('#pausa-error').classList.toggle('hidden', !err);
+    $f('#pausa-resumen').textContent = textoPlan(calcular().fechas);
+  };
+  montarSelectorDias($f('#pausa-dias'), dias, { cerrados, alCambiar: actualizar });
+  ['#pausa-desde', '#pausa-hasta', '#pausa-semanas'].forEach(s => $f(s).addEventListener('change', actualizar));
+  ['#pausa-desde', '#pausa-hasta'].forEach(s => $f(s).addEventListener('input', actualizar));
+  actualizar();
+
+  const cerrar = () => fondo.remove();
+  $f('[data-no]').onclick = cerrar;
+  fondo.onclick = e => { if (e.target === fondo) cerrar(); };
+  $f('[data-si]').onclick = async () => {
+    const err = errorHoras();
+    if (err) return actualizar();
+    const { fechaHasta, fechas } = calcular();
+    if (!fechas.length) return avisar('Marca al menos un día para la pausa.', 'error');
+    const desde = $f('#pausa-desde').value, hasta = $f('#pausa-hasta').value, semanas = Number($f('#pausa-semanas').value);
+    const boton = $f('[data-si]');
+    boton.disabled = true; boton.textContent = 'Guardando…';
     try {
       const res = await fetch('/api/admin/bloqueos', {
-        method: 'POST',
-        headers: getAuthHeaders(),
-        body: JSON.stringify({ fecha: hoyIso, hora: h, motivo: motivo })
+        method: 'POST', headers: getAuthHeaders(),
+        body: JSON.stringify({ fecha: fechas[0], fechaHasta, hora: `${desde}-${hasta}`, motivo: p.motivo, diasSemana: [...dias], reemplazar: true })
       });
-      if (res.ok) {
-        avisar(`¡${motivo} bloqueado para hoy con éxito!`);
-        await ofrecerAvisarCitasAfectadas(await res.json().catch(() => ({})), motivo.replace(/^\S+\s/, ''));
-      }
-    } catch (err) {}
-  }
-  cargarPerfil();
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) { boton.disabled = false; boton.textContent = 'Guardar'; return avisar(data.message || 'No se pudo guardar la pausa.', 'error'); }
+      try { localStorage.setItem(clavePausa(tipo), JSON.stringify({ desde, hasta, dias: [...dias], semanas })); } catch (e) {}
+      cerrar();
+      const cuando = fechas.length === 1 ? `el ${fechaCorta(fechas[0])}` : `${fechas.length} días, hasta el ${fechaCorta(fechas[fechas.length - 1])}`;
+      avisar(`¡Listo! ${p.titulo.replace(/^\S+\s/, '')} de ${horaLegible(desde)} a ${horaLegible(hasta)}: ${cuando}.`.replace(/ /g, ' '));
+      pintarBotonesPausa();
+      await ofrecerAvisarCitasAfectadas(data, p.motivo.replace(/^\S+\s/, ''));
+    } catch (e) {
+      boton.disabled = false; boton.textContent = 'Guardar';
+      avisar('Error al conectar con el servidor.', 'error');
+    }
+    cargarPerfil();
+  };
+}
+
+// ----- Cambiar un solo descanso (ej. mañana el almuerzo es de 12:00 a 1:00) -----
+function editarBloqueo(id) {
+  const b = (barberiaActual?.bloqueos || []).find(x => x.id === id);
+  if (!b) return;
+  const intervalo = barberiaActual.intervaloMinutos || 40;
+  let ini, fin;
+  if (b.hora && b.hora.includes('-')) { const [d, h] = b.hora.split('-'); ini = minutosDeHora(d); fin = minutosDeHora(h); }
+  else { ini = minutosDeHora(b.hora); fin = ini + intervalo; }
+
+  const fondo = abrirVentanaPanel(`
+    <p class="text-base font-bold text-white">Cambiar descanso</p>
+    <p class="text-xs text-gray-400 mt-1">${escapeHtml(tituloDia(b.fecha))} · solo este día. Los demás quedan igual.</p>
+    <div class="grid grid-cols-2 gap-3 mt-4">
+      <div><label class="block text-xs text-gray-400 mb-1 font-semibold" for="edit-bloq-desde">Desde</label>
+        <input type="time" id="edit-bloq-desde" value="${minutosAHhmm(ini)}" class="campo"></div>
+      <div><label class="block text-xs text-gray-400 mb-1 font-semibold" for="edit-bloq-hasta">Hasta</label>
+        <input type="time" id="edit-bloq-hasta" value="${minutosAHhmm(Math.min(fin, 23 * 60 + 59))}" class="campo"></div>
+    </div>
+    <label class="block text-xs text-gray-400 mb-1 mt-3 font-semibold" for="edit-bloq-motivo">Motivo (lo ven tus clientes)</label>
+    <input type="text" id="edit-bloq-motivo" maxlength="60" value="${escapeHtml(b.motivo || '')}" class="campo">
+    <p id="edit-bloq-error" class="hidden text-xs text-red-300 mt-2"></p>
+    <div class="grid grid-cols-2 gap-2 mt-5">
+      <button type="button" data-no class="py-2.5 rounded-xl text-sm font-bold bg-gray-800 text-gray-200 hover:bg-gray-700">Cancelar</button>
+      <button type="button" data-si class="py-2.5 rounded-xl text-sm font-bold bg-blue-600 text-white hover:bg-blue-500">Guardar</button>
+    </div>`);
+  const $f = sel => fondo.querySelector(sel);
+  const cerrar = () => fondo.remove();
+  $f('[data-no]').onclick = cerrar;
+  fondo.onclick = e => { if (e.target === fondo) cerrar(); };
+  $f('[data-si]').onclick = async () => {
+    const desde = $f('#edit-bloq-desde').value, hasta = $f('#edit-bloq-hasta').value;
+    const error = !desde || !hasta ? 'Elige la hora de inicio y de fin.'
+      : TurnosBF.aMinutos(hasta) <= TurnosBF.aMinutos(desde) ? 'La hora "Hasta" debe ser después de "Desde". Revisa si quedó a. m. en vez de p. m.' : '';
+    $f('#edit-bloq-error').textContent = error;
+    $f('#edit-bloq-error').classList.toggle('hidden', !error);
+    if (error) return;
+    const motivo = $f('#edit-bloq-motivo').value.trim();
+    try {
+      const res = await fetch(`/api/admin/bloqueos/${id}`, {
+        method: 'PUT', headers: getAuthHeaders(),
+        body: JSON.stringify({ hora: `${desde}-${hasta}`, motivo: motivo || b.motivo })
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return avisar(data.message || 'No se pudo cambiar el descanso.', 'error');
+      cerrar();
+      avisar(`Listo: ${tituloDia(b.fecha).toLowerCase()} queda de ${horaLegible(desde)} a ${horaLegible(hasta)}.`.replace(/ /g, ' '));
+      await ofrecerAvisarCitasAfectadas(data, (motivo || b.motivo || '').replace(/^[^\p{L}\p{N}]+/u, ''));
+    } catch (e) {
+      avisar('Error al conectar con el servidor.', 'error');
+    }
+    cargarPerfil();
+  };
+}
+
+// ----- "Bloquear otro día u horario": opción Repetir -----
+let diasRepetirForm = new Set();
+
+function alternarRepetirBloqueo() {
+  const activo = document.getElementById('bloq-repetir').checked;
+  const opciones = document.getElementById('bloq-repetir-opciones');
+  opciones.classList.toggle('hidden', !activo);
+  if (!activo) return;
+  const fecha = document.getElementById('bloq-fecha').value || hoyBogotaIso();
+  const cerrados = diasCerradosBarberia();
+  diasRepetirForm = new Set([TurnosBF.diaSemana(fecha)].filter(d => !cerrados.has(d)));
+  montarSelectorDias(document.getElementById('bloq-repetir-dias'), diasRepetirForm, { cerrados, alCambiar: resumenRepetirBloqueo });
+  resumenRepetirBloqueo();
+}
+
+function planRepetirForm() {
+  const fecha = document.getElementById('bloq-fecha').value;
+  if (!fecha) return { fechaHasta: null, fechas: [] };
+  return planRepetir(fecha, diasRepetirForm, Number(document.getElementById('bloq-repetir-semanas').value), diasCerradosBarberia());
+}
+
+function resumenRepetirBloqueo() {
+  const el = document.getElementById('bloq-repetir-resumen');
+  if (el) el.textContent = textoPlan(planRepetirForm().fechas);
+}
+
+// Si el Repetir está activo: { fecha, fechaHasta, diasSemana } para enviar; si no, null
+function repetirDelForm() {
+  const tipo = document.getElementById('bloq-tipo').value;
+  if (tipo === 'dias' || !document.getElementById('bloq-repetir').checked) return null;
+  const { fechaHasta, fechas } = planRepetirForm();
+  if (!fechas.length) return { error: 'Marca al menos un día para repetir.' };
+  return { fecha: fechas[0], fechaHasta, diasSemana: [...diasRepetirForm], fechas };
 }
 
 // Imprevisto: cerrar desde ahora hasta la hora de cierre de hoy
@@ -1483,6 +1840,7 @@ function alternarCamposBloqueo() {
   const colRango = document.getElementById('col-bloq-rango');
   const colHora = document.getElementById('col-bloq-hora');
   document.getElementById('col-bloq-hasta').classList.toggle('hidden', tipo !== 'dias');
+  document.getElementById('col-bloq-repetir').classList.toggle('hidden', tipo === 'dias');
   document.getElementById('col-bloq-varias').classList.toggle('hidden', tipo !== 'varias');
   if (tipo === 'varias') {
     horasSueltasElegidas = new Set();
@@ -1508,6 +1866,15 @@ async function agregarBloqueo(e) {
   const fecha = document.getElementById('bloq-fecha').value;
   const tipo = document.getElementById('bloq-tipo').value;
   const motivo = document.getElementById('bloq-motivo').value.trim() || 'Descanso';
+  if (!fecha) return avisar('Elige la fecha.', 'error');
+
+  // 🔁 Repetir: los mismos días de la semana durante varias semanas
+  const repetir = repetirDelForm();
+  if (repetir?.error) return avisar(repetir.error, 'error');
+  const conRepetir = r => repetir ? { ...r, fecha: repetir.fecha, fechaHasta: repetir.fechaHasta, diasSemana: repetir.diasSemana } : r;
+  const textoRepetir = () => repetir && repetir.fechas.length > 1
+    ? `${repetir.fechas.length} días (${textoDiasSemana(new Set(repetir.diasSemana))}), hasta el ${fechaCorta(repetir.fechas[repetir.fechas.length - 1])}`
+    : `el ${fechaCorta(repetir ? repetir.fecha : fecha)}`;
 
   let horaString = 'TODO_EL_DIA';
   let fechaHasta = null;
@@ -1519,7 +1886,7 @@ async function agregarBloqueo(e) {
     let aviso = null, fallos = 0;
     for (const hora of rangos) {
       try {
-        const res = await fetch('/api/admin/bloqueos', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify({ fecha, hora, motivo }) });
+        const res = await fetch('/api/admin/bloqueos', { method: 'POST', headers: getAuthHeaders(), body: JSON.stringify(conRepetir({ fecha, hora, motivo })) });
         const data = await res.json().catch(() => ({}));
         if (!res.ok) { fallos++; continue; }
         aviso = data.avisoPorWhatsApp;
@@ -1528,7 +1895,7 @@ async function agregarBloqueo(e) {
     }
     document.getElementById('bloq-motivo').value = '';
     horasSueltasElegidas = new Set();
-    avisar(fallos ? `Se cerraron ${rangos.length - fallos} de ${rangos.length} horas. Revisa e inténtalo de nuevo.` : `¡Listo! Cerraste ${rangos.length === 1 ? 'esa hora' : 'esas horas'} el ${fechaCorta(fecha)}.`, fallos ? 'error' : 'ok');
+    avisar(fallos ? `Se cerraron ${rangos.length - fallos} de ${rangos.length} horas. Revisa e inténtalo de nuevo.` : `¡Listo! Cerraste ${rangos.length === 1 ? 'esa hora' : 'esas horas'}: ${textoRepetir()}.`, fallos ? 'error' : 'ok');
     await ofrecerAvisarCitasAfectadas({ citasAfectadas: [...afectadas.values()], avisoPorWhatsApp: aviso }, motivo);
     cargarPerfil();
     return;
@@ -1542,25 +1909,24 @@ async function agregarBloqueo(e) {
     const desde = document.getElementById('bloq-desde').value;
     const hasta = document.getElementById('bloq-hasta').value;
     if (!desde || !hasta) {
-      avisar('Por favor selecciona las horas Desde y Hasta.');
+      avisar('Por favor selecciona las horas Desde y Hasta.', 'error');
+      return;
+    }
+    if (TurnosBF.aMinutos(hasta) <= TurnosBF.aMinutos(desde)) {
+      avisar('La hora "Hasta" debe ser después de "Desde". Revisa si quedó a. m. en vez de p. m.', 'error');
       return;
     }
     horaString = `${desde}-${hasta}`;
   } else if (tipo === 'hora') {
     const exacta = document.getElementById('bloq-hora-exacta').value;
     if (!exacta) {
-      avisar('Por favor selecciona la hora a bloquear.');
+      avisar('Por favor selecciona la hora a bloquear.', 'error');
       return;
     }
     horaString = exacta;
   }
 
-  const payload = {
-    fecha: fecha,
-    fechaHasta: fechaHasta,
-    hora: horaString,
-    motivo: motivo
-  };
+  const payload = conRepetir({ fecha, fechaHasta, hora: horaString, motivo });
 
   try {
     const res = await fetch('/api/admin/bloqueos', {
@@ -1571,14 +1937,15 @@ async function agregarBloqueo(e) {
     const data = await res.json().catch(() => ({}));
     if (res.ok) {
       document.getElementById('bloq-motivo').value = '';
-      avisar(fechaHasta ? `¡Listo! Bloqueaste del ${fechaCorta(fecha)} al ${fechaCorta(fechaHasta)}.` : '¡Horario o día bloqueado con éxito!');
+      avisar(repetir ? `¡Listo! Quedó bloqueado ${textoRepetir()}.`
+        : fechaHasta ? `¡Listo! Bloqueaste del ${fechaCorta(fecha)} al ${fechaCorta(fechaHasta)}.` : '¡Horario o día bloqueado con éxito!');
       await ofrecerAvisarCitasAfectadas(data, motivo);
       cargarPerfil();
     } else {
       avisar(data.message || 'No se pudo bloquear.', 'error');
     }
   } catch (err) {
-    avisar('Error al registrar bloqueo.');
+    avisar('Error al registrar bloqueo.', 'error');
   }
 }
 

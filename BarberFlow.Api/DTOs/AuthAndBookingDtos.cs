@@ -111,8 +111,12 @@ public record BloqueoDto(
     [Required] string Fecha,
     string? Hora,
     string? Motivo,
-    string? FechaHasta = null   // Para bloquear varios días seguidos (vacaciones, viaje...)
+    string? FechaHasta = null,  // Para bloquear varios días seguidos (vacaciones, viaje...)
+    List<int>? DiasSemana = null, // Repetir: solo esos días de la semana entre Fecha y FechaHasta (0 = domingo … 6 = sábado)
+    bool Reemplazar = false     // Almuerzo / pausa: cambia el descanso con el mismo motivo que ya hubiera esos días
 );
+
+public record EditarBloqueoDto(string? Hora, string? Motivo);
 
 public record AvisarImprevistoDto(List<int> CitaIds, string? Motivo);
 

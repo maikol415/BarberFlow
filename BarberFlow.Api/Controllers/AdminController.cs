@@ -602,26 +602,99 @@ public class AdminController : ControllerBase
         }
 
         var hora = string.IsNullOrWhiteSpace(dto.Hora) ? "TODO_EL_DIA" : dto.Hora.Trim();
+        var errorHora = ValidarHoraBloqueo(hora);
+        if (errorHora != null) return BadRequest(new { message = errorHora });
         var motivo = string.IsNullOrWhiteSpace(dto.Motivo) ? "Descanso / No disponible" : dto.Motivo.Trim();
         if (motivo.Length > 80) motivo = motivo[..80];
         var esDiaCompleto = hora == "TODO_EL_DIA";
 
-        var fechas = Enumerable.Range(0, (hasta - desde).Days + 1).Select(i => desde.AddDays(i).ToString("yyyy-MM-dd")).ToList();
+        // Repetir: solo los días de la semana elegidos (ej. lunes a sábado durante 4 semanas)
+        var diasSemana = (dto.DiasSemana ?? new List<int>()).Where(d => d >= 0 && d <= 6).ToHashSet();
+        var fechas = Enumerable.Range(0, (hasta - desde).Days + 1).Select(i => desde.AddDays(i))
+            .Where(f => diasSemana.Count == 0 || diasSemana.Contains((int)f.DayOfWeek))
+            .Select(f => f.ToString("yyyy-MM-dd")).ToList();
+        if (fechas.Count == 0)
+            return BadRequest(new { message = "Ninguno de los días elegidos cae en esas fechas." });
+
         var diasYaCerrados = esDiaCompleto
             ? await _context.Bloqueos
                 .Where(b => b.BarberiaId == barberia.Id && fechas.Contains(b.Fecha) && (b.Hora == null || b.Hora == "" || b.Hora == "TODO_EL_DIA"))
                 .Select(b => b.Fecha).ToListAsync()
             : new List<string>();
 
+        // Almuerzo / pausa con nueva hora: el de antes esos días se cambia por el nuevo (no quedan dos almuerzos)
+        var reemplazados = new List<HorarioBloqueo>();
+        if (dto.Reemplazar && !esDiaCompleto)
+        {
+            reemplazados = await _context.Bloqueos
+                .Where(b => b.BarberiaId == barberia.Id && fechas.Contains(b.Fecha) && b.Motivo == motivo
+                            && b.Hora != null && b.Hora != "" && b.Hora != "TODO_EL_DIA")
+                .ToListAsync();
+            _context.Bloqueos.RemoveRange(reemplazados);
+        }
+
         var creados = fechas.Where(f => !diasYaCerrados.Contains(f))
             .Select(f => new HorarioBloqueo { BarberiaId = barberia.Id, Fecha = f, Hora = hora, Motivo = motivo })
             .ToList();
         _context.Bloqueos.AddRange(creados);
         await _context.SaveChangesAsync();
+        foreach (var r in reemplazados.Where(r => r.Hora != hora))
+            ListaEsperaAvisos.TurnoLiberado(barberia.Id, r.Fecha, r.Hora!.Split('-')[0], null);
 
-        // Citas activas que quedan dentro del bloqueo: el panel ofrece avisarles para que reagenden
+        var afectadas = await CitasDentroDelBloqueo(barberia, fechas, hora);
+        return Ok(new { bloqueos = creados, citasAfectadas = afectadas, avisoPorWhatsApp = PublicController.BotAtiende(barberia) });
+    }
+
+    // Cambiar la hora o el motivo de un solo descanso (ej. hoy el almuerzo es de 12:00 a 1:00)
+    [HttpPut("bloqueos/{id}")]
+    public async Task<IActionResult> EditarBloqueo(int id, [FromBody] EditarBloqueoDto dto)
+    {
+        var barberia = await _context.Barberias.FindAsync(ObtenerBarberiaId());
+        if (barberia == null) return NotFound();
+        var bloqueo = await _context.Bloqueos.FirstOrDefaultAsync(b => b.Id == id && b.BarberiaId == barberia.Id);
+        if (bloqueo == null) return NotFound(new { message = "Ese descanso ya no existe." });
+
+        var hora = string.IsNullOrWhiteSpace(dto.Hora) ? "TODO_EL_DIA" : dto.Hora.Trim();
+        var errorHora = ValidarHoraBloqueo(hora);
+        if (errorHora != null) return BadRequest(new { message = errorHora });
+        var horaAnterior = bloqueo.Hora;
+        bloqueo.Hora = hora;
+        if (!string.IsNullOrWhiteSpace(dto.Motivo))
+        {
+            var motivo = dto.Motivo.Trim();
+            bloqueo.Motivo = motivo.Length > 80 ? motivo[..80] : motivo;
+        }
+        await _context.SaveChangesAsync();
+        // Se pudieron abrir horas: avisar a la lista de espera de ese día
+        if (!string.IsNullOrEmpty(horaAnterior) && horaAnterior != hora)
+            ListaEsperaAvisos.TurnoLiberado(barberia.Id, bloqueo.Fecha, horaAnterior == "TODO_EL_DIA" ? null : horaAnterior.Split('-')[0], null);
+
+        var afectadas = await CitasDentroDelBloqueo(barberia, new List<string> { bloqueo.Fecha }, hora);
+        return Ok(new { bloqueo, citasAfectadas = afectadas, avisoPorWhatsApp = PublicController.BotAtiende(barberia) });
+    }
+
+    // "13:00-14:30": la hora final debe ser después de la inicial (en el celular es fácil elegir 2:30 a. m. en vez de p. m.)
+    private static string? ValidarHoraBloqueo(string hora)
+    {
+        if (hora == "TODO_EL_DIA") return null;
+        var conHora = new System.Text.RegularExpressions.Regex(@"\d{1,2}:\d{2}");
+        if (hora.Contains('-'))
+        {
+            var partes = hora.Split('-');
+            if (partes.Length != 2 || !conHora.IsMatch(partes[0]) || !conHora.IsMatch(partes[1]))
+                return "Las horas no son válidas.";
+            if (EstadosCitas.HoraAMinutos(partes[1]) <= EstadosCitas.HoraAMinutos(partes[0]))
+                return "La hora final debe ser después de la hora inicial. Revisa si quedó a. m. en vez de p. m.";
+            return null;
+        }
+        return conHora.IsMatch(hora) ? null : "La hora no es válida.";
+    }
+
+    // Citas activas que quedan dentro del bloqueo: el panel ofrece avisarles para que reagenden
+    private async Task<List<object>> CitasDentroDelBloqueo(Barberia barberia, List<string> fechas, string hora)
+    {
         int ini, fin;
-        if (esDiaCompleto) { ini = 0; fin = 24 * 60; }
+        if (hora == "TODO_EL_DIA") { ini = 0; fin = 24 * 60; }
         else if (hora.Contains('-'))
         {
             var partes = hora.Split('-');
@@ -635,7 +708,7 @@ public class AdminController : ControllerBase
             .Where(c => c.BarberiaId == barberia.Id && fechas.Contains(c.Fecha)
                         && (c.Estado == EstadosCitas.Pendiente || c.Estado == EstadosCitas.Confirmada))
             .ToListAsync();
-        var afectadas = citas
+        return citas
             .Where(c =>
             {
                 var ci = EstadosCitas.HoraAMinutos(c.Hora);
@@ -644,10 +717,8 @@ public class AdminController : ControllerBase
                 return ci < fin && cf > ini && inicio != null && inicio.Value > ahora;
             })
             .OrderBy(c => c.Fecha).ThenBy(c => EstadosCitas.HoraAMinutos(c.Hora))
-            .Select(c => new { c.Id, c.NombreCliente, c.Fecha, c.Hora, Servicio = c.Servicio?.Nombre ?? "", Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "" })
+            .Select(c => (object)new { c.Id, c.NombreCliente, c.Fecha, c.Hora, Servicio = c.Servicio?.Nombre ?? "", Barbero = c.MiembroEquipo != null ? c.MiembroEquipo.Nombre : "" })
             .ToList();
-
-        return Ok(new { bloqueos = creados, citasAfectadas = afectadas, avisoPorWhatsApp = PublicController.BotAtiende(barberia) });
     }
 
     // ----- Agendar en local: ¿la hora elegida se cruza? ¿qué citas habría que correr? -----

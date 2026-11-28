@@ -12,8 +12,8 @@
   <link rel="icon" type="image/png" sizes="32x32" href="/icons/bf-32.png">
   <link rel="icon" type="image/png" sizes="64x64" href="/icons/bf-64.png">
   <link rel="apple-touch-icon" href="/icons/bf-apple-180.png">
-  <link rel="stylesheet" href="/css/app.css?v=20261126k">
-  <script src="/js/iconos.js?v=20261126k"></script>
+  <link rel="stylesheet" href="/css/app.css?v=20261127b">
+  <script src="/js/iconos.js?v=20261127b"></script>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
@@ -462,7 +462,7 @@
       <!-- Horario de atención: cada día con su horario (y cada barbero con el suyo, si se quiere) -->
       <div class="tarjeta p-4 sm:p-6">
         <h3 class="font-bold text-white text-base sm:text-lg">Horario de atención</h3>
-        <p class="text-xs text-gray-400 mt-1 mb-4">Cada día puede tener su propio horario y varios rangos (ej. 9:00 a 12:00 y 2:00 a 8:00 si cierras al almuerzo). Un día cerrado no recibe citas.</p>
+        <p class="text-xs text-gray-400 mt-1 mb-4">Arma un día y toca <b class="text-emerald-300">🔁 Copiar a otros días</b> para no repetirlo día por día. Puedes partir el día en dos (ej. 9:00 a 12:00 y 2:00 a 8:00 si cierras al almuerzo). Un día cerrado no recibe citas.</p>
 
         <div id="fila-horario-quien" class="hidden mb-3">
           <label class="block text-xs font-semibold text-gray-400 mb-1" for="horario-quien">¿Horario de quién?</label>
@@ -476,7 +476,6 @@
         <div id="editor-dias-horario" class="space-y-2"></div>
 
         <div class="mt-4 flex flex-col sm:flex-row gap-2">
-          <button type="button" onclick="copiarLunesATodos()" class="py-2.5 px-4 rounded-xl text-xs font-semibold text-gray-300 bg-gray-800 hover:bg-gray-700">Copiar el horario del lunes a los días abiertos</button>
           <button type="button" id="btn-guardar-horario" onclick="guardarHorario()" class="flex-1 py-2.5 px-6 rounded-xl font-bold text-white bg-blue-600 hover:bg-blue-500 text-sm">Guardar horario</button>
         </div>
       </div>
@@ -514,15 +513,15 @@
         <h3 class="font-bold text-white text-base sm:text-lg">Descansos y días libres</h3>
         <p class="text-xs text-gray-400 mt-1 mb-5">Bloquea un día festivo, tus vacaciones o un rato libre. Esas horas desaparecen del calendario de reservas y tus clientes ven el motivo.</p>
 
-        <p class="text-xs font-semibold text-gray-400 mb-2">Pausas rápidas para hoy</p>
+        <p class="text-xs font-semibold text-gray-400 mb-2">Pausas rápidas <span class="font-normal text-gray-500">· toca para elegir la hora y los días</span></p>
         <div class="grid grid-cols-2 gap-2 mb-6">
           <button type="button" onclick="bloquearPausaRapida('almuerzo')" class="p-3 rounded-2xl text-left bg-amber-500/10 border border-amber-500/25 hover:bg-amber-500/20 transition">
             <span class="block text-sm font-bold text-amber-300">🍱 Almuerzo</span>
-            <span class="block text-xs text-gray-400 mt-0.5">12:30 – 2:00 p. m.</span>
+            <span id="pausa-hora-almuerzo" class="block text-xs text-gray-400 mt-0.5">12:30 p. m. – 2:00 p. m.</span>
           </button>
           <button type="button" onclick="bloquearPausaRapida('tarde')" class="p-3 rounded-2xl text-left bg-blue-500/10 border border-blue-500/25 hover:bg-blue-500/20 transition">
             <span class="block text-sm font-bold text-blue-300">☕ Pausa de la tarde</span>
-            <span class="block text-xs text-gray-400 mt-0.5">4:30 – 5:30 p. m.</span>
+            <span id="pausa-hora-tarde" class="block text-xs text-gray-400 mt-0.5">4:30 p. m. – 5:30 p. m.</span>
           </button>
           <button type="button" onclick="cerrarRestoDeHoy()" class="col-span-2 p-3 rounded-2xl text-left bg-red-500/10 border border-red-500/25 hover:bg-red-500/20 transition">
             <span class="block text-sm font-bold text-red-300">🚨 Tengo un imprevisto: cerrar el resto de hoy</span>
@@ -572,6 +571,21 @@
           <div id="col-bloq-hora" class="hidden">
             <label class="block text-xs text-gray-400 mb-1 font-semibold" for="bloq-hora-exacta">Hora del turno</label>
             <input type="time" id="bloq-hora-exacta" value="15:00" class="campo">
+          </div>
+          <div id="col-bloq-repetir">
+            <label class="inline-flex items-center gap-2 text-xs font-semibold text-gray-300 cursor-pointer">
+              <input type="checkbox" id="bloq-repetir" onchange="alternarRepetirBloqueo()" class="w-4 h-4 accent-blue-500"> 🔁 Repetir otros días
+            </label>
+            <div id="bloq-repetir-opciones" class="hidden mt-3 p-3 rounded-xl bg-gray-900 border border-gray-800">
+              <div id="bloq-repetir-dias"></div>
+              <select id="bloq-repetir-semanas" onchange="resumenRepetirBloqueo()" class="campo cursor-pointer mt-3">
+                <option value="1">Solo esta semana</option>
+                <option value="2">Por 2 semanas</option>
+                <option value="4" selected>Por 4 semanas (1 mes)</option>
+                <option value="8">Por 8 semanas (2 meses)</option>
+              </select>
+              <p id="bloq-repetir-resumen" class="text-[11px] text-gray-400 mt-2"></p>
+            </div>
           </div>
           <div>
             <label class="block text-xs text-gray-400 mb-1 font-semibold" for="bloq-motivo">Motivo (lo ven tus clientes)</label>
@@ -1093,11 +1107,11 @@
     </div>
   </div>
 
-  <script src="/js/tema.js?v=20261126k"></script>
-  <script src="/js/avisos.js?v=20261126k"></script>
-  <script src="/js/turnos.js?v=20261126k"></script>
-  <script src="/js/admin.js?v=20261126k"></script>
-  <script src="/js/notificaciones.js?v=20261126k"></script>
+  <script src="/js/tema.js?v=20261127b"></script>
+  <script src="/js/avisos.js?v=20261127b"></script>
+  <script src="/js/turnos.js?v=20261127b"></script>
+  <script src="/js/admin.js?v=20261127b"></script>
+  <script src="/js/notificaciones.js?v=20261127b"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(err => console.log('SW Reg error:', err));
